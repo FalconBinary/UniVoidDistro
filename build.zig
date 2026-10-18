@@ -11,7 +11,7 @@ const std = @import("std");
 const tracks = [_][]const u8{
     "tools", // zig/: the system tools and zig/lib
     // "kernel",    track K: vh-kconf
-    // "init",      track I: vh-init, vh-ctl, vh-logd
+    "init", // init/: vh-stage1 (track I: vh-init, vh-ctl, vh-logd)
     // "sched",     track S: vh-sched (loader; the BPF part is built inside sched/)
     // "installer", track N: vh-install
     // "session",   track G: vh-root, vh-game

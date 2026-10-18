@@ -1,0 +1,23 @@
+# Track I: vh-stage1 in a privileged Void container (tests/init/run.sh): the unit tests and
+# every stage-1 step that is possible in a container, against the stock tools as oracles.
+# The real boot is checked by the VM step (python3 tests/vm/check.py stage1 --repo): run
+# kvm-smoke with step=stage1 on demand.
+name: init-tests
+on:
+  push:
+    branches: [main]
+    paths: ["init/**", "tests/init/**", "tests/docker/**", "zig/lib/**", ".github/workflows/init-tests.yml"]
+  pull_request:
+    paths: ["init/**", "tests/init/**", "tests/docker/**", "zig/lib/**", ".github/workflows/init-tests.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  stage1:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-zig
+      - name: vh-stage1 in a Void container
+        run: sh tests/init/run.sh

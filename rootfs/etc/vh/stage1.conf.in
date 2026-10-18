@@ -1,0 +1,6 @@
+# void-hardperf-light: settings of vh-stage1 (init/), the values of vh.conf that the
+# core-services scripts carry rendered (04-vh-mounts.sh, 05-vh-zram.sh). VH_USER and
+# VH_BROWSER_USER come from /etc/vh/vh.env.
+VH_SHM_SIZE="@VH_SHM_SIZE@"
+VH_ZRAM_ALGO="@VH_ZRAM_ALGO@"
+VH_ZRAM_PERCENT="@VH_ZRAM_PERCENT@"

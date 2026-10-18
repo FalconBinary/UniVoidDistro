@@ -41,6 +41,8 @@ jobs:
           grep " $ISO\$" sha256sum.txt | sha256sum -c -
       - name: the tools and thor for the VM (tests/zig/build.sh)
         run: sh tests/zig/build.sh
+      - name: vh-stage1 for the VM (tests/init/build.sh; the stage1 step installs it)
+        run: sh tests/init/build.sh
       - name: install
         env:
           VH_ACCEL: kvm

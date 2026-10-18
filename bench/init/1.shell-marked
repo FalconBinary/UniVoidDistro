@@ -1,0 +1,23 @@
+#!/bin/sh
+# vim: set ts=4 sw=4 et:
+# bench/init: runit-void's /etc/runit/1 (runit-void-20250212_4) with two kernel-log markers
+# for bench/init/stage1_boot.py. The two "echo ... > /dev/kmsg" lines are the only
+# difference from the stock file: they are shell built-ins and cost well under a millisecond.
+
+PATH=/usr/bin:/usr/sbin
+echo "vh-bench: stage1 start" > /dev/kmsg
+
+. /etc/runit/functions
+
+msg "Welcome to Void!"
+
+[ -r /etc/rc.conf ] && . /etc/rc.conf
+
+# Start core services: one-time system tasks.
+detect_container
+for f in /etc/runit/core-services/*.sh; do
+	[ -r $f ] && . $f
+done
+
+msg "Initialization complete, running stage 2..."
+echo "vh-bench: stage1 done" > /dev/kmsg
