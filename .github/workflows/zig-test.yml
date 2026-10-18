@@ -17,8 +17,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-zig
-      - name: unit tests of every component
-        run: zig build test
+      - name: unit tests of every component (built once, run directly, as tests/zig/run.sh does)
+        run: |
+          set -e
+          zig build tests -Dtarget=x86_64-linux -Dcpu=baseline --prefix build/zt
+          rc=0
+          for t in build/zt/test/*; do
+            if out=$(timeout 300 "$t" 2>&1); then echo "ok $(basename "$t"): ${out##*$'\n'}"
+            else echo "FAIL $(basename "$t")"; echo "$out" | tail -30; rc=1; fi
+          done
+          exit $rc
       - name: cross-build for the target system (x86_64 Void)
         run: zig build -Dtarget=x86_64-linux -Dcpu=baseline --prefix build/out
       - name: static PIE, no interpreter

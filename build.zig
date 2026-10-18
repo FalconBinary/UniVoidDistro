@@ -22,11 +22,14 @@ pub fn build(b: *std.Build) void {
     // ReleaseSafe by default, as in every component (zig/README.md)
     const optimize = b.option(std.builtin.Optimize, "optimize", "build mode (safe = ReleaseSafe)") orelse .safe;
 
-    const test_step = b.step("test", "unit tests of every component");
+    const test_step = b.step("test", "unit tests of every component: build and run");
+    // CI and tests/zig/run.sh build the test binaries into PREFIX/test and run them directly
+    const tests_step = b.step("tests", "unit tests of every component: build only, into PREFIX/test");
     for (tracks) |name| {
         const dep = b.dependency(name, .{ .target = target, .optimize = optimize });
         // whatever the component installs, the aggregator installs under the same prefix
         b.getInstallStep().dependOn(dep.builder.getInstallStep());
         if (dep.builder.top_level_steps.get("test")) |t| test_step.dependOn(&t.step);
+        if (dep.builder.top_level_steps.get("tests")) |t| tests_step.dependOn(&t.step);
     }
 }
