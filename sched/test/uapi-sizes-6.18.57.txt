@@ -1,0 +1,125 @@
+sizeof(union bpf_attr)                           168
+sizeof(struct bpf_insn)                          8
+sizeof(struct bpf_prog_info)                     232
+sizeof(struct bpf_map_info)                      104
+sizeof(struct bpf_link_info)                     64
+sizeof(struct bpf_btf_info)                      32
+offsetof(struct bpf_link_info, struct_ops)       16
+offsetof(struct bpf_link_info, struct_ops.map_id) 16
+offsetof(struct bpf_map_info, id)                4
+offsetof(struct bpf_prog_info, id)               4
+offsetof(struct bpf_btf_info, id)                12
+offsetof(union bpf_attr, map_type)               0
+offsetof(union bpf_attr, btf_vmlinux_value_type_id) 60
+offsetof(union bpf_attr, map_extra)              64
+offsetof(union bpf_attr, value_type_btf_obj_fd)  72
+offsetof(union bpf_attr, map_token_fd)           76
+offsetof(union bpf_attr, excl_prog_hash)         80
+offsetof(union bpf_attr, excl_prog_hash_size)    88
+offsetof(union bpf_attr, map_fd)                 0
+offsetof(union bpf_attr, key)                    8
+offsetof(union bpf_attr, value)                  16
+offsetof(union bpf_attr, flags)                  24
+offsetof(union bpf_attr, prog_type)              0
+offsetof(union bpf_attr, insns)                  8
+offsetof(union bpf_attr, license)                16
+offsetof(union bpf_attr, log_buf)                32
+offsetof(union bpf_attr, prog_name)              48
+offsetof(union bpf_attr, expected_attach_type)   68
+offsetof(union bpf_attr, prog_btf_fd)            72
+offsetof(union bpf_attr, attach_btf_id)          108
+offsetof(union bpf_attr, attach_btf_obj_fd)      112
+offsetof(union bpf_attr, fd_array)               120
+offsetof(union bpf_attr, log_true_size)          140
+offsetof(union bpf_attr, prog_token_fd)          144
+offsetof(union bpf_attr, fd_array_cnt)           148
+offsetof(union bpf_attr, signature)              152
+offsetof(union bpf_attr, keyring_id)             164
+offsetof(union bpf_attr, btf)                    0
+offsetof(union bpf_attr, btf_log_buf)            8
+offsetof(union bpf_attr, btf_size)               16
+offsetof(union bpf_attr, btf_log_true_size)      28
+offsetof(union bpf_attr, btf_flags)              32
+offsetof(union bpf_attr, btf_token_fd)           36
+offsetof(union bpf_attr, info)                   0
+offsetof(union bpf_attr, info.bpf_fd)            0
+offsetof(union bpf_attr, info.info_len)          4
+offsetof(union bpf_attr, info.info)              8
+offsetof(union bpf_attr, link_create)            0
+offsetof(union bpf_attr, link_create.map_fd)     0
+offsetof(union bpf_attr, link_create.target_fd)  4
+offsetof(union bpf_attr, link_create.attach_type) 8
+offsetof(union bpf_attr, link_create.flags)      12
+offsetof(union bpf_attr, link_create.target_btf_id) 16
+offsetof(union bpf_attr, link_detach)            0
+offsetof(union bpf_attr, link_detach.link_fd)    0
+BPF_MAP_CREATE                                   0
+BPF_MAP_LOOKUP_ELEM                              1
+BPF_MAP_UPDATE_ELEM                              2
+BPF_PROG_LOAD                                    5
+BPF_OBJ_GET_INFO_BY_FD                           15
+BPF_BTF_LOAD                                     18
+BPF_MAP_FREEZE                                   22
+BPF_LINK_CREATE                                  28
+BPF_LINK_DETACH                                  34
+BPF_LINK_UPDATE                                  29
+BPF_MAP_TYPE_ARRAY                               2
+BPF_MAP_TYPE_STRUCT_OPS                          26
+BPF_MAP_TYPE_RINGBUF                             27
+BPF_PROG_TYPE_STRUCT_OPS                         27
+BPF_STRUCT_OPS                                   44
+BPF_TRACE_FENTRY                                 24
+BPF_LINK_TYPE_STRUCT_OPS                         9
+BPF_F_LINK                                       8192
+BPF_F_SLEEPABLE                                  16
+BPF_F_RDONLY_PROG                                128
+BPF_F_MMAPABLE                                   1024
+BPF_F_VTYPE_BTF_OBJ_FD                           32768
+BPF_F_TOKEN_FD                                   65536
+BPF_PSEUDO_MAP_FD                                1
+BPF_PSEUDO_MAP_VALUE                             2
+BPF_PSEUDO_CALL                                  1
+BPF_PSEUDO_KFUNC_CALL                            2
+BPF_PSEUDO_FUNC                                  4
+BPF_OBJ_NAME_LEN                                 16
+BPF_FUNC_ringbuf_output                          130
+BPF_FUNC_ringbuf_reserve                         131
+BPF_FUNC_ringbuf_submit                          132
+BPF_FUNC_ktime_get_ns                            5
+BPF_FUNC_get_smp_processor_id                    8
+BPF_FUNC_map_lookup_elem                         1
+BPF_FUNC_probe_read_kernel                       113
+BPF_FUNC_trace_printk                            6
+BPF_RINGBUF_BUSY_BIT                             2147483648
+BPF_RINGBUF_DISCARD_BIT                          1073741824
+BPF_RINGBUF_HDR_SZ                               8
+BTF_MAGIC                                        60319
+BTF_VERSION                                      1
+sizeof(struct btf_header)                        24
+sizeof(struct btf_type)                          12
+BTF_KIND_INT                                     1
+BTF_KIND_PTR                                     2
+BTF_KIND_ARRAY                                   3
+BTF_KIND_STRUCT                                  4
+BTF_KIND_UNION                                   5
+BTF_KIND_ENUM                                    6
+BTF_KIND_FWD                                     7
+BTF_KIND_TYPEDEF                                 8
+BTF_KIND_VOLATILE                                9
+BTF_KIND_CONST                                   10
+BTF_KIND_RESTRICT                                11
+BTF_KIND_FUNC                                    12
+BTF_KIND_FUNC_PROTO                              13
+BTF_KIND_VAR                                     14
+BTF_KIND_DATASEC                                 15
+BTF_KIND_FLOAT                                   16
+BTF_KIND_DECL_TAG                                17
+BTF_KIND_TYPE_TAG                                18
+BTF_KIND_ENUM64                                  19
+BTF_INT_SIGNED                                   1
+BTF_INT_CHAR                                     2
+BTF_INT_BOOL                                     4
+BTF_VAR_STATIC                                   0
+BTF_VAR_GLOBAL_ALLOCATED                         1
+BTF_FUNC_STATIC                                  0
+BTF_FUNC_GLOBAL                                  1

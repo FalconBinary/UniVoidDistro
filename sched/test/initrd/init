@@ -1,0 +1,23 @@
+#!/bin/sh
+# vh-sched spike S1: the init of the test initramfs. Mounts the pseudo filesystems, prints
+# the facts the report needs, runs /test.sh when present, then powers the VM off.
+export PATH=/bin:/sbin
+/bin/busybox --install -s /bin
+mount -t proc proc /proc
+mount -t sysfs sys /sys
+mount -t devtmpfs dev /dev 2>/dev/null
+mkdir -p /sys/fs/bpf /sys/kernel/security
+mount -t bpf bpf /sys/fs/bpf 2>/dev/null
+mount -t securityfs none /sys/kernel/security 2>/dev/null
+echo "VH_BOOT_OK $(uname -r) $(uname -m) cpus=$(nproc)"
+echo "VH_CMDLINE $(cat /proc/cmdline)"
+echo "VH_LOCKDOWN $(cat /sys/kernel/security/lockdown 2>&1)"
+echo "VH_SCX_STATE $(cat /sys/kernel/sched_ext/state 2>&1)"
+echo "VH_SYSRQ $(cat /proc/sys/kernel/sysrq 2>&1)"
+if [ -x /test.sh ]; then
+  /test.sh
+  echo "VH_TEST_EXIT $?"
+fi
+echo VH_DONE
+sync
+poweroff -f

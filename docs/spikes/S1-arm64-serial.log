@@ -1,0 +1,626 @@
+[    0.000000] Booting Linux on physical CPU 0x0000000000 [0x610f0000]
+[    0.000000] Linux version 6.18.57 (lima@colima) (Ubuntu clang version 18.1.3 (1ubuntu1), Ubuntu LLD 18.1.3) #1 SMP PREEMPT Mon Oct 19 00:24:55 CEST 2026
+[    0.000000] random: crng init done
+[    0.000000] Machine model: linux,dummy-virt
+[    0.000000] Kernel is locked down from command line; see man kernel_lockdown.7
+[    0.000000] OF: reserved mem: Reserved memory: No reserved-memory node in the DT
+[    0.000000] Zone ranges:
+[    0.000000]   DMA      [mem 0x0000000040000000-0x000000007fffffff]
+[    0.000000]   DMA32    empty
+[    0.000000]   Normal   empty
+[    0.000000] Movable zone start for each node
+[    0.000000] Early memory node ranges
+[    0.000000]   node   0: [mem 0x0000000040000000-0x000000007fffffff]
+[    0.000000] Initmem setup node 0 [mem 0x0000000040000000-0x000000007fffffff]
+[    0.000000] psci: probing for conduit method from DT.
+[    0.000000] psci: PSCIv1.1 detected in firmware.
+[    0.000000] psci: Using standard PSCI v0.2 function IDs
+[    0.000000] psci: Trusted OS migration not required
+[    0.000000] psci: SMC Calling Convention v1.0
+[    0.000000] percpu: Embedded 18 pages/cpu s43096 r0 d30632 u73728
+[    0.000000] Detected PIPT I-cache on CPU0
+[    0.000000] CPU features: detected: Spectre-v4
+[    0.000000] CPU features: detected: Spectre-BHB
+[    0.000000] alternatives: applying boot alternatives
+[    0.000000] Kernel command line: console=ttyAMA0 lockdown=confidentiality 
+[    0.000000] printk: log buffer data + meta data: 131072 + 458752 = 589824 bytes
+[    0.000000] Dentry cache hash table entries: 131072 (order: 8, 1048576 bytes, linear)
+[    0.000000] Inode-cache hash table entries: 65536 (order: 7, 524288 bytes, linear)
+[    0.000000] software IO TLB: SWIOTLB bounce buffer size adjusted to 1MB
+[    0.000000] software IO TLB: area num 4.
+[    0.000000] software IO TLB: mapped [mem 0x000000007eb00000-0x000000007ec00000] (1MB)
+[    0.000000] Built 1 zonelists, mobility grouping on.  Total pages: 262144
+[    0.000000] mem auto-init: stack:all(zero), heap alloc:off, heap free:off
+[    0.000000] SLUB: HWalign=64, Order=0-3, MinObjects=0, CPUs=4, Nodes=1
+[    0.000000] rcu: Preemptible hierarchical RCU implementation.
+[    0.000000] rcu: 	RCU event tracing is enabled.
+[    0.000000] rcu: 	RCU restricting CPUs from NR_CPUS=8 to nr_cpu_ids=4.
+[    0.000000] 	Trampoline variant of Tasks RCU enabled.
+[    0.000000] 	Tracing variant of Tasks RCU enabled.
+[    0.000000] rcu: RCU calculated value of scheduler-enlistment delay is 100 jiffies.
+[    0.000000] rcu: Adjusting geometry for rcu_fanout_leaf=16, nr_cpu_ids=4
+[    0.000000] RCU Tasks: Setting shift to 2 and lim to 1 rcu_task_cb_adjust=1 rcu_task_cpu_ids=4.
+[    0.000000] RCU Tasks Trace: Setting shift to 2 and lim to 1 rcu_task_cb_adjust=1 rcu_task_cpu_ids=4.
+[    0.000000] NR_IRQS: 64, nr_irqs: 64, preallocated irqs: 0
+[    0.000000] GICv3: 988 SPIs implemented
+[    0.000000] GICv3: 0 Extended SPIs implemented
+[    0.000000] Root IRQ handler: gic_handle_irq
+[    0.000000] GICv3: GICv3 features: 16 PPIs, RSS
+[    0.000000] GICv3: GICD_CTLR.DS=1, SCR_EL3.FIQ=0
+[    0.000000] GICv3: CPU0: found redistributor 0 region 0:0x00000000080a0000
+[    0.000000] GICv2m: range[mem 0x08020000-0x08020fff], SPI[80:143]
+[    0.000000] rcu: srcu_init: Setting srcu_struct sizes based on contention.
+[    0.000000] clocksource: jiffies: mask: 0xffffffff max_cycles: 0xffffffff, max_idle_ns: 1911260446275000 ns
+[    0.000000] arch_timer: cp15 timer running at 24.00MHz (virt).
+[    0.000000] clocksource: arch_sys_counter: mask: 0xffffffffffffff max_cycles: 0x588fe9dc0, max_idle_ns: 440795202592 ns
+[    0.000000] sched_clock: 56 bits at 24MHz, resolution 41ns, wraps every 4398046511097ns
+[    0.000118] Console: colour dummy device 80x25
+[    0.000128] Calibrating delay loop (skipped), value calculated using timer frequency.. 48.00 BogoMIPS (lpj=24000)
+[    0.000129] pid_max: default: 32768 minimum: 301
+[    0.000155] LSM: initializing lsm=lockdown,capability
+[    0.000222] Mount-cache hash table entries: 2048 (order: 2, 16384 bytes, linear)
+[    0.000226] Mountpoint-cache hash table entries: 2048 (order: 2, 16384 bytes, linear)
+[    0.000555] rcu: Hierarchical SRCU implementation.
+[    0.000556] rcu: 	Max phase no-delay instances is 400.
+[    0.000592] Timer migration: 1 hierarchy levels; 8 children per group; 1 crossnode level
+[    0.000643] smp: Bringing up secondary CPUs ...
+[    0.000820] Detected PIPT I-cache on CPU1
+[    0.000837] GICv3: CPU1: found redistributor 1 region 0:0x00000000080c0000
+[    0.000896] CPU1: Booted secondary processor 0x0000000001 [0x610f0000]
+[    0.001070] Detected PIPT I-cache on CPU2
+[    0.001087] GICv3: CPU2: found redistributor 2 region 0:0x00000000080e0000
+[    0.001143] CPU2: Booted secondary processor 0x0000000002 [0x610f0000]
+[    0.001302] Detected PIPT I-cache on CPU3
+[    0.001322] GICv3: CPU3: found redistributor 3 region 0:0x0000000008100000
+[    0.001378] CPU3: Booted secondary processor 0x0000000003 [0x610f0000]
+[    0.001410] smp: Brought up 1 node, 4 CPUs
+[    0.001411] SMP: Total of 4 processors activated.
+VH_BOOT_OK 6.18.57 aarch64 cpus=4[    0.001411] CPU: All CPU(s) started at EL1
+[    0.001412] CPU features: detected: ARMv8.4 Translation Table Level
+
+[    0.001413] CPU features: detected: Data cache clean to the PoU not required for I/D coherence
+[    0.001413] CPU features: detected: CRC32 instructions
+VH_CMDLINE console=ttyAMA0 lockdown=confidentiality [    0.001413] CPU features: detected: Data independent timing control (DIT)
+[    0.001414] CPU features: detected: RCpc load-acquire (LDAPR)
+
+[    0.001415] CPU features: detected: Speculation barrier (SB)
+[    0.001415] CPU features: detected: TLB range maintenance instructions
+[    0.001479] alternatives: applying system-wide alternatives
+VH_LOCKDOWN none integrity [confidentiality][    0.001705] Memory: 1010364K/1048576K available (5760K kernel code, 756K rwdata, 3628K rodata, 832K init, 285K bss, 34748K reserved, 0K cma-reserved)
+
+[    0.001806] devtmpfs: initialized
+[    0.002087] posixtimers hash table entries: 2048 (order: 3, 32768 bytes, linear)
+VH_SCX_STATE disabled[    0.002109] futex hash table entries: 1024 (65536 bytes on 1 NUMA nodes, total 64 KiB, linear).
+[    0.002116] 29888 pages in range for non-PLT usage
+
+[    0.002116] 521408 pages in range for PLT usage
+[    0.002169] NET: Registered PF_NETLINK/PF_ROUTE protocol family
+[    0.002304] DMA: preallocated 128 KiB GFP_KERNEL pool for atomic allocations
+VH_SYSRQ 1[    0.002331] DMA: preallocated 128 KiB GFP_KERNEL|GFP_DMA pool for atomic allocations
+[    0.002356] DMA: preallocated 128 KiB GFP_KERNEL|GFP_DMA32 pool for atomic allocations
+
+[    0.002373] ASID allocator initialised with 256 entries
+[    0.002380] Serial: AMBA PL011 UART driver
+[    0.002763] 9000000.pl011: ttyAMA0 at MMIO 0x9000000 (irq = 13, base_baud = 0) is a PL011 rev1
+=== state before[    0.002811] printk: console [ttyAMA0] enabled
+[    0.006768] vgaarb: loaded
+
+[    0.007645] clocksource: Switched to clocksource arch_sys_counter
+[    0.010113] NET: Registered PF_INET protocol family
+[    0.010158] IP idents hash table entries: 16384 (order: 5, 131072 bytes, linear)
+[    0.010305] tcp_listen_portaddr_hash hash table entries: 512 (order: 1, 8192 bytes, linear)
+vh-sched: sched_ext: state=disabled switch_all=0 enable_seq=0 nr_rejected=0 root/ops=(absent)[    0.010310] Table-perturb hash table entries: 65536 (order: 6, 262144 bytes, linear)
+
+[    0.010312] TCP established hash table entries: 8192 (order: 4, 65536 bytes, linear)
+[    0.010332] TCP bind hash table entries: 8192 (order: 6, 262144 bytes, linear)
+[    0.010404] TCP: Hash tables configured (established 8192 bind 8192)
+=== lint[    0.010444] UDP hash table entries: 512 (order: 3, 32768 bytes, linear)
+[    0.010452] UDP-Lite hash table entries: 512 (order: 3, 32768 bytes, linear)
+
+[    0.010468] NET: Registered PF_UNIX/PF_LOCAL protocol family
+[    0.010474] PCI: CLS 0 bytes, default 64
+[    0.010554] Unpacking initramfs...
+lint: struct_ops/exit: vh_exit: 24 insns, stack 24, helpers [ringbuf_output], kfuncs [][    0.020669] workingset: timestamp_bits=62 max_order=18 bucket_order=0
+
+[    0.020714] 9p: Installing v9fs 9p2000 file system support
+[    0.021502] Freeing initrd memory: 788K
+lint: struct_ops.s/init: vh_init: 12 insns, stack 0, helpers [], kfuncs [scx_bpf_create_dsq][    0.022067] pci-host-generic 3f000000.pcie: host bridge /pcie@10000000 ranges:
+
+[    0.022073] pci-host-generic 3f000000.pcie:       IO 0x003eff0000..0x003effffff -> 0x0000000000
+[    0.022078] pci-host-generic 3f000000.pcie:      MEM 0x0010000000..0x003efeffff -> 0x0010000000
+lint: struct_ops/dispatch: vh_dispatch: 13 insns, stack 0, helpers [], kfuncs [scx_bpf_dsq_move_to_local][    0.022088] pci-host-generic 3f000000.pcie: ECAM at [mem 0x3f000000-0x3fffffff] for [bus 00-0f]
+
+[    0.022104] pci-host-generic 3f000000.pcie: PCI host bridge to bus 0000:00
+[    0.022105] pci_bus 0000:00: root bus resource [bus 00-0f]
+lint: struct_ops/enqueue: vh_enqueue: 26 insns, stack 8, helpers [], kfuncs [scx_bpf_error_bstr scx_bpf_dsq_insert][    0.022106] pci_bus 0000:00: root bus resource [io  0x0000-0xffff]
+[    0.022106] pci_bus 0000:00: root bus resource [mem 0x10000000-0x3efeffff]
+
+[    0.022188] pci 0000:00:00.0: [1b36:0008] type 00 class 0x060000 conventional PCI endpoint
+[    0.023014] pci 0000:00:01.0: [1af4:1000] type 00 class 0x020000 conventional PCI endpoint
+lint: struct_ops/select_cpu: vh_select_cpu: 30 insns, stack 1, helpers [], kfuncs [scx_bpf_select_cpu_dfl scx_bpf_dsq_insert][    0.023296] pci 0000:00:01.0: BAR 0 [io  0x0000-0x001f]
+
+[    0.023314] pci 0000:00:01.0: BAR 1 [mem 0x00000000-0x00000fff]
+lint: 5 programs, 105 insns, 0 errors[    0.023376] pci 0000:00:01.0: BAR 4 [mem 0x00000000-0x00003fff 64bit pref]
+
+[    0.023382] pci 0000:00:01.0: ROM [mem 0x00000000-0x0003ffff pref]
+[    0.024930] pci 0000:00:01.0: ROM [mem 0x10000000-0x1003ffff pref]: assigned
+[    0.024931] pci 0000:00:01.0: BAR 4 [mem 0x10040000-0x10043fff 64bit pref]: assigned
+=== lockdown: a program that needs bpf_probe_read_kernel must be refused[    0.025062] pci 0000:00:01.0: BAR 1 [mem 0x10044000-0x10044fff]: assigned
+[    0.025116] pci 0000:00:01.0: BAR 0 [io  0x1000-0x101f]: assigned
+
+[    0.025127] pci_bus 0000:00: resource 4 [io  0x0000-0xffff]
+[    0.025127] pci_bus 0000:00: resource 5 [mem 0x10000000-0x3efeffff]
+[    0.027732] virtio-pci 0000:00:01.0: enabling device (0000 -> 0003)
+[    0.030100] rtc-pl031 9010000.pl031: registered as rtc0
+[    0.030243] rtc-pl031 9010000.pl031: setting system clock to 2026-10-18T23:01:00 UTC (1792364460)
+[    0.030344] NET: Registered PF_INET6 protocol family
+[    0.030612] Segment Routing with IPv6
+[    0.030615] In-situ OAM (IOAM) with IPv6
+[    0.030629] sit: IPv6, IPv4 and MPLS over IPv4 tunneling driver
+[    0.030717] 9pnet: Installing 9P2000 support
+[    0.033772] clk: Disabling unused clocks
+[    0.036069] Freeing unused kernel memory: 832K
+[    0.036103] Run /init as init process
+2: (07) r1 += -8                      ; R1=fp-8
+[    0.072958] Lockdown: vh-sched: use of bpf to read kernel RAM is restricted; see man kernel_lockdown.7
+3: (b4) w2 = 8                        ; R2=8[    0.072960] Lockdown: vh-sched: use of bpf to read kernel RAM is restricted; see man kernel_lockdown.7
+
+[    0.072993] Lockdown: vh-sched: use of bpf to read kernel RAM is restricted; see man kernel_lockdown.7
+4: (85) call bpf_probe_read_kernel#113
+program of this type cannot use helper bpf_probe_read_kernel#113
+processed 5 insns (limit 1000000) max_states_per_insn 0 total_states 0 peak_states 0 mark_read 0
+
+=== load 1: the scheduler under a CPU load, 4 s, stats every second (verbose: every step and the verifier logs)
+vh-sched: object /bpf/vh_sched.o: 3848 bytes; kernel BTF /sys/kernel/btf/vmlinux: 2277066 bytes; generated BTF: 659 bytes
+vh-sched: kernel BTF: 54231 types; generated BTF: 7 types, 659 bytes
+vh-sched: struct sched_ext_ops: BTF id 11894, 42 members; struct bpf_struct_ops_sched_ext_ops: id 12032, 512 bytes, data at 64
+vh-sched: BPF_BTF_LOAD: fd 3
+vh-sched: map .bss: fd 4, 80 bytes, mmapped, with BTF
+vh-sched: map .rodata: fd 5, 32 bytes, read-only, frozen, with BTF
+vh-sched: map .data: fd 6, 29 bytes, mmapped
+vh-sched: map exit_rb: fd 7, type 27, 4096 entries
+vh-sched: vh_exit: insn 4: .bss+0 (map fd 4)
+vh-sched: vh_exit: insn 18: map exit_rb (fd 7)
+vh-sched: vh_exit (exit, member 34): fd 8, 24 insns, 22 processed
+vh-sched: vh_init: insn 0: .rodata+0 (map fd 5)
+vh-sched: vh_init: insn 4: kfunc scx_bpf_create_dsq (BTF id 22026)
+vh-sched: vh_init: insn 8: .bss+0 (map fd 4)
+vh-sched: vh_init (init, member 33, sleepable): fd 9, 12 insns, 10 processed
+vh-sched: vh_dispatch: insn 1: .bss+0 (map fd 4)
+vh-sched: vh_dispatch: insn 5: .rodata+0 (map fd 5)
+vh-sched: vh_dispatch: insn 8: kfunc scx_bpf_dsq_move_to_local (BTF id 22042)
+vh-sched: vh_dispatch (dispatch, member 3): fd 10, 13 insns, 12 processed
+vh-sched: vh_enqueue: insn 3: .bss+0 (map fd 4)
+vh-sched: vh_enqueue: insn 6: .rodata+0 (map fd 5)
+vh-sched: vh_enqueue: insn 17: .data+0 (map fd 6)
+vh-sched: vh_enqueue: insn 20: kfunc scx_bpf_error_bstr (BTF id 22048)
+vh-sched: vh_enqueue: insn 24: kfunc scx_bpf_dsq_insert (BTF id 22032)
+vh-sched: vh_enqueue (enqueue, member 1): fd 11, 26 insns, 12 processed
+vh-sched: vh_select_cpu: insn 8: kfunc scx_bpf_select_cpu_dfl (BTF id 22083)
+vh-sched: vh_select_cpu: insn 10: .bss+0 (map fd 4)
+vh-sched: vh_select_cpu: insn 19: .rodata+0 (map fd 5)
+vh-sched: vh_select_cpu: insn 27: kfunc scx_bpf_dsq_insert (BTF id 22032)
+vh-sched: vh_select_cpu (select_cpu, member 0): fd 12, 30 insns, 28 processed
+vh-sched: struct_ops map: fd 13, value 512 bytes, 5 programs
+vh-sched: program vh_exit -> sched_ext_ops.exit (member 34): fd 8, 24 insns, insn_processed 22
+func#0 @0
+Live regs before insn:
+      0: .1........ (79) r1 = *(u64 *)(r1 +0)
+      1: .1........ (61) r2 = *(u32 *)(r1 +0)
+      2: .12....... (79) r3 = *(u64 *)(r1 +8)
+      3: .123...... (79) r1 = *(u64 *)(r1 +16)
+      4: .123...... (18) r4 = 0xffff800080cbe000
+      6: .1234..... (7b) *(u64 *)(r4 +72) = r1
+      7: .1234..... (7b) *(u64 *)(r10 -8) = r1
+      8: ..234..... (7b) *(u64 *)(r4 +64) = r3
+      9: ..234..... (7b) *(u64 *)(r10 -16) = r3
+     10: ..2.4..... (67) r2 <<= 32
+     11: ..2.4..... (c7) r2 s>>= 32
+     12: ..2.4..... (7b) *(u64 *)(r4 +56) = r2
+     13: ..2.4..... (7b) *(u64 *)(r10 -24) = r2
+     14: ....4..... (b7) r1 = 1
+     15: .1..4..... (db) lock *(u64 *)(r4 +48) += r1
+     16: .......... (bf) r2 = r10
+     17: ..2....... (07) r2 += -24
+     18: ..2....... (18) r1 = 0xffff000001b74a00
+     20: .12....... (b7) r3 = 24
+     21: .123...... (b7) r4 = 0
+     22: .1234..... (85) call bpf_ringbuf_output#130
+     23: 0......... (95) exit
+0: R1=ctx() R10=fp0
+0: (79) r1 = *(u64 *)(r1 +0)
+func 'exit' arg0 has btf_id 11960 type STRUCT 'scx_exit_info'
+1: R1=trusted_ptr_scx_exit_info()
+1: (61) r2 = *(u32 *)(r1 +0)          ; R1=trusted_ptr_scx_exit_info() R2=scalar(smin=0,smax=umax=0xffffffff,var_off=(0x0; 0xffffffff))
+2: (79) r3 = *(u64 *)(r1 +8)          ; R1=trusted_ptr_scx_exit_info() R3=scalar()
+3: (79) r1 = *(u64 *)(r1 +16)         ; R1=scalar()
+4: (18) r4 = 0xffff800080cbe000       ; R4=map_value(map=.bss,ks=4,vs=80)
+6: (7b) *(u64 *)(r4 +72) = r1         ; R1=scalar() R4=map_value(map=.bss,ks=4,vs=80)
+7: (7b) *(u64 *)(r10 -8) = r1         ; R1=scalar(id=1) R10=fp0 fp-8=scalar(id=1)
+8: (7b) *(u64 *)(r4 +64) = r3         ; R3=scalar() R4=map_value(map=.bss,ks=4,vs=80)
+9: (7b) *(u64 *)(r10 -16) = r3        ; R3=scalar(id=2) R10=fp0 fp-16=scalar(id=2)
+10: (67) r2 <<= 32                    ; R2=scalar(smax=0x7fffffff00000000,umax=0xffffffff00000000,smin32=0,smax32=umax32=0,var_off=(0x0; 0xffffffff00000000))
+11: (c7) r2 s>>= 32                   ; R2=scalar(smin=0xffffffff80000000,smax=0x7fffffff)
+12: (7b) *(u64 *)(r4 +56) = r2        ; R2=scalar(smin=0xffffffff80000000,smax=0x7fffffff) R4=map_value(map=.bss,ks=4,vs=80)
+13: (7b) *(u64 *)(r10 -24) = r2       ; R2=scalar(id=3,smin=0xffffffff80000000,smax=0x7fffffff) R10=fp0 fp-24=scalar(id=3,smin=0xffffffff80000000,smax=0x7fffffff)
+14: (b7) r1 = 1                       ; R1=1
+15: (db) lock *(u64 *)(r4 +48) += r1          ; R1=1 R4=map_value(map=.bss,ks=4,vs=80)
+16: (bf) r2 = r10                     ; R2=fp0 R10=fp0
+17: (07) r2 += -24                    ; R2=fp-24
+18: (18) r1 = 0xffff000001b74a00      ; R1=map_ptr(map=exit_rb,ks=0,vs=0)
+20: (b7) r3 = 24                      ; R3=24
+21: (b7) r4 = 0                       ; R4=0
+22: (85) call bpf_ringbuf_output#130
+mark_precise: frame0: last_idx 22 first_idx 0 subseq_idx -1 
+mark_precise: frame0: regs=r3 stack= before 21: (b7) r4 = 0
+mark_precise: frame0: regs=r3 stack= before 20: (b7) r3 = 24
+23: R0=scalar()
+23: (95) exit
+(0) frame 0 insn 22 +live -8,-16,-24 
+(0) frame 0 insn 13 +live -8,-16 
+(0) frame 0 insn 13 +written -24 
+(0) frame 0 insn 9 +live -8 
+(0) frame 0 insn 9 +written -16,-24 
+(0) frame 0 insn 7 +written -8,-16,-24 
+(0) frame 0 insn 0 +written -8,-16,-24 
+(0) live stack update done in 2 iterations
+processed 22 insns (limit 1000000) max_states_per_insn 0 total_states 0 peak_states 0 mark_read 0
+
+vh-sched: program vh_init -> sched_ext_ops.init (member 33, sleepable): fd 9, 12 insns, insn_processed 10
+func#0 @0
+Live regs before insn:
+      0: .......... (18) r1 = 0xffff000001b74930
+      2: .1........ (79) r1 = *(u64 *)(r1 +8)
+      3: .1........ (b4) w2 = -1
+      4: .12....... (85) call scx_bpf_create_dsq#22026
+      5: 0......... (bc) w1 = w0
+      6: 01........ (67) r1 <<= 32
+      7: 01........ (c7) r1 s>>= 32
+      8: 01........ (18) r2 = 0xffff800080cbe000
+     10: 012....... (7b) *(u64 *)(r2 +40) = r1
+     11: 0......... (95) exit[    0.105883] sched_ext: BPF scheduler "vh_sched" enabled
+
+0: R1=ctx() R10=fp0
+0: (18) r1 = 0xffff000001b74930       ; R1=map_value(map=.rodata,ks=4,vs=32)
+2: (79) r1 = *(u64 *)(r1 +8)          ; R1=0
+3: (b4) w2 = -1                       ; R2=0xffffffff
+4: (85) call scx_bpf_create_dsq#22026         ; R0=scalar()
+5: (bc) w1 = w0                       ; R0=scalar() R1=scalar(smin=0,smax=umax=0xffffffff,var_off=(0x0; 0xffffffff))
+6: (67) r1 <<= 32                     ; R1=scalar(smax=0x7fffffff00000000,umax=0xffffffff00000000,smin32=0,smax32=umax32=0,var_off=(0x0; 0xffffffff00000000))
+7: (c7) r1 s>>= 32                    ; R1=scalar(smin=0xffffffff80000000,smax=0x7fffffff)
+8: (18) r2 = 0xffff800080cbe000       ; R2=map_value(map=.bss,ks=4,vs=80)
+10: (7b) *(u64 *)(r2 +40) = r1        ; R1=scalar(smin=0xffffffff80000000,smax=0x7fffffff) R2=map_value(map=.bss,ks=4,vs=80)
+11: (95) exit
+processed 10 insns (limit 1000000) max_states_per_insn 0 total_states 0 peak_states 0 mark_read 0
+
+vh-sched: program vh_dispatch -> sched_ext_ops.dispatch (member 3): fd 10, 13 insns, insn_processed 12
+func#0 @0
+Live regs before insn:
+      0: .......... (b7) r6 = 1
+      1: ......6... (18) r7 = 0xffff800080cbe000
+      3: ......67.. (b7) r1 = 1
+      4: .1....67.. (db) lock *(u64 *)(r7 +24) += r1
+      5: ......67.. (18) r1 = 0xffff000001b74930
+      7: .1....67.. (79) r1 = *(u64 *)(r1 +8)
+      8: .1....67.. (85) call scx_bpf_dsq_move_to_local#22042
+      9: 0.....67.. (56) if w0 != 0x0 goto pc+1
+     10: 0......... (95) exit
+     11: 0.....67.. (db) lock *(u64 *)(r7 +32) += r6
+     12: 0......... (05) goto pc-3
+0: R1=ctx() R10=fp0
+0: (b7) r6 = 1                        ; R6=1
+1: (18) r7 = 0xffff800080cbe000       ; R7=map_value(map=.bss,ks=4,vs=80)
+3: (b7) r1 = 1                        ; R1=1
+4: (db) lock *(u64 *)(r7 +24) += r1   ; R1=1 R7=map_value(map=.bss,ks=4,vs=80)
+5: (18) r1 = 0xffff000001b74930       ; R1=map_value(map=.rodata,ks=4,vs=32)
+7: (79) r1 = *(u64 *)(r1 +8)          ; R1=0
+8: (85) call scx_bpf_dsq_move_to_local#22042          ; R0=scalar()
+9: (56) if w0 != 0x0 goto pc+1        ; R0=scalar(smax=0x7fffffff00000000,umax=0xffffffff00000000,smin32=0,smax32=umax32=0,var_off=(0x0; 0xffffffff00000000))
+10: (95) exit
+
+from 9 to 11: R0=scalar(smin=0x8000000000000001,umin=umin32=1) R6=1 R7=map_value(map=.bss,ks=4,vs=80) R10=fp0
+11: R0=scalar(smin=0x8000000000000001,umin=umin32=1) R6=1 R7=map_value(map=.bss,ks=4,vs=80) R10=fp0
+11: (db) lock *(u64 *)(r7 +32) += r6          ; R6=1 R7=map_value(map=.bss,ks=4,vs=80)
+12: (05) goto pc-3
+10: safe
+processed 12 insns (limit 1000000) max_states_per_insn 0 total_states 1 peak_states 1 mark_read 0
+
+vh-sched: program vh_enqueue -> sched_ext_ops.enqueue (member 1): fd 11, 26 insns, insn_processed 12
+func#0 @0
+Live regs before insn:
+      0: .1........ (79) r4 = *(u64 *)(r1 +8)
+      1: .1..4..... (79) r1 = *(u64 *)(r1 +0)
+      2: .1..4..... (b7) r2 = 1
+      3: .12.4..... (18) r3 = 0xffff800080cbe000
+      5: .1234..... (db) r2 = atomic64_fetch_add((u64 *)(r3 +16), r2)
+      6: .12.4..... (18) r5 = 0xffff000001b74930
+      8: .12.45.... (79) r3 = *(u64 *)(r5 +16)
+      9: .12345.... (15) if r3 == 0x0 goto pc+12
+     10: .12345.... (07) r2 += 1
+     11: .12345.... (1d) if r2 == r3 goto pc+1
+     12: .1..45.... (05) goto pc+9
+     13: .......... (b7) r1 = 0
+     14: .1........ (7b) *(u64 *)(r10 -8) = r1
+     15: .......... (bf) r2 = r10
+     16: ..2....... (07) r2 += -8
+     17: ..2....... (18) r1 = 0xffff800080cc6000
+     19: .12....... (b4) w3 = 8
+     20: .123...... (85) call scx_bpf_error_bstr#22048
+     21: 0......... (05) goto pc+3
+     22: .1..45.... (79) r3 = *(u64 *)(r5 +0)
+     23: .1.345.... (79) r2 = *(u64 *)(r5 +8)
+     24: .1234..... (85) call scx_bpf_dsq_insert#22032
+     25: 0......... (95) exit
+0: R1=ctx() R10=fp0
+0: (79) r4 = *(u64 *)(r1 +8)          ; R1=ctx() R4=scalar()
+1: (79) r1 = *(u64 *)(r1 +0)
+func 'enqueue' arg0 has btf_id 433 type STRUCT 'task_struct'
+2: R1=trusted_ptr_task_struct()
+2: (b7) r2 = 1                        ; R2=1
+3: (18) r3 = 0xffff800080cbe000       ; R3=map_value(map=.bss,ks=4,vs=80)
+5: (db) r2 = atomic64_fetch_add((u64 *)(r3 +16), r2)          ; R2=scalar() R3=map_value(map=.bss,ks=4,vs=80)
+6: (18) r5 = 0xffff000001b74930       ; R5=map_value(map=.rodata,ks=4,vs=32)
+8: (79) r3 = *(u64 *)(r5 +16)         ; R3=0 R5=map_value(map=.rodata,ks=4,vs=32)
+9: (15) if r3 == 0x0 goto pc+12
+mark_precise: frame0: last_idx 9 first_idx 0 subseq_idx -1 
+mark_precise: frame0: regs=r3 stack= before 8: (79) r3 = *(u64 *)(r5 +16)
+9: R3=0
+22: (79) r3 = *(u64 *)(r5 +0)         ; R3=0x1312d00 R5=map_value(map=.rodata,ks=4,vs=32)
+23: (79) r2 = *(u64 *)(r5 +8)         ; R2=0 R5=map_value(map=.rodata,ks=4,vs=32)
+24: (85) call scx_bpf_dsq_insert#22032        ;
+25: (95) exit
+processed 12 insns (limit 1000000) max_states_per_insn 0 total_states 1 peak_states 1 mark_read 0
+
+vh-sched: program vh_select_cpu -> sched_ext_ops.select_cpu (member 0): fd 12, 30 insns, insn_processed 28
+func#0 @0
+Live regs before insn:
+      0: .1........ (79) r3 = *(u64 *)(r1 +16)
+      1: .1.3...... (79) r6 = *(u64 *)(r1 +0)
+      2: .1.3..6... (79) r2 = *(u64 *)(r1 +8)
+      3: ..23..6... (b4) w1 = 0
+      4: .123..6... (73) *(u8 *)(r10 -1) = r1
+      5: ..23..6... (bf) r4 = r10
+      6: ..234.6... (07) r4 += -1
+      7: ..234.6... (bf) r1 = r6
+      8: .1234.6... (85) call scx_bpf_select_cpu_dfl#22083
+      9: 0.....6... (b7) r1 = 1
+     10: 01....6... (18) r2 = 0xffff800080cbe000
+     12: 012...6... (b7) r3 = 1
+     13: 0123..6... (db) lock *(u64 *)(r2 +0) += r3
+     14: 012...6... (71) r3 = *(u8 *)(r10 -1)
+     15: 0123..6... (54) w3 &= 1
+     16: 0123..6... (56) if w3 != 0x0 goto pc+1
+     17: 0......... (95) exit
+     18: 012...6... (db) lock *(u64 *)(r2 +8) += r1
+     19: 0.....6... (18) r1 = 0xffff000001b74930
+     21: 01....6... (79) r3 = *(u64 *)(r1 +0)
+     22: 0..3..6... (bf) r1 = r6
+     23: 01.3...... (18) r2 = 0x8000000000000002
+     25: 0123...... (b7) r4 = 0
+     26: 01234..... (bc) w6 = w0
+     27: .1234.6... (85) call scx_bpf_dsq_insert#22032
+     28: ......6... (bc) w0 = w6
+     29: 0......... (05) goto pc-13
+0: R1=ctx() R10=fp0
+0: (79) r3 = *(u64 *)(r1 +16)         ; R1=ctx() R3=scalar()
+1: (79) r6 = *(u64 *)(r1 +0)
+func 'select_cpu' arg0 has btf_id 433 type STRUCT 'task_struct'
+2: R1=ctx() R6=trusted_ptr_task_struct()
+2: (79) r2 = *(u64 *)(r1 +8)          ; R1=ctx() R2=scalar()
+3: (b4) w1 = 0                        ; R1=0
+4: (73) *(u8 *)(r10 -1) = r1
+mark_precise: frame0: last_idx 4 first_idx 0 subseq_idx -1 
+mark_precise: frame0: regs=r1 stack= before 3: (b4) w1 = 0
+5: R1=0 R10=fp0 fp-8=0???????
+5: (bf) r4 = r10                      ; R4=fp0 R10=fp0
+6: (07) r4 += -1                      ; R4=fp-1
+7: (bf) r1 = r6                       ; R1=trusted_ptr_task_struct() R6=trusted_ptr_task_struct()
+8: (85) call scx_bpf_select_cpu_dfl#22083     ; R0=scalar()
+9: (b7) r1 = 1                        ; R1=1
+10: (18) r2 = 0xffff800080cbe000      ; R2=map_value(map=.bss,ks=4,vs=80)
+12: (b7) r3 = 1                       ; R3=1
+13: (db) lock *(u64 *)(r2 +0) += r3   ; R2=map_value(map=.bss,ks=4,vs=80) R3=1
+14: (71) r3 = *(u8 *)(r10 -1)         ; R3=scalar(smin=smin32=0,smax=umax=smax32=umax32=255,var_off=(0x0; 0xff)) R10=fp0 fp-8=m???????
+15: (54) w3 &= 1                      ; R3=scalar(smin=smin32=0,smax=umax=smax32=umax32=1,var_off=(0x0; 0x1))
+16: (56) if w3 != 0x0 goto pc+1       ; R3=0
+17: (95) exit
+(0) frame 0 insn 14 +live -8 
+(0) frame 0 insn 9 +live -8 
+(0) frame 0 insn 8 +live -8 
+(0) frame 0 insn 0 +live -8 
+(0) live stack update done in 2 iterations
+
+from 16 to 18: R0=scalar() R1=1 R2=map_value(map=.bss,ks=4,vs=80) R3=1 R6=trusted_ptr_task_struct() R10=fp0 fp-8=m???????
+18: R0=scalar() R1=1 R2=map_value(map=.bss,ks=4,vs=80) R3=1 R6=trusted_ptr_task_struct() R10=fp0 fp-8=m???????
+18: (db) lock *(u64 *)(r2 +8) += r1   ; R1=1 R2=map_value(map=.bss,ks=4,vs=80)
+19: (18) r1 = 0xffff000001b74930      ; R1=map_value(map=.rodata,ks=4,vs=32)
+21: (79) r3 = *(u64 *)(r1 +0)         ; R1=map_value(map=.rodata,ks=4,vs=32) R3=0x1312d00
+22: (bf) r1 = r6                      ; R1=trusted_ptr_task_struct() R6=trusted_ptr_task_struct()
+23: (18) r2 = 0x8000000000000002      ; R2=0x8000000000000002
+25: (b7) r4 = 0                       ; R4=0
+26: (bc) w6 = w0                      ; R0=scalar() R6=scalar(smin=0,smax=umax=0xffffffff,var_off=(0x0; 0xffffffff))
+27: (85) call scx_bpf_dsq_insert#22032        ;
+28: (bc) w0 = w6                      ; R0=scalar(id=1,smin=0,smax=umax=0xffffffff,var_off=(0x0; 0xffffffff)) R6=scalar(id=1,smin=0,smax=umax=0xffffffff,var_off=(0x0; 0xffffffff))
+29: (05) goto pc-13
+17: safe
+processed 28 insns (limit 1000000) max_states_per_insn 0 total_states 2 peak_states 2 mark_read 0
+
+vh-sched: loaded in 26 ms: 5 programs, insn_processed 84 in all, link fd 14
+vh-sched: link: type 9 (struct_ops = 9), id 1, map id 6
+vh-sched: sched_ext: state=enabled switch_all=1 enable_seq=1 nr_rejected=0 root/ops=vh_sched
+stats: nr_select=11 nr_direct=11 nr_enqueue=3 nr_dispatch=116 nr_dispatch_hit=3 init_rc=0 exit_seq=0 exit_kind=0 exit_code=0 exit_flags=0
+stats: nr_select=16 nr_direct=16 nr_enqueue=17 nr_dispatch=227 nr_dispatch_hit=17 init_rc=0 exit_seq=0 exit_kind=0 exit_code=0 exit_flags=0
+stats: nr_select=18 nr_direct=18 nr_enqueue=22 nr_dispatch=329 nr_dispatch_hit=22 init_rc=0 exit_seq=0 exit_kind=0 exit_code=0 exit_flags=0
+stats: nr_select=20 nr_direct=20 nr_enqueue=27 nr_dispatch=434 nr_dispatch_hit=27 init_rc=0 exit_seq=0 exit_kind=0 exit_code=0 exit_flags=0
+stats: nr_select=20 nr_direct=20 nr_enqueue=27 nr_dispatch=434 nr_dispatch_hit=27 init_rc=0 exit_seq=0 exit_kind=0 exit_code=0 exit_flags=0
+vh-sched: sched_ext: state=enabled switch_all=1 enable_seq=1 nr_rejected=0 root/ops=vh_sched
+vh-sched: no exit record while the link was held; link fd poll revents 0x0
+[    4.218678] sched_ext: BPF scheduler "vh_sched" disabled (unregistered from user space)
+vh-sched: link closed
+vh-sched: exit record after close: kind 64 (SCX_EXIT_UNREG), exit_code 0, flags 0x1
+vh-sched: sched_ext: state=disabled switch_all=0 enable_seq=1 nr_rejected=0 root/ops=(absent)
+=== load 2: an error raised from BPF at the 20th enqueue (cfg.fail_after through the frozen .rodata)
+vh-sched: object /bpf/vh_sched.o: 3848 bytes; kernel BTF /sys/kernel/btf/vmlinux: 2277066 bytes; generated BTF: 659 bytes
+vh-sched: program vh_exit -> sched_ext_ops.exit (member 34): fd 8, 24 insns, insn_processed 22
+vh-sched: program vh_init -> sched_ext_ops.init (member 33, sleepable): fd 9, 12 insns, insn_processed 10[    4.240917] sched_ext: BPF scheduler "vh_sched" enabled
+
+vh-sched: program vh_dispatch -> sched_ext_ops.dispatch (member 3): fd 10, 13 insns, insn_processed 12
+vh-sched: program vh_enqueue -> sched_ext_ops.enqueue (member 1): fd 11, 26 insns, insn_processed 24
+vh-sched: program vh_select_cpu -> sched_ext_ops.select_cpu (member 0): fd 12, 30 insns, insn_processed 28
+vh-sched: loaded in 16 ms: 5 programs, insn_processed 96 in all, link fd 14
+vh-sched: link: type 9 (struct_ops = 9), id 2, map id 11
+vh-sched: sched_ext: state=enabled switch_all=1 enable_seq=2 nr_rejected=0 root/ops=vh_sched
+[    8.756867] sched_ext: BPF scheduler "vh_sched" disabled (scx_bpf_error)
+vh-sched: exit record from the ring buffer at 4513 ms: kind 1025 (SCX_EXIT_ERROR_BPF), exit_code 0, flags 0x1[    8.756877] sched_ext: vh_sched: vh_sched: fail_after reached
+[    8.756878]    scx_bpf_error_bstr+0x84/0xa8
+
+[    8.756882]    bpf_prog_a762ebb6b2b772eb_vh_enqueue+0xa4/0xe0
+[    8.756883]    bpf__sched_ext_ops_enqueue+0x50/0x74
+[    8.756893]    do_enqueue_task+0x1d0/0x404
+[    8.756894]    put_prev_task_scx+0x1c8/0x3ac
+[    8.756902]    __schedule+0x2e4/0x724
+[    8.756904]    schedule+0x50/0xc4
+[    8.756906]    exit_to_user_mode_loop+0x64/0x110
+[    8.756908]    el0_interrupt+0x78/0xb0
+[    8.756909]    __el0_irq_handler_common+0x14/0x1c
+[    8.756910]    el0t_64_irq_handler+0xc/0x14
+[    8.756911]    el0t_64_irq+0x154/0x158
+stats: nr_select=45 nr_direct=45 nr_enqueue=20 nr_dispatch=293 nr_dispatch_hit=19 init_rc=0 exit_seq=1 exit_kind=1025 exit_code=0 exit_flags=1
+vh-sched: sched_ext: state=disabled switch_all=0 enable_seq=2 nr_rejected=0 root/ops=(absent)
+vh-sched: link closed
+vh-sched: sched_ext: state=disabled switch_all=0 enable_seq=2 nr_rejected=0 root/ops=(absent)
+=== load 3: sysrq S after 2 s with kernel.sysrq=256 (the RTNICE group that holds the sched_ext keys)
+vh-sched: object /bpf/vh_sched.o: 3848 bytes; kernel BTF /sys/kernel/btf/vmlinux: 2277066 bytes; generated BTF: 659 bytes
+vh-sched: program vh_exit -> sched_ext_ops.exit (member 34): fd 8, 24 insns, insn_processed 22
+vh-sched: program vh_init -> sched_ext_ops.init (member 33, sleepable): fd 9, 12 insns, insn_processed 10[   14.826672] sched_ext: BPF scheduler "vh_sched" enabled
+
+vh-sched: program vh_dispatch -> sched_ext_ops.dispatch (member 3): fd 10, 13 insns, insn_processed 12
+vh-sched: program vh_enqueue -> sched_ext_ops.enqueue (member 1): fd 11, 26 insns, insn_processed 12
+vh-sched: program vh_select_cpu -> sched_ext_ops.select_cpu (member 0): fd 12, 30 insns, insn_processed 28
+vh-sched: loaded in 17 ms: 5 programs, insn_processed 84 in all, link fd 14
+vh-sched: link: type 9 (struct_ops = 9), id 3, map id 16
+vh-sched: sched_ext: state=enabled switch_all=1 enable_seq=3 nr_rejected=0 root/ops=vh_sched
+vh-sched: sysrq S written: yes (kernel.sysrq = 256)
+[   17.848896] sysrq: Disable sched_ext and revert all tasks to CFS
+[   17.863853] sched_ext: BPF scheduler "vh_sched" disabled (disabled by sysrq-S)
+vh-sched: exit record from the ring buffer at 3033 ms: kind 67 (SCX_EXIT_SYSRQ), exit_code 0, flags 0x1
+stats: nr_select=31 nr_direct=31 nr_enqueue=10 nr_dispatch=61 nr_dispatch_hit=9 init_rc=0 exit_seq=1 exit_kind=67 exit_code=0 exit_flags=1
+vh-sched: sched_ext: state=disabled switch_all=0 enable_seq=3 nr_rejected=0 root/ops=(absent)
+vh-sched: link closed
+vh-sched: sched_ext: state=disabled switch_all=0 enable_seq=3 nr_rejected=0 root/ops=(absent)
+=== load 4: BPF_LINK_DETACH after 2 s (does the link fd report EPOLLHUP?)
+vh-sched: object /bpf/vh_sched.o: 3848 bytes; kernel BTF /sys/kernel/btf/vmlinux: 2277066 bytes; generated BTF: 659 bytes
+vh-sched: program vh_exit -> sched_ext_ops.exit (member 34): fd 8, 24 insns, insn_processed 22
+[   22.942172] sched_ext: BPF scheduler "vh_sched" enabled
+vh-sched: program vh_init -> sched_ext_ops.init (member 33, sleepable): fd 9, 12 insns, insn_processed 10
+vh-sched: program vh_dispatch -> sched_ext_ops.dispatch (member 3): fd 10, 13 insns, insn_processed 12
+vh-sched: program vh_enqueue -> sched_ext_ops.enqueue (member 1): fd 11, 26 insns, insn_processed 12
+vh-sched: program vh_select_cpu -> sched_ext_ops.select_cpu (member 0): fd 12, 30 insns, insn_processed 28
+vh-sched: loaded in 18 ms: 5 programs, insn_processed 84 in all, link fd 14
+vh-sched: link: type 9 (struct_ops = 9), id 4, map id 21
+vh-sched: sched_ext: state=enabled switch_all=1 enable_seq=4 nr_rejected=0 root/ops=vh_sched
+[   25.980908] sched_ext: BPF scheduler "vh_sched" disabled (unregistered from user space)
+vh-sched: BPF_LINK_DETACH at 3032 ms: ok
+vh-sched: link fd: poll revents 0x10 HUP at 3033 ms
+vh-sched: exit record from the ring buffer at 3033 ms: kind 64 (SCX_EXIT_UNREG), exit_code 0, flags 0x1
+stats: nr_select=30 nr_direct=30 nr_enqueue=9 nr_dispatch=61 nr_dispatch_hit=8 init_rc=0 exit_seq=1 exit_kind=64 exit_code=0 exit_flags=1
+vh-sched: sched_ext: state=disabled switch_all=0 enable_seq=4 nr_rejected=0 root/ops=(absent)
+vh-sched: link closed
+vh-sched: sched_ext: state=disabled switch_all=0 enable_seq=4 nr_rejected=0 root/ops=(absent)
+=== load 5: 30 load/unload cycles
+[   31.042184] sched_ext: BPF scheduler "vh_sched" enabled
+[   31.054883] sched_ext: BPF scheduler "vh_sched" disabled (unregistered from user space)
+[   31.061588] sched_ext: BPF scheduler "vh_sched" enabled
+[   31.072884] sched_ext: BPF scheduler "vh_sched" disabled (unregistered from user space)
+[   31.076609] sched_ext: BPF scheduler "vh_sched" enabled
+[   31.086937] sched_ext: BPF scheduler "vh_sched" disabled (unregistered from user space)
+[   31.090590] sched_ext: BPF scheduler "vh_sched" enabled
+[   31.097851] sched_ext: BPF scheduler "vh_sched" disabled (unregistered from user space)
+[   31.101505] sched_ext: BPF scheduler "vh_sched" enabled
+[   31.107852] sched_ext: BPF scheduler "vh_sched" disabled (unregistered from user space)
+[   31.111471] sched_ext: BPF scheduler "vh_sched" enabled
+[   31.117841] sched_ext: BPF scheduler "vh_sched" disabled (unregistered from user space)
+[   31.121417] sched_ext: BPF scheduler "vh_sched" enabled
+[   31.135844] sched_ext: BPF scheduler "vh_sched" disabled (unregistered from user space)
+[   31.141131] sched_ext: BPF scheduler "vh_sched" enabled
+[   31.153906] sched_ext: BPF scheduler "vh_sched" disabled (unregistered from user space)
+[   31.168174] sched_ext: BPF scheduler "vh_sched" enabled
+[   31.180882] sched_ext: BPF scheduler "vh_sched" disabled (unregistered from user space)
+[   31.184526] sched_ext: BPF scheduler "vh_sched" enabled
+[   31.196879] sched_ext: BPF scheduler "vh_sched" disabled (unregistered from user space)
+[   31.213129] sched_ext: BPF scheduler "vh_sched" enabled
+[   31.220876] sched_ext: BPF scheduler "vh_sched" disabled (unregistered from user space)
+[   31.224635] sched_ext: BPF scheduler "vh_sched" enabled
+[   31.233879] sched_ext: BPF scheduler "vh_sched" disabled (unregistered from user space)
+[   31.237616] sched_ext: BPF scheduler "vh_sched" enabled
+[   31.246880] sched_ext: BPF scheduler "vh_sched" disabled (unregistered from user space)
+[   31.250535] sched_ext: BPF scheduler "vh_sched" enabled
+[   31.258879] sched_ext: BPF scheduler "vh_sched" disabled (unregistered from user space)
+[   31.262485] sched_ext: BPF scheduler "vh_sched" enabled
+[   31.271887] sched_ext: BPF scheduler "vh_sched" disabled (unregistered from user space)
+[   31.276703] sched_ext: BPF scheduler "vh_sched" enabled
+[   31.284926] sched_ext: BPF scheduler "vh_sched" disabled (unregistered from user space)
+[   31.305144] sched_ext: BPF scheduler "vh_sched" enabled
+[   31.320881] sched_ext: BPF scheduler "vh_sched" disabled (unregistered from user space)
+[   31.324698] sched_ext: BPF scheduler "vh_sched" enabled
+[   31.336885] sched_ext: BPF scheduler "vh_sched" disabled (unregistered from user space)
+[   31.340807] sched_ext: BPF scheduler "vh_sched" enabled
+[   31.348871] sched_ext: BPF scheduler "vh_sched" disabled (unregistered from user space)
+[   31.352774] sched_ext: BPF scheduler "vh_sched" enabled
+[   31.361862] sched_ext: BPF scheduler "vh_sched" disabled (unregistered from user space)
+[   31.365794] sched_ext: BPF scheduler "vh_sched" enabled
+[   31.376877] sched_ext: BPF scheduler "vh_sched" disabled (unregistered from user space)
+[   31.380690] sched_ext: BPF scheduler "vh_sched" enabled
+[   31.388865] sched_ext: BPF scheduler "vh_sched" disabled (unregistered from user space)
+[   31.393095] sched_ext: BPF scheduler "vh_sched" enabled
+[   31.401858] sched_ext: BPF scheduler "vh_sched" disabled (unregistered from user space)
+[   31.406159] sched_ext: BPF scheduler "vh_sched" enabled
+[   31.414868] sched_ext: BPF scheduler "vh_sched" disabled (unregistered from user space)
+[   31.418984] sched_ext: BPF scheduler "vh_sched" enabled
+[   31.427858] sched_ext: BPF scheduler "vh_sched" disabled (unregistered from user space)
+[   31.434563] sched_ext: BPF scheduler "vh_sched" enabled
+[   31.445875] sched_ext: BPF scheduler "vh_sched" disabled (unregistered from user space)
+[   31.459178] sched_ext: BPF scheduler "vh_sched" enabled
+[   31.471951] sched_ext: BPF scheduler "vh_sched" disabled (unregistered from user space)
+[   31.489272] sched_ext: BPF scheduler "vh_sched" enabled
+[   31.501908] sched_ext: BPF scheduler "vh_sched" disabled (unregistered from user space)
+[   31.506049] sched_ext: BPF scheduler "vh_sched" enabled
+[   31.516895] sched_ext: BPF scheduler "vh_sched" disabled (unregistered from user space)
+[   31.521228] sched_ext: BPF scheduler "vh_sched" enabled
+[   31.535160] sched_ext: BPF scheduler "vh_sched" disabled (unregistered from user space)
+cycles: 30, failures: 0
+vh-sched: sched_ext: state=disabled switch_all=0 enable_seq=34 nr_rejected=0 root/ops=(absent)
+=== dmesg (sched_ext)
+[   31.276703] sched_ext: BPF scheduler "vh_sched" enabled
+[   31.284926] sched_ext: BPF scheduler "vh_sched" disabled (unregistered from user space)
+[   31.305144] sched_ext: BPF scheduler "vh_sched" enabled
+[   31.320881] sched_ext: BPF scheduler "vh_sched" disabled (unregistered from user space)
+[   31.324698] sched_ext: BPF scheduler "vh_sched" enabled
+[   31.336885] sched_ext: BPF scheduler "vh_sched" disabled (unregistered from user space)
+[   31.340807] sched_ext: BPF scheduler "vh_sched" enabled
+[   31.348871] sched_ext: BPF scheduler "vh_sched" disabled (unregistered from user space)
+[   31.352774] sched_ext: BPF scheduler "vh_sched" enabled
+[   31.361862] sched_ext: BPF scheduler "vh_sched" disabled (unregistered from user space)
+[   31.365794] sched_ext: BPF scheduler "vh_sched" enabled
+[   31.376877] sched_ext: BPF scheduler "vh_sched" disabled (unregistered from user space)
+[   31.380690] sched_ext: BPF scheduler "vh_sched" enabled
+[   31.388865] sched_ext: BPF scheduler "vh_sched" disabled (unregistered from user space)
+[   31.393095] sched_ext: BPF scheduler "vh_sched" enabled
+[   31.401858] sched_ext: BPF scheduler "vh_sched" disabled (unregistered from user space)
+[   31.406159] sched_ext: BPF scheduler "vh_sched" enabled
+[   31.414868] sched_ext: BPF scheduler "vh_sched" disabled (unregistered from user space)
+[   31.418984] sched_ext: BPF scheduler "vh_sched" enabled
+[   31.427858] sched_ext: BPF scheduler "vh_sched" disabled (unregistered from user space)
+[   31.434563] sched_ext: BPF scheduler "vh_sched" enabled
+[   31.445875] sched_ext: BPF scheduler "vh_sched" disabled (unregistered from user space)
+[   31.459178] sched_ext: BPF scheduler "vh_sched" enabled
+[   31.471951] sched_ext: BPF scheduler "vh_sched" disabled (unregistered from user space)
+[   31.489272] sched_ext: BPF scheduler "vh_sched" enabled
+[   31.501908] sched_ext: BPF scheduler "vh_sched" disabled (unregistered from user space)
+[   31.506049] sched_ext: BPF scheduler "vh_sched" enabled
+[   31.516895] sched_ext: BPF scheduler "vh_sched" disabled (unregistered from user space)
+[   31.521228] sched_ext: BPF scheduler "vh_sched" enabled
+[   31.535160] sched_ext: BPF scheduler "vh_sched" disabled (unregistered from user space)
+VH_TEST_EXIT 0
+VH_DONE
+[   31.551626] reboot: Power down
