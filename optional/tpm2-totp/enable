@@ -1,0 +1,63 @@
+#!/bin/bash
+# void-hardperf-light: anti-evil-maid, a TOTP code from the TPM before the LUKS passphrase (docs/13, tpm2-totp).
+#   doas /root/vh/optional/tpm2-totp/enable
+# The secret is sealed in the TPM to the values of PCR 0,2,4,7 (firmware, Option ROMs, the
+# loaded EFI images Limine and UKI, Secure Boot) and PCR 14 = 0. Tampering with any link ->
+# the TPM withholds the secret -> the code does not match the phone. After showing the code
+# the initramfs extends PCR 14: the running system cannot compute future codes.
+. "$(dirname "$0")/../lib.sh"
+PCRS=${VH_TOTP_PCRS:-0,2,4,7,14}
+LOCK_PCR=14
+[ -e /dev/tpmrm0 ] || die "no TPM (/dev/tpmrm0): enable PTT in the BIOS (docs/00)"
+case ",$PCRS," in *",$LOCK_PCR,"*) ;; *) die "PCRS must include PCR $LOCK_PCR" ;; esac
+
+say "package tpm2-totp"
+# the package's dracut module goes into the initramfs on purpose: the thor policy (docs/18)
+# would not extract it without permission
+command -v thor >/dev/null && thor keep /usr/lib/dracut/modules.d/70tpm2-totp/ >/dev/null
+xbps-install -Sy tpm2-totp
+
+cur=$(tpm2_pcrread "sha256:$LOCK_PCR" | awk '/0x/ {print $NF}')
+case $cur in 0x0000000000000000000000000000000000000000000000000000000000000000) ;;
+	*) warn "PCR $LOCK_PCR is already non-zero ($cur): did the module already run in this boot? Generation happens in the initramfs anyway" ;;
+esac
+
+say "TPM lockout authorisation: without it root can reset the tpm2-totp brute-force protection"
+if tpm2_getcap properties-variable | grep -qi 'lockoutAuthSet: *1'; then
+	ok "lockoutAuth is already set (keep it offline)"
+else
+	la=$(head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n')
+	tpm2_changeauth -c lockout "$la"
+	tpm2_dictionarylockout --setup-parameters --max-tries=5 --recovery-time=86400 \
+		--lockout-recovery-time=86400 --auth="$la"
+	cat <<EOT
+
+  TPM lockout authorisation (write it down offline together with the PK/KEK keys, docs/10):
+      $la
+  Without it: a TPM reset is possible only from the BIOS (with physical confirmation), and
+  5 wrong tpm2-totp passwords block guessing for a day.
+EOT
+	confirm_exact "saved" "Did you write the value down?"
+fi
+
+say "dracut module 90vhtotp"
+rm -rf /usr/lib/dracut/modules.d/90vhtotp
+cp -r "$MOD_DIR/90vhtotp" /usr/lib/dracut/modules.d/90vhtotp
+chmod 0755 /usr/lib/dracut/modules.d/90vhtotp/*.sh
+printf 'PCRS="%s"\nLOCK_PCR=%s\n' "$PCRS" "$LOCK_PCR" > /etc/vh/totp.conf
+echo 'add_dracutmodules+=" vhtotp "' > /etc/dracut.conf.d/20-vh-totp.conf
+install -d -m 0700 /var/lib/vh
+: > /var/lib/vh/totp-generate
+rebuild_uki
+mark_enabled
+cat <<EOT
+
+Next:
+  1. reboot; after the LUKS passphrase the initramfs asks for a tpm2-totp recovery
+     password (5 diceware words, its own) and shows a QR code: add it to a TOTP app on
+     your phone (Aegis, FreeOTP and the like);
+  2. at every boot, before typing the LUKS passphrase, compare the code on the screen with
+     the phone; a mismatch without a kernel update means: do not type the passphrase (docs/13);
+  3. after a kernel/microcode/BIOS update the code will not match once: compare the kernel
+     version on the screen with the one you noted, type RESEAL and the recovery password.
+EOT

@@ -1,0 +1,7 @@
+# The dracut-uefi hook (/usr/libexec/dracut/uefi-hook-postinst) builds the UKI:
+#   dracut --uefi /boot/efi/EFI/void/linux-<version>.efi
+# The command line is embedded in the UKI's .cmdline section. Under Secure Boot
+# systemd-stub ignores the cmdline passed by the bootloader, so it can only be changed
+# by rebuilding and re-signing the UKI. The parameters are explained in docs/03-boot.md.
+KERNEL_CMDLINE="@VH_CMDLINE@"
+UEFI_BUNDLE_DIR="boot/efi/EFI/void/"

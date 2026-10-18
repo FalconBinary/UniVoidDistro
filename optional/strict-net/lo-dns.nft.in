@@ -1,0 +1,9 @@
+# void-hardperf-light: who may query the local unbound, STRICT mode (optional/strict-net).
+# A process without network must not exfiltrate data through DNS queries of the form
+# data.attacker.tld: unbound would forward them upstream and return the answer (TXT), a
+# two-way channel.
+meta skuid "@VH_BROWSER_USER@" ip daddr 127.0.0.1 meta l4proto { tcp, udp } th dport 53 accept
+# chrony: the NTS server names (and the NTP server name NTS-KE may hand out)
+meta skuid "chrony" ip daddr 127.0.0.1 meta l4proto { tcp, udp } th dport 53 accept
+# temporary permissions: root during an update, people through vh-net allow
+meta skuid @dns_tmp ip daddr 127.0.0.1 meta l4proto { tcp, udp } th dport 53 accept

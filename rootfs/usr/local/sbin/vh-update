@@ -1,0 +1,103 @@
+#!/bin/sh
+# void-hardperf-light: update the system with one command (docs/09).
+#   doas vh-update
+# 1. shows what will be updated; 2. installs; 3. the kernel hooks rebuild and sign the UKI
+# and Limine; 4. if the microcode, firmware, dracut, stub or limine were updated, rebuilds
+# the UKI itself (their hooks do not); 5. strips SUID bits that came back; 6. refreshes the
+# certificates for unbound; 7. shows what has to be restarted.
+# With the keys on separate media (optional/sb-offline-keys): the packages are downloaded
+# with the network up, then installed and signed without network while the media is attached.
+set -eu
+PATH=/usr/bin
+# doas does not change the umask, and the admin's is 077 (profile.d): package triggers
+# (MIME database, icon cache, gdk-pixbuf loaders, glib schemas) would create caches that
+# only root can read, and the user's desktop and the browser would break after the update
+umask 022
+[ "$(id -u)" = 0 ] || { echo "run: doas vh-update" >&2; exit 1; }
+. /etc/vh/vh.env
+offline=0
+grep -q '^KEYS_OFFLINE=yes' /etc/vh/boot.conf 2>/dev/null && offline=1
+
+# strict network mode (optional/strict-net): root opens the mirrors only for a while
+[ -e /etc/vh/optional/strict-net ] && /usr/local/sbin/vh-net xbps 30
+echo "==> synchronising repositories and listing updates"
+xbps-install -S >/dev/null
+# thor is based on xbps 0.60.7: when a new xbps is out, rebuild thor from the USB stick (docs/18)
+up=$(xbps-query -R -p pkgver xbps 2>/dev/null | sed -n 's/^xbps-\([0-9]\)/\1/p')
+base=$(thor --version | awk '{print $2}' | sed 's/\.[0-9]*$//')
+if [ -n "$up" ] && [ -n "$base" ] && [ "$(xbps-uhelper cmpver "${up%_*}" "$base"; echo $?)" = 1 ]; then
+	echo "  !! the repository has xbps $up, thor is based on $base: rebuild thor (docs/18, section \"Updating\")"
+fi
+updates=$(xbps-install -un 2>/dev/null | awk '{print $1}')
+if [ -z "$updates" ]; then
+	echo "no updates"
+	exit 0
+fi
+echo "$updates" | sed 's/^/  /'
+
+rebuild=0 kver_updated=0
+for p in $updates; do
+	case ${p%-*} in
+		intel-ucode|linux-firmware*|wireless-regdb|dracut|dracut-uefi|systemd-boot-efistub|cryptsetup|tpm2-totp|tpm2-tools|limine|sbctl|eudev|kmod) rebuild=1 ;;
+	esac
+done
+echo "$updates" | grep -q "^$VH_KERNEL-" && kver_updated=1
+[ "$kver_updated" = 1 ] && echo "  new kernel: note it down to compare at reboot -- $(echo "$updates" | grep "^$VH_KERNEL-")"
+printf 'Continue? [y/N] '
+read -r a
+case $a in y|Y) ;; *) exit 1 ;; esac
+
+if [ "$offline" = 1 ] && [ $((rebuild + kver_updated)) -gt 0 ]; then
+	echo "==> downloading the packages into the cache (network still up, in parallel: thor)"
+	thor fetch -u
+	printf 'Insert the Secure Boot key media and press Enter... '
+	read -r _
+	/usr/local/sbin/vh-keys mount
+	trap '/usr/local/sbin/vh-keys umount' EXIT INT TERM
+fi
+
+echo "==> installing (thor: parallel download, security policy)"
+# the new thor from the local repository goes first (like xbps-install -u xbps)
+xbps-install -yu thor
+thor update -y
+if [ "$rebuild" = 1 ] && [ "$kver_updated" = 0 ]; then
+	echo "==> initramfs/bootloader components were updated: rebuilding the UKI"
+	xbps-reconfigure -f "$VH_KERNEL"
+fi
+if [ "$offline" = 1 ] && [ $((rebuild + kver_updated)) -gt 0 ]; then
+	trap - EXIT INT TERM
+	/usr/local/sbin/vh-keys umount
+fi
+
+echo "==> inspecting the updated packages (new SUID, sysctl.d, udev, hooks: vh-pkg scan)"
+# shellcheck disable=SC2086
+/usr/local/sbin/vh-pkg scan $(echo "$updates" | sed 's/-[^-]*$//') || true
+
+echo "==> SUID and capabilities"
+/usr/local/sbin/vh-suid-strip
+
+if echo "$updates" | grep -q '^ca-certificates-'; then
+	echo "==> certificates for DoT (unbound)"
+	if [ -e /etc/vh/optional/dns-pin ]; then
+		echo "  pinning is on: the system CAs are not copied (changing the CA: docs/09, section 6)"
+	else
+		install -m 0644 /etc/ssl/certs/ca-certificates.crt /etc/unbound/ca-bundle.pem
+		sv restart unbound
+	fi
+fi
+
+echo "==> old kernels"
+command -v vkpurge >/dev/null && vkpurge list | sed 's/^/  can be removed: /'
+echo "  remove them and other leftovers (with a backup and a check): doas vh-deep-clean"
+
+echo "==> processes using old libraries (restart them or reboot)"
+for m in /proc/[0-9]*/maps; do
+	grep -q ' (deleted)$' "$m" 2>/dev/null || continue
+	pid=${m#/proc/}; pid=${pid%/maps}
+	printf '  %s %s\n' "$pid" "$(tr '\0' ' ' < /proc/$pid/cmdline | cut -c1-60)"
+done | sort -k2 -u
+if [ "$kver_updated" = 1 ]; then
+	echo "==> new kernel: reboot right away and do not leave the laptop unattended until then"
+	[ -e /etc/vh/optional/tpm2-totp ] && echo "    at boot the TOTP code will not match once; that is expected (docs/13, tpm2-totp)"
+fi
+exit 0

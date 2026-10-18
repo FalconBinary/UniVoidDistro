@@ -1,0 +1,52 @@
+#!/bin/bash
+# void-hardperf-light: CA pinning for DoT (unbound) and NTS (chrony): docs/13, section dns-pin.
+# Instead of the ~150 root CAs of the system store: only the roots of the chosen providers.
+# Fail-closed: when a provider changes its CA, DNS/time stop working until the admin
+# refreshes the pin (this same script) after checking the fingerprints through a second channel.
+. "$(dirname "$0")/../lib.sh"
+FETCH=/usr/local/libexec/vh/pin-fetch
+install -m 0755 "$MOD_DIR/pin-fetch" "$FETCH"
+as() { local u=$1; shift; setpriv --reuid="$u" --regid="$u" --clear-groups --no-new-privs -- "$@"; }
+
+say "DoT: CA roots of the unbound upstreams (connecting as _unbound on 853)"
+tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
+chmod 0755 "$tmp"
+for u in $(sed -n 's/^[[:space:]]*forward-addr:[[:space:]]*\([^[:space:]]*\).*/\1/p' /etc/unbound/unbound.conf); do
+	ip=${u%%@*} name=${u##*#}
+	as _unbound "$FETCH" "$ip" 853 "$name" > "$tmp/dot-$ip.pem" || die "could not fetch the chain of $u"
+done
+cat "$tmp"/dot-*.pem | awk '/BEGIN/{c=$0; next} {c=c"\n"$0} /END/{if(!seen[c]++) print c}' > "$tmp/dot.pem"
+
+say "NTS: CA roots of the chrony servers (connecting as chrony on 4460)"
+for s in $(awk '$1 == "server" && / nts/ {print $2}' /etc/chrony.conf); do
+	as chrony "$FETCH" "$s" 4460 "$s" ntske/1 > "$tmp/nts-$s.pem" || die "could not fetch the chain of $s"
+done
+cat "$tmp"/nts-*.pem | awk '/BEGIN/{c=$0; next} {c=c"\n"$0} /END/{if(!seen[c]++) print c}' > "$tmp/nts.pem"
+
+cat <<EOT
+
+Above are the SHA256 fingerprints of the root certificates. Check them through a second
+channel, NOT this network: from another device on another network open the server's
+certificate (browser -> padlock -> details, or crt.sh) and compare the root fingerprint.
+A substitution here means a permanent MITM.
+EOT
+confirm_exact pin "Write the pin for unbound and chrony?"
+
+install -m 0644 "$tmp/dot.pem" /etc/unbound/ca-pin.pem
+save_orig /etc/unbound/unbound.conf
+sed -i 's|^\([[:space:]]*tls-cert-bundle:\).*|\1 "/etc/unbound/ca-pin.pem"|' /etc/unbound/unbound.conf
+unbound-checkconf /etc/unbound/unbound.conf >/dev/null || { restore_orig /etc/unbound/unbound.conf; die "unbound.conf has errors"; }
+
+install -d -m 0755 /etc/chrony
+install -m 0644 "$tmp/nts.pem" /etc/chrony/nts-pin.pem
+save_orig /etc/chrony.conf
+grep -q '^ntstrustedcerts ' /etc/chrony.conf || printf '%s\n' \
+	"# NTS CA pinning (optional/dns-pin): only these roots, the system store is not used" \
+	"ntstrustedcerts /etc/chrony/nts-pin.pem" "nosystemcert" >> /etc/chrony.conf
+
+sv restart unbound chronyd >/dev/null
+sleep 3
+if getent hosts voidlinux.org >/dev/null; then ok "DNS over DoT with the pin works"
+else warn "DNS does not answer with the pin: check with doas svlogtail daemon | grep unbound"; fi
+mark_enabled
+echo "Failure check: temporarily put a foreign name after \"#\" in forward-addr; resolving must fail."

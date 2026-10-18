@@ -1,0 +1,41 @@
+# The container tests on x86_64: the Zig tools (tests/zig/run.sh) and thor (tests/thor/run.sh)
+# in throwaway Void containers. Long: it builds xbps with the thor patch from source.
+name: docker-tests
+on:
+  push:
+    branches: [main]
+    paths: ["zig/**", "thor/**", "tests/zig/**", "tests/thor/**", "tests/docker/**", ".github/**"]
+  pull_request:
+    paths: ["zig/**", "thor/**", "tests/zig/**", "tests/thor/**", "tests/docker/**", ".github/**"]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  zig-tools:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-zig
+      - name: tools in a Void container
+        run: sh tests/zig/run.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: zig-tests-logs
+          path: build/*.log
+          if-no-files-found: ignore
+  thor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-zig
+      - name: thor in a Void container
+        run: sh tests/thor/run.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: thor-tests-logs
+          path: build/*.log
+          if-no-files-found: ignore

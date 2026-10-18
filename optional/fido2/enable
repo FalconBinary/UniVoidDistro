@@ -1,0 +1,96 @@
+#!/bin/bash
+# void-hardperf-light: FIDO2 second factor (pam-u2f) for login, doas and swaylock (docs/13, fido2).
+#   doas /root/vh/optional/fido2/enable
+# Password AND key (required; sufficient is forbidden, the key would replace the password).
+# The key's PIN is required for login and doas (a key that left with the laptop is useless
+# without the PIN); for swaylock only a touch, so that frequent unlocking stays quick.
+# TWO keys per person are needed (main and backup): losing the only one = login only
+# through the live USB. Before enabling keep a root shell open on tty2 (doas -s).
+. "$(dirname "$0")/../lib.sh"
+ORIGIN=pam://void-hardened
+U2F="pam_u2f.so authfile=/etc/u2f_mappings cue origin=$ORIGIN appid=$ORIGIN"
+
+say "packages: pam-u2f (pulls in libfido2)"
+xbps-install -Sy pam-u2f
+
+say "group fido: hidraw access only to your own keys (without elogind the uaccess tag does not work)"
+getent group fido >/dev/null || groupadd -r fido
+usermod -aG fido "$VH_USER"
+usermod -aG fido "$VH_ADMIN"
+
+# Find FIDO hidraw devices: the report descriptor has usage page 0xF1D0 (bytes 06 D0 F1)
+find_keys() {
+	for h in /sys/class/hidraw/hidraw*; do
+		[ -r "$h/device/report_descriptor" ] || continue
+		od -An -tx1 -v "$h/device/report_descriptor" | tr -d ' \n' | grep -q '06d0f1' || continue
+		usb=$(readlink -f "$h/device/../..")
+		echo "$(cat "$usb/idVendor") $(cat "$usb/idProduct") $(cat "$usb/serial" 2>/dev/null || echo -) ${h##*/}"
+	done
+}
+rules=/etc/udev/rules.d/97-vh-fido.rules
+echo "# void-hardperf-light: hidraw of your own FIDO2 keys for group fido (optional/fido2)" > "$rules.new"
+for who in "$VH_ADMIN" "$VH_USER"; do
+	for n in main backup; do
+		printf '\nInsert the %s key for %s and press Enter... ' "$n" "$who"
+		read -r _
+		sleep 1
+		k=$(find_keys | head -1)
+		[ -n "$k" ] || die "no FIDO key found (udevadm monitor shows whether the kernel sees it)"
+		set -- $k
+		grep -q "ATTRS{serial}==\"$3\"" "$rules.new" || printf '%s\n' \
+			"SUBSYSTEM==\"hidraw\", ATTRS{idVendor}==\"$1\", ATTRS{idProduct}==\"$2\", ATTRS{serial}==\"$3\", GROUP=\"fido\", MODE=\"0660\"" >> "$rules.new"
+		chgrp fido "/dev/$4"; chmod 0660 "/dev/$4"
+		echo "Registration: enter the key's PIN and touch it"
+		cred=$(setpriv --reuid="$who" --regid="$(id -g "$who")" --init-groups -- pamu2fcfg -n -N -o "$ORIGIN" -i "$ORIGIN") \
+			|| die "pamu2fcfg did not register the key"
+		if grep -q "^$who:" /etc/u2f_mappings 2>/dev/null; then
+			sed -i "s|^\($who:.*\)$|\1:$cred|" /etc/u2f_mappings
+		else
+			echo "$who:$cred" >> /etc/u2f_mappings
+		fi
+		echo "  remove the key"
+	done
+done
+mv "$rules.new" "$rules"
+chown root:root /etc/u2f_mappings; chmod 0644 /etc/u2f_mappings
+udevadm control --reload
+
+say "PAM: login and doas need password AND key with PIN; swaylock password AND touch"
+for f in /etc/pam.d/system-login /etc/pam.d/doas /etc/pam.d/swaylock; do save_orig "$f"; done
+# the base layer's auth stack (three consecutive lines) -> password AND key with PIN
+for f in /etc/pam.d/system-login /etc/pam.d/doas; do
+	awk -v u2f="$U2F" '
+		{ l[NR] = $0 }
+		END {
+			for (i = 1; i <= NR; i++) {
+				if (i + 2 <= NR && l[i] ~ /^auth[ \t]+required[ \t]+pam_faillock\.so preauth$/ &&
+				    l[i + 1] ~ /^auth[ \t]+sufficient[ \t]+pam_unix\.so[ \t]+try_first_pass$/ &&
+				    l[i + 2] ~ /^auth[ \t]+\[default=die\][ \t]+pam_faillock\.so authfail$/) {
+					print "auth       required                pam_faillock.so preauth"
+					print "auth       [success=1 default=bad] pam_unix.so     try_first_pass"
+					print "auth       [default=die]           pam_faillock.so authfail"
+					print "auth       [success=1 default=bad] " u2f " pinverification=1"
+					print "auth       [default=die]           pam_faillock.so authfail"
+					print "auth       required                pam_permit.so"
+					i += 2; found = 1
+				} else print l[i]
+			}
+			exit !found
+		}' "$f" > "$f.vhnew" || { rm -f "$f.vhnew"; die "$f: the base layer's auth stack was not found; edit by hand (docs/13)"; }
+	cat "$f.vhnew" > "$f" && rm -f "$f.vhnew"
+done
+if ! grep -q pam_u2f.so /etc/pam.d/swaylock; then
+	printf '# second factor: a touch of the key without PIN (optional/fido2)\nauth       required   %s pinverification=0\n' \
+		"$U2F" >> /etc/pam.d/swaylock
+fi
+mark_enabled
+cat <<EOT
+
+CHECK WITHOUT CLOSING THIS SHELL:
+  1. on tty1 log in as $VH_USER: password -> PIN -> touch;
+  2. key without password and password without key: refused;
+  3. the backup key works the same way;
+  4. if anything is wrong: doas /root/vh/optional/fido2/disable
+YubiKey: disable the OTP interface (it types like a keyboard):
+  xbps-install yubikey-manager && ykman config usb --disable OTP
+EOT

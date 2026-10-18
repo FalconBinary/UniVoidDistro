@@ -1,0 +1,16 @@
+# void-hardperf-light: time over NTS only, authenticated NTP (docs/06, docs/07).
+@VH_CHRONY_SERVERS@
+# at least two agreeing sources; nothing unauthenticated is accepted
+minsources 2
+authselectmode require
+# keep the NTS keys and cookies across restarts: start without a new NTS-KE
+ntsdumpdir /var/lib/chrony
+driftfile /var/lib/chrony/drift
+# fast start: step the clock in the first three updates if the offset is > 1 s
+makestep 1.0 3
+# after the first sync, accept no jumps larger than 100 s (and do not exit)
+maxchange 100 1 -1
+rtcsync
+# not a server, and no network command port (chronyc works through the unix socket)
+port 0
+cmdport 0

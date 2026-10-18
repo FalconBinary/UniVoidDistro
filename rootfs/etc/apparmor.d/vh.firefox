@@ -1,0 +1,68 @@
+# void-hardperf-light: Firefox inside the bwrap sandbox (docs/08).
+# The profile attaches to /usr/lib/firefox/firefox by its path inside the sandbox.
+# attach_disconnected: objects outside the sandbox root are "disconnected" paths.
+# File visibility is already limited by bwrap; here comes what bwrap cannot do:
+# network families, capabilities, mounts, execution from writable places.
+abi <abi/4.0>,
+include <tunables/global>
+
+profile vh.firefox /usr/lib/firefox/firefox flags=(attach_disconnected) {
+  include <abstractions/base>
+
+  # --- files (inside the sandbox)
+  / r,
+  /** r,
+  /usr/lib/** mr,
+  /usr/lib/firefox/** mrix,
+  /home/*/ rw,
+  # l: fontconfig and the Firefox profile create lock files through link() (found on the bench)
+  /home/*/** rwkl,
+  /tmp/** rwkl,
+  /dev/shm/** rwk,
+  /run/user/*/** rwk,
+  /dev/dri/* rw,
+  /dev/null rw,
+  /dev/zero rw,
+  /dev/urandom r,
+  /dev/random r,
+  /proc/** r,
+  /proc/*/oom_score_adj rw,
+  /sys/** r,
+  # execute and map as code: only the package and library files, never anything from
+  # writable places (bwrap tmpfs mounts have no noexec; this is the second layer)
+  deny /tmp/** mx,
+  deny /dev/shm/** mx,
+  deny /home/** mx,
+  deny /run/** mx,
+  deny /usr/bin/** x,
+  deny /usr/libexec/** x,
+
+  # --- network: inet and unix only; netlink route to follow network changes.
+  # AF_ALG (modules loaded for iwd), AF_PACKET and the rest are denied.
+  network inet stream,
+  network inet dgram,
+  network inet6 stream,
+  network inet6 dgram,
+  network unix,
+  network netlink raw,
+  deny network alg,
+  deny network packet,
+  deny network bluetooth,
+  deny network key,
+  deny network vsock,
+  deny network xdp,
+  unix,
+
+  # --- no capabilities, mounts or new user namespaces
+  deny capability,
+  deny mount,
+  deny umount,
+  deny pivot_root,
+  deny userns,
+
+  # --- Firefox processes among themselves
+  signal (send, receive) peer=vh.firefox,
+  ptrace (read, trace) peer=vh.firefox,
+
+  include if exists <local/vh.firefox>
+}

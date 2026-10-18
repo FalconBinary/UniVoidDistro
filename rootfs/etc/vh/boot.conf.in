@@ -1,0 +1,9 @@
+# vh-limine-update settings (docs/03).
+# How many UKIs to keep on the ESP: the current one and one previous. Older ones are
+# deleted; deletion does not revoke a signature, but it narrows the rollback choice (docs/09).
+KEEP=2
+TIMEOUT=@VH_LIMINE_TIMEOUT@
+# Secure Boot signing key on separate media (optional/sb-offline-keys): yes -- signing is
+# impossible without the media attached, and before signing the UKI is checked against the
+# reference values from the same media (vh-uki-verify).
+KEYS_OFFLINE=no

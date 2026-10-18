@@ -1,0 +1,11 @@
+#!/bin/sh
+# void-hardperf-light: start the browser from the session (hotkey, launcher).
+#   vh-browse            -- trusted profile (logins, bookmarks, GPU)
+#   vh-browse untrusted  -- throwaway profile: no JIT, WebGL or GPU, remembers nothing
+# The browser runs as a separate user inside bwrap; it is started through a narrow
+# passwordless doas rule (docs/08). Links from other programs are not passed here: the
+# doas rule accepts no arbitrary arguments.
+case ${1:-trusted} in
+	trusted|untrusted) exec doas /usr/local/sbin/vh-browser "${1:-trusted}" ;;
+	*) echo "usage: vh-browse [untrusted]" >&2; exit 2 ;;
+esac

@@ -1,0 +1,5 @@
+# void-hardperf-light: outgoing network of root and people, STRICT mode (optional/strict-net, docs/13).
+# root: HTTPS only to the xbps mirror addresses and only for a while (vh-net xbps; vh-update does it itself)
+meta skuid "root" ip daddr @root_https tcp dport 443 accept
+# the everyday user and the admin: no network. Temporarily: doas vh-net allow NAME MINUTES
+meta skuid @people_tmp accept

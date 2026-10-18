@@ -1,0 +1,25 @@
+#!/bin/bash
+# void-hardperf-light: strict network mode (docs/13, section strict-net).
+# The everyday user and the admin have no network and no DNS; root reaches the xbps mirrors
+# only during an update; temporary permissions come from vh-net (set elements with a timeout).
+. "$(dirname "$0")/../lib.sh"
+say "strict network mode"
+install -m 0755 "$MOD_DIR/vh-net" /usr/local/sbin/vh-net
+save_orig /etc/vh/nft/people.nft
+save_orig /etc/vh/nft/lo-dns.nft
+render "$MOD_DIR/people.nft.in" /etc/vh/nft/people.nft
+render "$MOD_DIR/lo-dns.nft.in" /etc/vh/nft/lo-dns.nft
+if ! reload_nft; then
+	restore_orig /etc/vh/nft/people.nft
+	restore_orig /etc/vh/nft/lo-dns.nft
+	reload_nft
+	die "the nftables ruleset failed the check: the base ruleset is back"
+fi
+mark_enabled
+cat <<EOT
+Check:
+  as $VH_USER:   getent hosts voidlinux.org   -> fails (and the drop counter grows)
+  as root:       doas vh-net status
+  updating:      doas vh-update               (opens the mirrors itself for 30 min)
+  temporary net: doas vh-net allow $VH_ADMIN 10
+EOT

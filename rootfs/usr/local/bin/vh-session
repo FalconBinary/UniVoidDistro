@@ -1,0 +1,32 @@
+#!/bin/sh
+# void-hardperf-light: the everyday user's graphical session (docs/08, docs/12).
+# Started with exec from the login shell on tty1 (/etc/profile.d/zz-vh.sh).
+set -u
+if [ -z "${XDG_RUNTIME_DIR:-}" ] || [ ! -d "$XDG_RUNTIME_DIR" ]; then
+	echo "vh-session: no XDG_RUNTIME_DIR (pam_dumb_runtime_dir)" >&2
+	sleep 5
+	exit 1
+fi
+# XDG_CURRENT_DESKTOP and WAYLAND_DISPLAY are set for session programs by the RefursWM launcher
+export XDG_SESSION_TYPE=wayland LIBSEAT_BACKEND=seatd
+# Firefox and GTK: Wayland only; Xwayland is not installed
+export MOZ_ENABLE_WAYLAND=1 GDK_BACKEND=wayland
+cd "$HOME" || exit 1
+
+log=$XDG_RUNTIME_DIR/refurswm.log
+/usr/local/bin/refurswm 2>"$log"
+# A GPU without OpenGL (VM: virtio-gpu without virgl, bochs, qxl; simpledrm): EGL does not
+# come up, and Mesa's software GL would open /dev/dri/card0 directly, bypassing seatd, and
+# get EACCES. Then: the pixman renderer (CPU). If WLR_RENDERER is set, leave it alone.
+if [ -z "${WLR_RENDERER:-}" ] && grep -q '^refurswm: startup failed: Renderer' "$log"; then
+	WLR_RENDERER=pixman /usr/local/bin/refurswm 2>>"$log"
+fi
+
+# The session is over (RefursWM exited or crashed): no user process survives it, neither a
+# daemon detached with setsid nor the browser's doas parent (its death ends the whole
+# sandbox: bwrap --die-with-parent). kill -1 spares this process itself; afterwards the
+# login prompt comes back.
+kill -KILL -1 2>/dev/null
+# dumb_runtime_dir does not remove /run/user/UID on logout: cleaned here
+find "$XDG_RUNTIME_DIR" -mindepth 1 -delete 2>/dev/null
+exit 0

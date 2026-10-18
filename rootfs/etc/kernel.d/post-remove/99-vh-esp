@@ -1,0 +1,6 @@
+#!/bin/sh
+# Unmount the ESP if the 05-vh-esp hook mounted it.
+[ -e /run/vh-esp-by-hook ] || exit 0
+rm -f /run/vh-esp-by-hook
+sync
+umount /boot/efi

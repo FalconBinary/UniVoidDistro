@@ -1,0 +1,39 @@
+#!/bin/sh
+# void-hardperf-light: apply a user's config draft (optional/home-lockdown, docs/12).
+#   doas vh-apply-config [USER]
+# The user edits copies in ~/config-drafts/<path from $HOME>, for example
+# ~/config-drafts/.config/foot/foot.ini. The admin (on tty2, after the user has left the
+# session) sees the diff and the lines that RUN programs, and confirms every file.
+# The file is installed owned by root, read-only: malware with the user's rights cannot
+# write its autostart command into it.
+set -eu
+PATH=/usr/bin
+[ "$(id -u)" = 0 ] || { echo "run: doas vh-apply-config" >&2; exit 1; }
+. /etc/vh/vh.env
+u=${1:-$VH_USER}
+h=$(getent passwd "$u" | cut -d: -f6)
+d=$h/config-drafts
+[ -d "$d" ] || { echo "no $d"; exit 0; }
+find "$d" -type f ! -name '*.orig' | while read -r f; do
+	rel=${f#"$d"/}
+	case $rel in
+		.config/*|.bashrc|.bash_profile|.profile|.inputrc) ;;
+		*) echo "skipping $rel: only .config/*, .bashrc, .bash_profile, .profile, .inputrc are applied"; continue ;;
+	esac
+	case $rel in *..*) echo "skipping $rel: \"..\" in the path"; continue ;; esac
+	[ -L "$f" ] && { echo "skipping $rel: symlink"; continue; }
+	dst=$h/$rel
+	echo "=================== $rel"
+	if [ -e "$dst" ]; then diff -u "$dst" "$f" || true; else cat "$f"; fi
+	echo "--- lines that run programs (check every one):"
+	grep -nE 'exec|spawn|shell|script|command|fsmonitor|hooksPath|pager|LESSOPEN|PROMPT_COMMAND|trap|alias|source|^\s*\.' "$f" || echo "    none"
+	printf 'Apply %s? [y/N] ' "$rel"
+	read -r a < /dev/tty
+	case $a in
+		y|Y)
+			install -d -o root -g root -m 0755 "$(dirname "$dst")"
+			install -o root -g root -m 0644 "$f" "$dst"
+			echo "applied" ;;
+		*) echo "skipped" ;;
+	esac
+done

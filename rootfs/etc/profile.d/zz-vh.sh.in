@@ -1,0 +1,20 @@
+# void-hardperf-light: login environment (docs/05, docs/12). Read by login shells.
+umask 077
+# python3 does not run .pth and usercustomize.py from ~/.local (a persistence point)
+export PYTHONNOUSERSITE=1
+# less: no shell escape, editor or history file (viewing untrusted text)
+export LESSSECURE=1 LESSHISTFILE=-
+
+if [ "$(id -un)" = "@VH_ADMIN@" ]; then
+	# The admin session closes after 10 minutes idle at the prompt, and on logout none of
+	# its processes survive (including nohup/setsid ones).
+	readonly TMOUT=600
+	export TMOUT
+	trap 'kill -KILL -1' EXIT
+fi
+
+# The everyday user on tty1 goes straight into the graphical session; after leaving
+# RefursWM the login prompt comes back, not a shell.
+if [ "$(id -un)" = "@VH_USER@" ] && [ "$(tty)" = /dev/tty1 ] && [ -z "${WAYLAND_DISPLAY:-}" ]; then
+	exec /usr/local/bin/vh-session
+fi

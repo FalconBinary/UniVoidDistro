@@ -1,0 +1,10 @@
+# vim: set ts=4 sw=4 et:
+# void-hardperf-light: directories in /run and the power profile at boot.
+# /run/vh-sandbox holds the sockets through which the browser sandbox gets Wayland and
+# audio (docs/08). Owner: the everyday user, group: the browser user. setgid (2750): the
+# sockets that vh-wlfilter and pipewire-pulse create as the user get the browser's group,
+# otherwise the browser cannot connect (the user's group is foreign to it, and a group one
+# is not a member of cannot be chosen).
+install -d -m 2750 -o @VH_USER@ -g @VH_BROWSER_USER@ /run/vh-sandbox
+# The "AC / battery" profile (later switched by a udev rule).
+/usr/local/sbin/vh-power boot

@@ -1,0 +1,6 @@
+# void-hardperf-light: USB authorisation (optional/usb-auth, docs/13). Decisions: vh-usb-udev.
+# Root hubs: interfaces of new devices are not authorised automatically; even an
+# authorised USB stick gets no keyboard driver for its HID interface.
+ACTION=="add", SUBSYSTEM=="usb", DEVTYPE=="usb_device", ATTR{interface_authorized_default}=="?*", ATTR{interface_authorized_default}="0"
+ACTION=="add", SUBSYSTEM=="usb", DEVTYPE=="usb_device", ATTR{authorized}=="0", RUN+="/usr/local/libexec/vh/vh-usb-udev device %p"
+ACTION=="add", SUBSYSTEM=="usb", DEVTYPE=="usb_interface", ATTR{authorized}=="0", RUN+="/usr/local/libexec/vh/vh-usb-udev interface %p"

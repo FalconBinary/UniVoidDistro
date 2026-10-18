@@ -1,0 +1,2 @@
+# void-hardperf-light: chronyd with its own seccomp filter (-F 1, man chronyd).
+OPTS="-F 1"

@@ -1,0 +1,22 @@
+#!/bin/bash
+# void-hardperf-light: the everyday user's session in an empty netns (docs/13, session-netns).
+. "$(dirname "$0")/../lib.sh"
+install -m 0755 "$MOD_DIR/vh-login-netns" /usr/local/sbin/vh-login-netns
+conf=/etc/sv/agetty-tty1/conf
+save_orig "$conf"
+if grep -q '^GETTY_ARGS=' "$conf" 2>/dev/null; then
+	grep -q 'login-program' "$conf" || sed -i 's|^GETTY_ARGS="\(.*\)"|GETTY_ARGS="\1 --login-program /usr/local/sbin/vh-login-netns"|' "$conf"
+else
+	echo 'GETTY_ARGS="--noclear --login-program /usr/local/sbin/vh-login-netns"' >> "$conf"
+fi
+grep -n GETTY_ARGS "$conf"
+mark_enabled
+cat <<EOT
+Takes effect from the next login on tty1 (log out of RefursWM).
+Check from a terminal in the session:
+  ip -br link                -> only lo
+  getent hosts voidlinux.org -> fails without a single packet on the network
+  Super+B                    -> the browser works (in init's network)
+The price: the user's programs have no network at all (git, ssh, pip), only through the
+admin or by disabling the module temporarily.
+EOT

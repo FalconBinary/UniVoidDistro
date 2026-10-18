@@ -1,0 +1,16 @@
+# void-hardperf-light: opendoas (docs/05, docs/12). Mode 0400 root:root.
+# Syntax check: doas -C /etc/doas.conf
+#
+# The admin: any command, password every time (no persist: no window in which any process
+# of the admin escalates without a password).
+permit :wheel
+#
+# The everyday user: narrow actions only. "args" with no values forbids any arguments;
+# with a value, exactly that argument. The command path must match literally (call it
+# with the full path).
+permit nopass @VH_USER@ as root cmd /usr/local/sbin/vh-browser args trusted
+permit nopass @VH_USER@ as root cmd /usr/local/sbin/vh-browser args untrusted
+permit nopass @VH_USER@ as root cmd /usr/bin/poweroff args
+permit nopass @VH_USER@ as root cmd /usr/bin/reboot args
+permit nopass @VH_USER@ as root cmd /usr/local/sbin/vh-bluetooth args on
+permit nopass @VH_USER@ as root cmd /usr/local/sbin/vh-bluetooth args off

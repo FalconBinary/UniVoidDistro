@@ -1,0 +1,4 @@
+#!/bin/sh
+# void-hardperf-light: lid and power button (docs/05, docs/12). Settings: /etc/vh/acpi.conf.
+exec 2>&1
+exec /usr/local/sbin/vh-acpid

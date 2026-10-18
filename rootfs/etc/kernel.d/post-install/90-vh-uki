@@ -1,0 +1,4 @@
+#!/bin/sh
+# Kernel hook (after 20-initramfs): sign the new UKI, rebuild limine.conf with BLAKE2B
+# hashes, enroll the config hash into Limine and sign Limine (docs/03).
+exec /usr/local/sbin/vh-limine-update --new "$2"

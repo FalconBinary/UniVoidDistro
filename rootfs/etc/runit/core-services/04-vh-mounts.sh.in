@@ -1,0 +1,13 @@
+# vim: set ts=4 sw=4 et:
+# void-hardperf-light. runit mounts /proc, /dev, /dev/shm and /run in 00-pseudofs.sh,
+# before fstab is read, and "mount -a" skips them. So the options are set by remounting
+# here (docs/05). core-services files are executed with ".": return instead of exit,
+# no set -e.
+msg "vh: pseudo-filesystem mount options..."
+_vh_gid=$(getent group proc | cut -d: -f3)
+# hidepid=invisible: a user does not see other users' processes (except group proc, the admin).
+mount -o remount,nosuid,nodev,noexec,hidepid=invisible${_vh_gid:+,gid=$_vh_gid} /proc
+mount -o remount,nosuid,nodev,noexec,size=@VH_SHM_SIZE@ /dev/shm
+mount -o remount,nosuid,nodev,noexec /run
+mount -o remount,nosuid,noexec /dev
+unset _vh_gid

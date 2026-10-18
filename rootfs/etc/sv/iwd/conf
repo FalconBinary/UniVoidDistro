@@ -1,0 +1,5 @@
+# Sourced by the iwd run script. iwd needs the system bus: wait up to 5 s for it instead
+# of failing (runsv would restart us only a second later).
+sv -w 5 start dbus >/dev/null 2>&1 || exit 1
+# fail-closed: without firewall rules the network is not brought up
+nft list table inet vh >/dev/null 2>&1 || nft list table inet vh_failsafe >/dev/null 2>&1 || exit 1

@@ -1,0 +1,3 @@
+#!/bin/sh
+# Kernel removal hook: dracut-uefi deleted the UKI; drop it from limine.conf.
+exec /usr/local/sbin/vh-limine-update

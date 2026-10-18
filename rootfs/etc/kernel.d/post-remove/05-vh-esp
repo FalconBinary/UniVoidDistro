@@ -1,0 +1,8 @@
+#!/bin/sh
+# Kernel hook: mount the ESP before dracut-uefi (20-initramfs) writes the UKI.
+# The ESP is noauto in fstab: without this hook the UKI would silently land on the root
+# file system (boot/efi is a plain directory) and the bootloader would keep booting the
+# old kernel. xbps arguments: $1 package, $2 kernel version.
+mountpoint -q /boot/efi && exit 0
+mount /boot/efi || { echo "vh: could not mount the ESP (/boot/efi)" >&2; exit 1; }
+: > /run/vh-esp-by-hook

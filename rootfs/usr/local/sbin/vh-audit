@@ -1,0 +1,35 @@
+#!/bin/sh
+# void-hardperf-light: checklist with expected values (docs/10-audit.md).
+#   doas vh-audit                -- every check
+#   doas vh-audit AREA [AREA...] -- only the named areas (file names in vh-audit.d/ without the number)
+# Every line: [ ok ] / [FAIL] / [ ?? ] (could not check) -- what and why.
+#
+# The checks live in /usr/local/libexec/vh/vh-audit.d/NN-area.sh, one file per area and
+# sourced in order, so that a component adds its own checks with a new file instead of
+# editing this script. A file sees the helpers below and the variables of /etc/vh/vh.env.
+# The last line, "VH_AUDIT ok=N fail=N unchecked=N", is the machine-readable summary.
+set -u
+PATH=/usr/bin
+[ "$(id -u)" = 0 ] || { echo "run: doas vh-audit" >&2; exit 1; }
+. /etc/vh/vh.env
+pass=0 fail=0 unk=0
+ok()   { pass=$((pass+1)); printf '[ ok ] %s\n' "$*"; }
+bad()  { fail=$((fail+1)); printf '[FAIL] %s\n' "$*"; }
+unk()  { unk=$((unk+1));  printf '[ ?? ] %s\n' "$*"; }
+chk()  { if [ "$2" = "$3" ]; then ok "$1 = $3"; else bad "$1 = $2 (expected $3)"; fi; }
+sec()  { printf '\n== %s\n' "$*"; }
+
+AUDIT_D=/usr/local/libexec/vh/vh-audit.d
+[ -d "$AUDIT_D" ] || { echo "vh-audit: no $AUDIT_D" >&2; exit 1; }
+for f in "$AUDIT_D"/[0-9][0-9]-*.sh; do
+	[ -r "$f" ] || continue
+	area=${f##*/}; area=${area%.sh}; area=${area#[0-9][0-9]-}
+	if [ $# -gt 0 ]; then
+		case " $* " in *" $area "*) ;; *) continue ;; esac
+	fi
+	. "$f"
+done
+
+printf '\nResult: ok %d, FAIL %d, unchecked %d\n' "$pass" "$fail" "$unk"
+printf 'VH_AUDIT ok=%d fail=%d unchecked=%d\n' "$pass" "$fail" "$unk"
+[ "$fail" = 0 ]

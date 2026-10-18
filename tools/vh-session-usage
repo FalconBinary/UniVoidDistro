@@ -1,0 +1,36 @@
+#!/bin/sh
+# Memory and CPU of a user's session at idle (docs/11; the bench runs it in check.py desktop).
+#   doas sh /root/vh/tools/vh-session-usage USER [SECS]
+# For every process of USER: PSS and RSS (smaps_rollup), CPU time and wakeups (context
+# switches) over SECS seconds of idle. Run as root: the compositor and the bar are
+# non-dumpable, only root reads their /proc. Plus the system total: free -m and the process count.
+u=${1:?user}
+secs=${2:-60}
+hz=$(getconf CLK_TCK)
+snap() {
+	for p in $(pgrep -u "$u"); do
+		[ -r /proc/$p/stat ] || continue
+		# the comm field may contain spaces: take everything after the last ')'
+		t=$(sed 's/.*) //' /proc/$p/stat | awk '{print $12 + $13}')
+		cs=$(awk '/^(voluntary|nonvoluntary)_ctxt_switches/ {n += $2} END {print n}' /proc/$p/status)
+		echo "$p $(cat /proc/$p/comm | tr ' ' '_') $t $cs"
+	done
+}
+snap > /tmp/su.a
+sleep "$secs"
+snap > /tmp/su.b
+echo "process pss_kb rss_kb cpu_ms_per_min wakeups_per_min"
+while read -r p name t1 c1; do
+	b=$(awk -v p="$p" '$1 == p {print $3, $4}' /tmp/su.b)
+	[ -n "$b" ] || continue
+	set -- $b
+	pss=$(awk '/^Pss:/ {print $2}' /proc/$p/smaps_rollup 2>/dev/null)
+	rss=$(awk '/^Rss:/ {print $2}' /proc/$p/smaps_rollup 2>/dev/null)
+	cpu=$(( ($1 - t1) * 1000 / hz * 60 / secs ))
+	wk=$(( ($2 - c1) * 60 / secs ))
+	echo "$name ${pss:-?} ${rss:-?} $cpu $wk"
+done < /tmp/su.a | sort -k2 -n -r | awk '{print; if ($2 ~ /^[0-9]+$/) {pss += $2}; cpu += $4; wk += $5}
+	END {printf "TOTAL %d 0 %d %d\n", pss, cpu, wk}'
+echo "free -m:"; free -m | head -2
+echo "processes: $(ls -d /proc/[0-9]* | wc -l)"
+rm -f /tmp/su.a /tmp/su.b

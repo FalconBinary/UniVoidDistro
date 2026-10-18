@@ -1,0 +1,11 @@
+#!/bin/sh
+# void-hardperf-light: the login program for the everyday user's tty (optional/session-netns).
+# agetty runs it as root instead of login: a new empty network namespace (lo only), then the
+# normal login. The whole session (RefursWM, terminals, programs) lives without network at
+# the kernel level: no interfaces, no 127.0.0.1:53, no abstract sockets of the browser.
+# Wayland, PipeWire and D-Bus (Wi-Fi menu/iwd) work through file-system sockets and are unaffected.
+# The browser reaches the network through its root launcher (nsenter into init's netns, docs/08).
+exec /usr/bin/unshare --net -- /bin/sh -c '
+	/usr/bin/ip link set lo up
+	/usr/bin/sysctl -qw net.mptcp.enabled=0
+	exec /usr/bin/login "$@"' vh-login-netns "$@"

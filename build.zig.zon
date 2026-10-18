@@ -1,0 +1,14 @@
+.{
+    .name = .void_hardperf_light,
+    .version = "0.0.0",
+    .fingerprint = 0xf94fed92cc69d8f5,
+    .minimum_zig_version = "0.17.0",
+    // one path dependency per track; the root build.zig lists the same names
+    .dependencies = .{
+        .tools = .{ .path = "zig" },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+    },
+}

@@ -1,0 +1,76 @@
+# void-hardperf-light: the RefursWM session under AppArmor (optional/session-apparmor, docs/13).
+# RefursWM itself and everything it starts are confined. The compositor and the bar already
+# sit in their own sandboxes (Landlock + seccomp, docs/08); this layer targets what the
+# everyday user's processes could do against their own session:
+#   - the seatd socket belongs to RefursWM only: applications cannot open the seat and get input;
+#   - the RefursLine bar has its own profile: it starts only its menus (the same binary),
+#     doas by narrow rules and the launcher's applications (they move into the apps profile);
+#   - no new user namespaces (the kernel-exploit class from a userns), no AF_ALG or
+#     AF_PACKET, no capabilities even from a SUID file that came back with an update.
+# RefursWM has no IPC socket; the bar protocol (refurs-shell) and the privileged protocols
+# go only to programs RefursWM itself opened a connection for (grants in its config.zig).
+# Transitions: doas and vh-open are Ux (their own root launchers with fixed arguments; the
+# environment is cleared), unix_chkpwd goes to the stock unix-chkpwd profile.
+abi <abi/4.0>,
+include <tunables/global>
+
+profile vh.refurswm /usr/local/bin/refurswm flags=(attach_disconnected @VH_AA_MODE@) {
+  /** rwlkm,
+  unix,
+  signal,
+  network unix,
+  network netlink raw,
+  deny network inet,
+  deny network inet6,
+  deny network alg,
+  deny network packet,
+  deny userns,
+  deny capability,
+
+  /usr/local/bin/refursline Cx -> panel,
+  /usr/bin/** Cx -> apps,
+  /usr/libexec/** Cx -> apps,
+  /usr/local/bin/vh-* Cx -> apps,
+
+  profile panel flags=(attach_disconnected @VH_AA_MODE@) {
+    /** rwlkm,
+    unix,
+    signal,
+    network unix,
+    network netlink raw,
+    network bluetooth raw,
+    deny network inet,
+    deny network inet6,
+    deny network alg,
+    deny network packet,
+    deny userns,
+    deny capability,
+    deny /run/seatd.sock rw,
+    # the menus are the same binary (execveat through an O_PATH descriptor of its own file)
+    /usr/local/bin/refursline ix,
+    /usr/bin/doas Ux,
+    /usr/bin/** Px -> vh.refurswm//apps,
+    /usr/libexec/** Px -> vh.refurswm//apps,
+    /usr/local/bin/vh-* Px -> vh.refurswm//apps,
+  }
+
+  profile apps flags=(attach_disconnected @VH_AA_MODE@) {
+    /** rwlkm,
+    /usr/** ix,
+    unix,
+    signal,
+    network unix,
+    network inet,
+    network inet6,
+    network netlink raw,
+    deny network alg,
+    deny network packet,
+    deny network bluetooth,
+    deny userns,
+    deny capability,
+    deny /run/seatd.sock rw,
+    /usr/bin/doas Ux,
+    /usr/bin/unix_chkpwd Px,
+    /usr/local/bin/vh-open Ux,
+  }
+}

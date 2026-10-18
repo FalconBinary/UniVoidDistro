@@ -1,0 +1,10 @@
+#!/bin/bash
+# void-hardperf-light: disable tpm2-totp (the secret in the TPM is deleted).
+. "$(dirname "$0")/../lib.sh"
+rm -f /etc/dracut.conf.d/20-vh-totp.conf /var/lib/vh/totp-generate /var/lib/vh/totp-reseal
+. /etc/vh/totp.conf 2>/dev/null || true
+tpm2-totp clean 2>/dev/null || warn "tpm2-totp clean failed (no secret?)"
+rm -f /etc/vh/totp.conf
+rm -rf /usr/lib/dracut/modules.d/90vhtotp
+rebuild_uki
+mark_disabled

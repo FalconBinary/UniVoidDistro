@@ -1,0 +1,3 @@
+# void-hardperf-light: the "AC / battery" profile without daemons (docs/11).
+# Only the fact of a change is taken from the event; the script reads the state from sysfs itself.
+SUBSYSTEM=="power_supply", ATTR{type}=="Mains", RUN+="/usr/local/sbin/vh-power"

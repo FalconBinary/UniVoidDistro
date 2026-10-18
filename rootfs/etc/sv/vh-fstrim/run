@@ -1,0 +1,15 @@
+#!/bin/sh
+# void-hardperf-light: weekly TRIM without cron or snooze (docs/11).
+# The timestamp lives on disk, so the interval survives reboots.
+exec 2>&1
+PATH=/usr/bin
+stamp=/var/lib/vh/fstrim.last
+mkdir -p /var/lib/vh
+while :; do
+	now=$(date +%s)
+	last=$(cat "$stamp" 2>/dev/null || echo 0)
+	if [ $((now - last)) -ge 604800 ]; then
+		ionice -c3 fstrim -v / && echo "$now" > "$stamp"
+	fi
+	sleep 3600
+done

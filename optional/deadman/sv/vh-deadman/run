@@ -1,0 +1,10 @@
+#!/bin/sh
+# void-hardperf-light: dead man's switch (optional/deadman, docs/13). Settings: /etc/vh/deadman.conf.
+exec 2>&1
+if [ ! -e /etc/vh/optional/deadman ]; then
+	# the module is disabled: the service removes itself at boot, not earlier, because a
+	# hardware watchdog with nowayout would otherwise go unpetted until the reboot
+	rm -f /var/service/vh-deadman
+	exec pause
+fi
+exec /usr/local/sbin/vh-deadman daemon

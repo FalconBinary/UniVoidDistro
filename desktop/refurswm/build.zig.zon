@@ -1,0 +1,25 @@
+.{
+    .name = .refurswm,
+    .version = "0.2.0",
+    .fingerprint = 0x79bae5f49d3cd45a,
+    .minimum_zig_version = "0.17.0",
+    // Pinned by content hash: zig fetch refuses anything else. Built from source by deps/*.zig.
+    .dependencies = .{
+        .wlroots = .{
+            .url = "https://gitlab.freedesktop.org/wlroots/wlroots/-/releases/0.20.2/downloads/wlroots-0.20.2.tar.gz",
+            .hash = "N-V-__8AAIb7NQDoTjgQP_dbe0tUZNqyt49v-lXOO1x49BiN",
+            .lazy = true,
+        },
+        .libinput = .{
+            .url = "https://gitlab.freedesktop.org/libinput/libinput/-/archive/1.31.3/libinput-1.31.3.tar.gz",
+            .hash = "N-V-__8AADy8bQAA_nwXyGmByrSMiYXLi5K5EGcuOLb0_5d-",
+            .lazy = true,
+        },
+        .seatd = .{
+            .url = "https://git.sr.ht/~kennylevinsen/seatd/archive/0.9.3.tar.gz",
+            .hash = "N-V-__8AABzIAgBtVJw8-iXNBZm8lhH1cu7_MxjipGv7yt0D",
+            .lazy = true,
+        },
+    },
+    .paths = .{ "build.zig", "build.zig.zon", "src", "deps", "protocol", "tests", "LICENSE", "README.md" },
+}

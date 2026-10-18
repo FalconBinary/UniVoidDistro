@@ -1,0 +1,57 @@
+# A full installation on the QEMU rig under KVM (tests/vm/vhvm.py install), then check.py base.
+# Hours long, so it runs on demand and weekly, not on every push. The live ISO is verified
+# against Void's signed sha256sum.txt (minisign key and ISO name pinned in tests/vm/void-live.pins).
+name: kvm-smoke
+on:
+  workflow_dispatch:
+    inputs:
+      step:
+        description: check.py step after the installation
+        default: base
+  schedule:
+    - cron: "17 4 * * 1"
+permissions:
+  contents: read
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+      - name: /dev/kvm for the runner user
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          test -r /dev/kvm && test -w /dev/kvm
+      - name: qemu, OVMF, swtpm, xorriso, minisign
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q qemu-system-x86 ovmf swtpm xorriso minisign
+      - uses: ./.github/actions/setup-zig
+      - name: the Void live ISO, verified
+        run: |
+          set -euo pipefail
+          . tests/vm/void-live.pins
+          mkdir -p iso && cd iso
+          curl -fsSL -o "$ISO" "$BASE/$ISO"
+          curl -fsSL -o sha256sum.txt "$BASE/sha256sum.txt"
+          curl -fsSL -o sha256sum.sig "$BASE/sha256sum.sig"
+          minisign -Vm sha256sum.txt -x sha256sum.sig -P "$KEY"
+          grep " $ISO\$" sha256sum.txt | sha256sum -c -
+      - name: the tools and thor for the VM (tests/zig/build.sh)
+        run: sh tests/zig/build.sh
+      - name: install
+        env:
+          VH_ACCEL: kvm
+        run: python3 tests/vm/vhvm.py install --iso "iso/$(. tests/vm/void-live.pins; echo $ISO)" --timeout 10800
+      - name: check
+        env:
+          VH_ACCEL: kvm
+        run: python3 tests/vm/check.py "${{ github.event.inputs.step || 'base' }}" --repo
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: kvm-smoke-serial-log
+          path: tests/vm/work/serial.log
+          if-no-files-found: ignore

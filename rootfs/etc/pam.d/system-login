@@ -1,0 +1,27 @@
+#%PAM-1.0
+# void-hardperf-light: TTY login. Differences from pam-base:
+#  - pam_faillock: 5 failed attempts in 15 min -> locked for 10 min (not forever: a
+#    physical attacker must not lock the owner out). Settings: security/faillock.conf.
+#  - the auth stack is spelled out: with "include system-auth" the authfail module would
+#    fire even after a correct password.
+#  - pam_access: every user gets only their own TTY (security/access.conf).
+
+auth       required   pam_shells.so
+auth       requisite  pam_nologin.so
+auth       required   pam_env.so
+auth       required   pam_faillock.so preauth
+auth       sufficient pam_unix.so     try_first_pass
+auth       [default=die] pam_faillock.so authfail
+
+account    required   pam_faillock.so
+account    required   pam_access.so
+account    required   pam_nologin.so
+account    include    system-auth
+
+password   include    system-auth
+
+session    optional   pam_loginuid.so
+session    include    system-auth
+session    optional   pam_motd.so          motd=/etc/motd
+-session   optional   pam_dumb_runtime_dir.so
+session    required   pam_env.so

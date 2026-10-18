@@ -1,0 +1,98 @@
+# void-hardperf-light: installer configuration.
+# Copy to vh.conf and edit:  cp vh.conf.example vh.conf
+# Shell format: NAME=value, no spaces around "=".
+# Anything not set here takes its default (the values below are the defaults).
+
+# ---------------------------------------------------------------- disk
+# The target disk, WHOLE. Everything on it will be destroyed. Required.
+# Find the name with: lsblk -d -o NAME,SIZE,MODEL   (usually /dev/nvme0n1)
+VH_DISK=""
+# ESP size (the EFI partition, FAT32). It holds Limine and 2 UKIs of ~60-90 MB each.
+VH_ESP_SIZE="1G"
+# TRIM: yes -- the volume allows discard, fstrim runs weekly (SSD speed and lifetime);
+#       no  -- no discard (a disk image does not reveal which blocks are in use). See docs/01.
+VH_TRIM="yes"
+# Argon2id for LUKS2: time per attempt and memory. Lowering these is a forbidden "speedup".
+VH_LUKS_ITER_MS="3000"
+VH_LUKS_MEM_KIB="1048576"
+
+# ---------------------------------------------------------------- system
+VH_HOSTNAME="void"
+VH_TIMEZONE="Europe/Ljubljana"
+VH_LOCALE="en_US.UTF-8"
+VH_KEYMAP="us"
+# Wi-Fi regulatory domain (ISO 3166): allowed channels and transmit power.
+VH_REGDOM="SI"
+# Void mirror (HTTPS only). List: https://xmirror.voidlinux.org
+VH_MIRROR="https://repo-default.voidlinux.org"
+# Kernel package. The "linux" meta package pulls in AMD/NVIDIA firmware, so a series is named directly.
+VH_KERNEL="linux6.18"
+
+# Accounts: the admin (wheel, logs in on tty2 only) and the everyday user (no wheel, tty1).
+VH_ADMIN="admin"
+VH_USER="user"
+# System user the browser runs as.
+VH_BROWSER_USER="browser"
+
+# ---------------------------------------------------------------- boot
+# initramfs compression inside the UKI: zstd (smaller file) or lz4 (faster decompression).
+VH_INITRD_COMPRESS="zstd"
+# How many seconds Limine shows the menu (to pick the previous kernel). 0 -- no menu.
+VH_LIMINE_TIMEOUT="1"
+# Extra kernel parameters (for example "console=ttyS0,115200 console=tty0" for a serial
+# console in a VM). They end up inside the signed UKI.
+VH_EXTRA_CMDLINE=""
+
+# ---------------------------------------------------------------- hardware
+# igpu    -- Intel UHD only; the GTX 1650 is powered down (runtime PM), nouveau is denied.
+# nouveau -- the dGPU is available through nouveau/NVK (DRI_PRIME=1). Needed when HDMI
+#            is wired to the NVIDIA GPU (install/00-probe.sh shows this).
+VH_GPU="igpu"
+# Bluetooth: off -- the modules are denied; optional -- bluez is installed but off and
+#            can be switched on temporarily (vh-bluetooth on); on -- always running.
+VH_BLUETOOTH="optional"
+# Camera (uvcvideo): no -- the module is denied; yes -- allowed.
+VH_CAMERA="no"
+# Card reader (rtsx): no -- the module is denied.
+VH_CARDREADER="no"
+# Firmware: yes -- only the files this laptop needs are extracted (AX201, RTL8111, i915,
+# microcode): 430 MB less on disk. For other hardware (USB Wi-Fi and so on) add a pattern
+# to VH_FIRMWARE_KEEP, e.g. "mediatek/* rtw88/*" (paths inside /usr/lib/firmware).
+VH_FIRMWARE_TRIM="yes"
+VH_FIRMWARE_KEEP=""
+# KVM: no -- kvm/kvm_intel are denied (VT-x should be disabled in the BIOS as well).
+VH_VIRT="no"
+# IPv6: no -- disabled in the kernel (ipv6.disable=1).
+VH_IPV6="no"
+
+# ---------------------------------------------------------------- network
+# Ethernet: dhcp -- dhcpcd on eth0 only; static -- the address below; off -- not configured.
+VH_ETH="dhcp"
+VH_ETH_ADDR=""        # for static: 192.168.1.50/24
+VH_ETH_GW=""          # for static: 192.168.1.1
+# unbound DoT upstreams: IP@853#name-in-certificate, space separated.
+VH_DNS_UPSTREAMS="9.9.9.9@853#dns.quad9.net 149.112.112.112@853#dns.quad9.net 194.242.2.2@853#dns.mullvad.net"
+# chrony NTS servers.
+VH_NTS_SERVERS="time.cloudflare.com nts.netnod.se ptbtime1.ptb.de ntppool1.time.nl"
+
+# ---------------------------------------------------------------- memory
+# zram: algorithm (zstd packs tighter, lz4 is faster) and size as a percentage of RAM.
+VH_ZRAM_ALGO="zstd"
+VH_ZRAM_PERCENT="50"
+
+# ---------------------------------------------------------------- home directory
+# /home with noexec: binaries in $HOME cannot be executed.
+VH_HOME_NOEXEC="yes"
+# A directory inside the everyday user's $HOME where execution is allowed (for
+# development, e.g. "dev" -> /home/user/dev). Empty -- no such directory.
+VH_DEV_DIR=""
+
+# ---------------------------------------------------------------- desktop
+# RefursWM and the RefursLine bar from desktop/ are always built, in the live environment,
+# with the Zig compiler; the compiler never reaches the installed system (docs/08). Their
+# settings are not here: they are compiled into the binaries
+# (desktop/refurswm/src/config.zig, desktop/refursline/src/config.zig).
+
+# ---------------------------------------------------------------- VM tests only
+# yes -- admin login on the serial console ttyS0 (tests/vm bench). On hardware: no.
+VH_TEST_SERIAL="no"

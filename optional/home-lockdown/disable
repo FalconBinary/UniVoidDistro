@@ -1,0 +1,12 @@
+#!/bin/bash
+# void-hardperf-light: give the whole home directory back to the user.
+. "$(dirname "$0")/../lib.sh"
+u=$VH_USER h=/home/$u g=$(id -gn "$u")
+pgrep -u "$u" >/dev/null && die "$u has running processes: log out of the session"
+for p in "$h"/.[!.]* "$h"/*; do
+	[ -e "$p" ] || continue
+	[ "${p#"$h"/}" = Downloads ] && continue
+	chown -R -h "$u:$g" "$p"
+done
+chown "$u:$g" "$h"; chmod 0700 "$h"
+mark_disabled

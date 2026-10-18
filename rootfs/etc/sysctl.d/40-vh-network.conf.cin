@@ -1,0 +1,51 @@
+# void-hardperf-light: network, security (S) and speed (P). docs/06-network.md, docs/07-network-speed.md.
+
+# --- (S) a host, not a router
+net.ipv4.ip_forward = 0
+net.ipv4.conf.all.route_localnet = 0
+net.ipv4.conf.all.accept_local = 0
+# --- (S) ICMP redirects and source routing. For a host, all and the interface act as OR,
+#     so both all and default are set (inherited by interfaces created later).
+net.ipv4.conf.all.accept_redirects = 0
+net.ipv4.conf.default.accept_redirects = 0
+net.ipv4.conf.all.secure_redirects = 0
+net.ipv4.conf.default.secure_redirects = 0
+net.ipv4.conf.all.send_redirects = 0
+net.ipv4.conf.default.send_redirects = 0
+net.ipv4.conf.all.accept_source_route = 0
+net.ipv4.conf.default.accept_source_route = 0
+# --- (S) strict reverse path check, log martians
+net.ipv4.conf.all.rp_filter = 1
+net.ipv4.conf.default.rp_filter = 1
+net.ipv4.conf.all.log_martians = 1
+net.ipv4.conf.default.log_martians = 1
+# --- (S) ARP: answer only for the addresses of the own interface, accept nothing unsolicited
+net.ipv4.conf.all.arp_ignore = 1
+net.ipv4.conf.all.arp_announce = 2
+net.ipv4.conf.all.arp_accept = 0
+net.ipv4.conf.all.drop_gratuitous_arp = 1
+net.ipv4.conf.default.drop_gratuitous_arp = 1
+# --- (S) ICMP and TCP
+net.ipv4.icmp_echo_ignore_broadcasts = 1
+net.ipv4.icmp_ignore_bogus_error_responses = 1
+net.ipv4.tcp_syncookies = 1
+net.ipv4.tcp_rfc1337 = 1
+# the TFO cookie is a tracking identifier
+net.ipv4.tcp_fastopen = 0
+# --- (S) ping through ICMP sockets without cap_net_raw: group netdiag only
+net.ipv4.ping_group_range = @VH_NETDIAG_GID@ @VH_NETDIAG_GID@
+
+# --- (P) TCP: BBR + fq, no window reset after idle
+net.core.default_qdisc = fq
+net.ipv4.tcp_congestion_control = bbr
+net.ipv4.tcp_slow_start_after_idle = 0
+# PMTU black holes behind a VPN
+net.ipv4.tcp_mtu_probing = 1
+# lower latency for interactive flows
+net.ipv4.tcp_notsent_lowat = 131072
+# --- (P) buffers for QUIC/HTTP3 (a program gets them only if it asks)
+net.core.rmem_max = 7500000
+net.core.wmem_max = 7500000
+# --- (P) a route through a link that is down is not used
+net.ipv4.conf.all.ignore_routes_with_linkdown = 1
+net.ipv4.conf.default.ignore_routes_with_linkdown = 1

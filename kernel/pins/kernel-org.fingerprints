@@ -1,0 +1,5 @@
+# PGP fingerprints that may sign kernel.org release tarballs (linux-X.Y.Z.tar.sign).
+# From https://www.kernel.org/signature.html; verify through a second channel before trusting.
+# Format: FINGERPRINT  owner. Lines starting with # are ignored.
+ABAF11C65A2970B130ABE3C479BE3E4300411886  Linus Torvalds
+647F28654894E3BD457199BE38DBBDC86092693E  Greg Kroah-Hartman

@@ -1,0 +1,13 @@
+#%PAM-1.0
+# void-hardperf-light: doas. faillock as for login; umask 077 instead of 022 (files
+# created through doas are closed by default; set the needed permissions explicitly).
+# With "nopass" doas skips the auth stack but still runs account and session.
+auth       required   pam_faillock.so preauth
+auth       sufficient pam_unix.so     try_first_pass
+auth       [default=die] pam_faillock.so authfail
+
+account    required   pam_faillock.so
+account    include    system-auth
+
+session    include    system-auth
+session    optional   pam_umask.so    usergroups umask=077

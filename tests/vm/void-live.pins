@@ -1,0 +1,6 @@
+# The Void Linux live image used by tests/vm and the kvm-smoke workflow.
+# KEY is the minisign public key that signs sha256sum.txt (docs/ru/00-prepare.md, key id 4D56E70F102AF9F9);
+# verify it through a second channel before trusting it.
+BASE=https://repo-default.voidlinux.org/live/20250202
+ISO=void-live-x86_64-20250202-base.iso
+KEY=RWT5+SoQD+dWTeOdNuc4Q/jq2+3+jpql7+JJp4WukkxTdpsZlk2EGuPj

@@ -1,0 +1,33 @@
+#!/bin/bash
+# void-hardperf-light: BadUSB protection, USB authorisation on demand (docs/13, usb-auth).
+. "$(dirname "$0")/../lib.sh"
+say "port check: external ports must not be \"hardwired\""
+for p in /sys/bus/usb/devices/*/port/connect_type; do
+	printf '  %-50s %s\n' "$p" "$(cat "$p")"
+done
+cat <<EOT
+Compare: the ports you physically plug devices into from outside must be "hotplug" or
+"unknown", not "hardwired", otherwise the kernel trusts them (an ACPI mistake).
+The internal keyboard of the MSI GF63 is i8042 (not USB) and is unaffected; an external USB
+keyboard and mouse will stop working (only a listed FIDO key and USB sticks through vh-usb).
+The LUKS passphrase is typed on the internal keyboard: an external USB one does not work in the initramfs either.
+EOT
+confirm_exact usb "Enable USB authorisation?"
+install -d -m 0755 /usr/local/libexec/vh
+install -m 0755 "$MOD_DIR/vh-usb-udev" /usr/local/libexec/vh/vh-usb-udev
+install -m 0755 "$MOD_DIR/vh-usb" /usr/local/sbin/vh-usb
+install -m 0755 "$MOD_DIR/vh-usb-allow-key" /usr/local/sbin/vh-usb-allow-key
+install -m 0644 "$MOD_DIR/98-vh-usb-auth.rules" /etc/udev/rules.d/98-vh-usb-auth.rules
+touch /etc/vh/usb-keys.conf
+save_orig /etc/doas.conf
+grep -q 'vh-usb args attach' /etc/doas.conf || cat >> /etc/doas.conf <<EOT
+# USB sticks without the admin (optional/usb-auth): these arguments only
+permit nopass $VH_USER as root cmd /usr/local/sbin/vh-usb args attach
+permit nopass $VH_USER as root cmd /usr/local/sbin/vh-usb args detach
+permit nopass $VH_USER as root cmd /usr/local/sbin/vh-usb args list
+EOT
+doas -C /etc/doas.conf || { restore_orig /etc/doas.conf; die "doas.conf has errors"; }
+cmdline_add usbcore.authorized_default=2
+rebuild_uki
+mark_enabled
+echo "Takes effect after a reboot. RefursWM keys: Super+U attaches a USB stick, Super+Shift+U detaches it."

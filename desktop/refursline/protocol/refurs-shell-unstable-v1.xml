@@ -1,0 +1,140 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<protocol name="refurs_shell_unstable_v1">
+  <copyright>
+    Copyright (c) 2026 Denys (FalconBinary)
+    SPDX-License-Identifier: GPL-3.0-or-later
+  </copyright>
+
+  <description summary="desktop state for the RefursWM bar">
+    A private protocol between RefursWM and its bar (RefursLine). It is offered only on a
+    connection RefursWM opened itself for a program with a grant for the `shell` capability
+    (WAYLAND_SOCKET); no other client and no sandbox ever sees the global.
+
+    State arrives as events; a burst of changes ends with zrefurs_shell_v1.done, and a client
+    applies everything it got up to that event at once. Nothing is polled: an idle desktop sends
+    nothing.
+  </description>
+
+  <interface name="zrefurs_shell_v1" version="1">
+    <description summary="desktop state and actions">
+      Right after the bind the compositor sends the whole state followed by done.
+    </description>
+
+    <enum name="menu">
+      <description summary="a bar menu a key binding asks for"/>
+      <entry name="run" value="0" summary="application launcher"/>
+      <entry name="commands" value="1" summary="launcher in command mode"/>
+      <entry name="wifi" value="2"/>
+      <entry name="bluetooth" value="3"/>
+      <entry name="wallpaper" value="4"/>
+      <entry name="power" value="5"/>
+      <entry name="calendar" value="6"/>
+    </enum>
+
+    <request name="destroy" type="destructor"/>
+
+    <request name="get_output">
+      <description summary="per-monitor state">
+        Workspace and layout mode of one monitor, and the actions that act on it.
+      </description>
+      <arg name="id" type="new_id" interface="zrefurs_shell_output_v1"/>
+      <arg name="output" type="object" interface="wl_output"/>
+    </request>
+
+    <request name="toggle_theme">
+      <description summary="dark and light colours, as the toggle_theme key binding"/>
+    </request>
+
+    <request name="lock">
+      <description summary="run the lock command from the compositor's config"/>
+    </request>
+
+    <request name="quit">
+      <description summary="end the session"/>
+    </request>
+
+    <event name="workspaces">
+      <description summary="which workspaces have windows">
+        Bit n is set when workspace n (0-based) has at least one window.
+      </description>
+      <arg name="occupied" type="uint"/>
+    </event>
+
+    <event name="focus">
+      <description summary="the focused window">
+        Empty strings when no window has the focus. Valid UTF-8 without control characters, at
+        most 255 bytes each.
+      </description>
+      <arg name="title" type="string"/>
+      <arg name="app_id" type="string"/>
+    </event>
+
+    <event name="keyboard_layout">
+      <description summary="the active keyboard layout">
+        index: the xkb group; name: its entry in the compositor's layout list ("us", "ru").
+      </description>
+      <arg name="index" type="uint"/>
+      <arg name="name" type="string"/>
+    </event>
+
+    <event name="theme">
+      <description summary="dark or light">
+        dark: 1 for the dark scheme. Only the scheme is shared: RefursWM and the bar each have
+        their own colours.
+      </description>
+      <arg name="dark" type="uint"/>
+    </event>
+
+    <event name="open">
+      <description summary="a key binding asks for a bar menu"/>
+      <arg name="menu" type="uint" enum="menu"/>
+    </event>
+
+    <event name="done">
+      <description summary="end of a burst of state events"/>
+    </event>
+  </interface>
+
+  <interface name="zrefurs_shell_output_v1" version="1">
+    <description summary="state of one monitor">
+      Right after creation the compositor sends this monitor's state, then
+      zrefurs_shell_v1.done. If the wl_output goes away the object stays inert.
+    </description>
+
+    <enum name="mode">
+      <entry name="dwindle" value="0"/>
+      <entry name="scroll" value="1"/>
+    </enum>
+
+    <request name="destroy" type="destructor"/>
+
+    <request name="workspace">
+      <description summary="show workspace index (0-based) on this monitor"/>
+      <arg name="index" type="uint"/>
+    </request>
+
+    <request name="cycle">
+      <description summary="next (+1) or previous (-1) workspace on this monitor"/>
+      <arg name="dir" type="int"/>
+    </request>
+
+    <request name="toggle_mode">
+      <description summary="dwindle and scroll for this monitor's workspace"/>
+    </request>
+
+    <event name="workspace">
+      <description summary="the workspace this monitor shows (0-based)"/>
+      <arg name="index" type="uint"/>
+    </event>
+
+    <event name="mode">
+      <description summary="layout mode of that workspace"/>
+      <arg name="mode" type="uint" enum="mode"/>
+    </event>
+
+    <event name="active">
+      <description summary="1 when this is the monitor new windows go to"/>
+      <arg name="active" type="uint"/>
+    </event>
+  </interface>
+</protocol>

@@ -1,0 +1,57 @@
+# Unit tests and a cross-build of every Zig component (the root build.zig aggregator).
+# On a tag the built tools are attached to the release as vh-tools-x86_64.tar.gz: CI logs are
+# not readable without GitHub credentials, release assets are.
+name: zig-test
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-zig
+      - name: unit tests of every component
+        run: zig build test
+      - name: cross-build for the target system (x86_64 Void)
+        run: zig build -Dtarget=x86_64-linux -Dcpu=baseline --prefix build/out
+      - name: static PIE, no interpreter
+        run: |
+          set -e
+          for f in build/out/bin/*; do
+            file "$f" | grep -q 'statically linked' || { echo "$f is not static"; exit 1; }
+            file "$f" | grep -q 'pie' || { echo "$f is not PIE"; exit 1; }
+          done
+          ls -l build/out/bin
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vh-tools-x86_64
+          path: build/out/bin
+          if-no-files-found: error
+  release:
+    if: github.ref_type == 'tag'
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: vh-tools-x86_64
+          path: vh-tools-x86_64
+      - name: attach to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          tar -czf vh-tools-x86_64.tar.gz vh-tools-x86_64
+          sha256sum vh-tools-x86_64.tar.gz > vh-tools-x86_64.tar.gz.sha256
+          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 || gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes "Build artifacts of $GITHUB_REF_NAME."
+          gh release upload "$GITHUB_REF_NAME" vh-tools-x86_64.tar.gz vh-tools-x86_64.tar.gz.sha256 --clobber

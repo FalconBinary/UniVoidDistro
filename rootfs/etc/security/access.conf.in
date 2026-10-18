@@ -1,0 +1,6 @@
+# void-hardperf-light: pam_access, who may log in on which TTY (docs/05).
+# The everyday user on tty1 (graphical session), the admin on tty2.
+# System users (the browser, services) log in nowhere: they also have nologin.
++ : @VH_USER@ : tty1
++ : @VH_ADMIN@ : tty2
+- : ALL : ALL

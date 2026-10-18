@@ -1,0 +1,7 @@
+#%PAM-1.0
+# void-hardperf-light: swaylock runs as the user and checks the password through the
+# SUID helper unix_chkpwd. pam_faillock is not used here: a process without root cannot
+# keep a reliable counter, and it could reset the user's own counter file itself.
+# Instead of a counter: a 2 s delay after every failure (docs/05).
+auth       required   pam_faildelay.so delay=2000000
+auth       required   pam_unix.so

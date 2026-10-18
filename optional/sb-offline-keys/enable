@@ -1,0 +1,68 @@
+#!/bin/bash
+# void-hardperf-light: the Secure Boot keys on separate encrypted media (docs/13).
+#   doas /root/vh/optional/sb-offline-keys/enable /dev/sdX
+# The media (a USB stick >= 1 GB) will be erased. The PK/KEK/db keys move onto it and are
+# deleted from the root file system; the reference values for checking UKI builds live
+# there too. Without the media no UKI can be signed.
+. "$(dirname "$0")/../lib.sh"
+DEV=${1:-}
+[ -b "$DEV" ] || die "name the media: enable /dev/sdX  (lsblk -d -o NAME,SIZE,TRAN,MODEL)"
+[ "$(lsblk -dno TYPE "$DEV")" = disk ] || die "$DEV is not a whole disk"
+[ "$(lsblk -dno TRAN "$DEV")" = usb ] || die "$DEV is not USB media"
+root_disk=$(lsblk -no PKNAME "$(findmnt -no SOURCE /boot/efi 2>/dev/null || echo /dev/null)" 2>/dev/null || true)
+[ "/dev/$root_disk" != "$DEV" ] || die "$DEV is the system disk"
+[ "$(blockdev --getsize64 "$DEV")" -ge 1000000000 ] || die "media of at least 1 GB is needed (XFS)"
+[ -s /var/lib/sbctl/keys/db/db.key ] || die "no keys in /var/lib/sbctl/keys (already moved?)"
+for p in /etc/dracut.conf.d /etc/default/dracut-uefi-hook; do [ -e "$p" ] || die "no $p"; done
+
+cat <<EOT
+Before moving the keys make sure the system is clean: freshly installed, no browser has
+run since boot, logged in as the admin on tty2 before the user logged in (docs/13).
+The UKI reference values are taken from the current state: anything tampered with now
+becomes the "reference".
+EOT
+confirm_exact "$DEV" "The media $DEV ($(lsblk -dno SIZE,MODEL "$DEV")) will be erased."
+
+install -m 0755 "$MOD_DIR/vh-keys" /usr/local/sbin/vh-keys
+install -m 0755 "$MOD_DIR/vh-uki-verify" /usr/local/sbin/vh-uki-verify
+
+say "LUKS2 on the media (its own passphrase, different from the others)"
+wipefs -af "$DEV"
+cryptsetup luksFormat --type luks2 --pbkdf argon2id --label vhkeys "$DEV"
+uuid=$(cryptsetup luksUUID "$DEV")
+echo "KEYS_UUID=$uuid" > /etc/vh/keys.conf
+cryptsetup open "$DEV" vh-keys
+mkfs.xfs -q -L vhkeys /dev/mapper/vh-keys
+install -d -m 0700 /run/vh-keys
+mount -o nosuid,nodev,noexec /dev/mapper/vh-keys /run/vh-keys
+install -d -m 0700 /run/vh-keys/sbctl /run/vh-keys/ref
+cp -a /var/lib/sbctl/keys/. /run/vh-keys/sbctl/
+
+say "UKI reference values"
+cur=$(ls -t /boot/efi/EFI/void/linux-*.efi 2>/dev/null | head -1 || true)
+if [ -z "$cur" ]; then mount /boot/efi && trap 'umount /boot/efi' EXIT; cur=$(ls -t /boot/efi/EFI/void/linux-*.efi | head -1); fi
+cp -a "$cur" /run/vh-keys/ref/  # a copy of the current UKI, for comparison during recovery
+/usr/local/sbin/vh-uki-verify --init "$cur"
+sync
+
+say "deleting the keys from the root file system"
+find /var/lib/sbctl/keys -type f -exec shred -u {} + 2>/dev/null || find /var/lib/sbctl/keys -type f -delete
+find /var/lib/sbctl/keys -mindepth 1 -type d -empty -delete
+[ "$VH_TRIM" = yes ] && fstrim / || true
+sed -i 's/^KEYS_OFFLINE=.*/KEYS_OFFLINE=yes/' /etc/vh/boot.conf
+grep -q '^KEYS_OFFLINE=yes' /etc/vh/boot.conf || echo KEYS_OFFLINE=yes >> /etc/vh/boot.conf
+umount /run/vh-keys
+cryptsetup close vh-keys
+mark_enabled
+cat <<EOT
+The keys exist only on the media ($uuid). Keep it apart from the laptop; make a copy
+(a second identical stick: dd from the closed volume). Without the keys the kernel cannot
+be updated, only by re-issuing the keys through Setup Mode (docs/13).
+
+Residual risk: the deleted key files may remain in free blocks of the root volume (it is
+encrypted, but root of the running system reads it whole). For a full guarantee re-issue
+the keys directly on the media (docs/13, "Re-issuing the keys").
+
+Kernel updates now: doas vh-update downloads the packages itself, asks for the media,
+turns the network off while signing and turns it back on.
+EOT

@@ -1,0 +1,8 @@
+#!/bin/bash
+# void-hardperf-light: disable pinning: back to the system CA store (a copy) for DoT and NTS.
+. "$(dirname "$0")/../lib.sh"
+sed -i 's|^\([[:space:]]*tls-cert-bundle:\).*|\1 "/etc/unbound/ca-bundle.pem"|' /etc/unbound/unbound.conf
+sed -i '/^# NTS CA pinning (optional\/dns-pin)/d; /^ntstrustedcerts /d; /^nosystemcert$/d' /etc/chrony.conf
+rm -f /etc/unbound/unbound.conf.vh-orig /etc/chrony.conf.vh-orig
+sv restart unbound chronyd >/dev/null
+mark_disabled

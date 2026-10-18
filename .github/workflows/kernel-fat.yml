@@ -1,0 +1,97 @@
+# kernel-fat: a 6.18 LTS kernel with the Void linux6.18 configuration plus SCHED_CLASS_EXT and
+# BTF, built with LLVM. Needed by spike S1 (sched_ext in Zig under KVM) and as the oracle of
+# track K. The tarball is verified by PGP signature against the fingerprints pinned in
+# kernel/pins/kernel-org.fingerprints. The result (bzImage, .config, the BTF of vmlinux) is an
+# artifact, and on a tag a release asset. Kernels from CI contain no firmware.
+name: kernel-fat
+on:
+  workflow_dispatch:
+    inputs:
+      kver:
+        description: kernel version (6.18.y)
+        default: "6.18.57"
+  push:
+    tags: ["kernel-fat-*"]
+    paths: ["kernel/**", ".github/workflows/kernel-fat.yml"]
+permissions:
+  contents: read
+env:
+  KVER: ${{ github.event.inputs.kver || '6.18.57' }}
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+      - name: toolchain
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q clang lld llvm make flex bison bc libssl-dev libelf-dev dwarves zstd xz-utils gnupg python3
+          clang --version | head -1
+      - name: fetch and verify linux-${{ env.KVER }}
+        run: |
+          set -euo pipefail
+          mkdir -p dl && cd dl
+          curl -fsSL -o "linux-$KVER.tar.xz" "https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-$KVER.tar.xz"
+          curl -fsSL -o "linux-$KVER.tar.sign" "https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-$KVER.tar.sign"
+          export GNUPGHOME=$(mktemp -d)
+          # the keys by fingerprint only: whatever the keyserver returns must match the pins
+          while read -r fpr _; do
+            case $fpr in ''|'#'*) continue;; esac
+            gpg --batch --keyserver hkps://keys.openpgp.org --recv-keys "$fpr" || gpg --batch --keyserver hkps://keyserver.ubuntu.com --recv-keys "$fpr"
+          done < ../kernel/pins/kernel-org.fingerprints
+          unxz -k "linux-$KVER.tar.xz"
+          gpg --batch --status-fd 1 --verify "linux-$KVER.tar.sign" "linux-$KVER.tar" | tee verify.log
+          sig=$(sed -n 's/^\[GNUPG:\] VALIDSIG \([0-9A-F]*\) .*/\1/p' verify.log)
+          test -n "$sig"
+          grep -q "^$sig" ../kernel/pins/kernel-org.fingerprints || { echo "signed by an unpinned key $sig"; exit 1; }
+          tar -xf "linux-$KVER.tar"
+          rm -f "linux-$KVER.tar"
+      - name: configuration (Void linux6.18 + sched_ext + BTF + virtio built in)
+        run: |
+          set -euo pipefail
+          cd "dl/linux-$KVER"
+          # [VERIFY] track K pins this file by commit; master is used until then
+          curl -fsSL -o .config https://raw.githubusercontent.com/void-linux/void-packages/master/srcpkgs/linux6.18/files/x86_64-dotconfig
+          ./scripts/config -e BPF_SYSCALL -e BPF_JIT -e BPF_JIT_ALWAYS_ON -e DEBUG_INFO -e DEBUG_INFO_DWARF5 -e DEBUG_INFO_BTF -e SCHED_CLASS_EXT \
+            -d DEBUG_INFO_NONE -d DEBUG_INFO_REDUCED -d DEBUG_INFO_SPLIT \
+            -e VIRTIO_PCI -e VIRTIO_BLK -e VIRTIO_NET -e VIRTIO_CONSOLE -e BLK_DEV_NVME -e E1000E -e EXT4_FS -e XFS_FS \
+            -e DRM_BOCHS -e DRM_VIRTIO_GPU -d MODULE_SIG_FORCE
+          make LLVM=1 olddefconfig
+          grep -E '^CONFIG_(SCHED_CLASS_EXT|DEBUG_INFO_BTF|BPF_JIT)=' .config
+      - name: build
+        run: |
+          set -euo pipefail
+          cd "dl/linux-$KVER"
+          export KBUILD_BUILD_USER=vh KBUILD_BUILD_HOST=ci KBUILD_BUILD_TIMESTAMP="$(git -C "$GITHUB_WORKSPACE" log -1 --format=%cd --date=iso-strict)"
+          make LLVM=1 -j"$(nproc)" bzImage
+          mkdir -p ../out
+          cp arch/x86/boot/bzImage ../out/bzImage-fat-"$KVER"
+          cp .config ../out/config-fat-"$KVER"
+          llvm-objcopy --dump-section .BTF=../out/vmlinux-fat-"$KVER".btf vmlinux
+          (cd ../out && sha256sum * > SHA256SUMS)
+          ls -l ../out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kernel-fat-${{ env.KVER }}
+          path: dl/out
+          if-no-files-found: error
+  release:
+    if: github.ref_type == 'tag'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: kernel-fat-${{ env.KVER }}
+          path: out
+      - name: attach to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -e
+          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 || gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes "kernel-fat $KVER: the Void linux6.18 configuration + SCHED_CLASS_EXT + BTF, LLVM, no firmware."
+          gh release upload "$GITHUB_REF_NAME" out/* --clobber

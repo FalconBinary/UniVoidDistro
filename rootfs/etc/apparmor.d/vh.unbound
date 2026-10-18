@@ -1,0 +1,46 @@
+# void-hardperf-light: unbound, the local resolver (docs/06). After start it runs as
+# _unbound in the chroot /etc/unbound; it may write only /etc/unbound/var (root.key).
+# The var directory is 0755: root reads root.key before dropping privileges, without dac_override.
+abi <abi/4.0>,
+include <tunables/global>
+
+profile vh.unbound /usr/bin/unbound flags=(attach_disconnected) {
+  include <abstractions/base>
+  include <abstractions/nameservice>
+
+  capability setuid,
+  capability setgid,
+  capability sys_chroot,
+  capability net_bind_service,
+  capability sys_resource,
+
+  network inet stream,
+  network inet dgram,
+  network inet6 stream,
+  network inet6 dgram,
+  network unix dgram,
+  # netlink route: unbound >= 1.18 enumerates the interfaces at start (getifaddrs);
+  # without it: "could not open ports" and an endless restart loop (found on the bench)
+  network netlink raw,
+  deny network alg,
+  deny network packet,
+  # SO_*BUFFORCE is not needed: unbound works without it, the denial is not logged
+  deny capability net_admin,
+
+  /usr/bin/unbound mr,
+  /etc/unbound/ r,
+  /etc/unbound/** r,
+  /etc/unbound/var/ rw,
+  /etc/unbound/var/** rwk,
+  /var/ r,
+  /var/** r,
+  /proc/sys/net/core/somaxconn r,
+  /proc/*/stat r,
+  /dev/urandom r,
+  /dev/log w,
+
+  deny userns,
+  deny mount,
+
+  include if exists <local/vh.unbound>
+}

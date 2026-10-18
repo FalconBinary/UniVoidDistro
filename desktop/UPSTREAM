@@ -1,0 +1,6 @@
+# Where the desktop sources come from (a `git archive HEAD` snapshot, 2026-10-17), with the
+# config edits of this distribution (src/config.zig). The snapshots are temporary: track D of
+# docs/ROADMAP.md replaces them with a build.zig.zon fetch of the upstream repositories plus
+# a distribution config passed as -Dconfig=.
+refurswm   https://github.com/FalconBinary/RefursWM    b2a9be81b684731e1a15cdb7f2f9f50cc426269f
+refursline https://github.com/FalconBinary/RefursLine  30a42ba00a3c1b894b3faa69389e2740e361ea6a

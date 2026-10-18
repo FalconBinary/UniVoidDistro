@@ -1,0 +1,28 @@
+name: Set up Zig
+description: >
+  Download the Zig pinned in zig/ZIG_VERSION, verify the minisign signature (including the file
+  name in the signed comment) and the sha256 stored in install/fetch-zig.sh, add it to PATH.
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        set -euo pipefail
+        ver=$(cat zig/ZIG_VERSION)
+        arch=$(uname -m)
+        key=$(sed -n 's/^ZIG_PUBKEY="\(.*\)"$/\1/p' install/fetch-zig.sh)
+        sha=$(sed -n "s/^[[:space:]]*\[$ver-$arch\]=\([0-9a-f]*\)$/\1/p" install/fetch-zig.sh)
+        test -n "$key" && test -n "$sha"
+        t=zig-$arch-linux-$ver.tar.xz
+        d=$RUNNER_TEMP/zig
+        mkdir -p "$d" && cd "$d"
+        curl -fsSL -o "$t" "https://ziglang.org/download/$ver/$t"
+        curl -fsSL -o "$t.minisig" "https://ziglang.org/download/$ver/$t.minisig"
+        echo "$sha  $t" | sha256sum -c -
+        sudo apt-get update -q >/dev/null
+        sudo apt-get install -y -q minisign >/dev/null
+        minisign -Vm "$t" -P "$key"
+        grep -q "^trusted comment: .*file:$t[[:space:]]" "$t.minisig"
+        tar -xJf "$t"
+        echo "$d/zig-$arch-linux-$ver" >> "$GITHUB_PATH"
+        "$d/zig-$arch-linux-$ver/zig" version

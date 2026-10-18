@@ -1,0 +1,22 @@
+#!/bin/bash
+# void-hardperf-light: the RefursWM session under AppArmor (docs/13, session-apparmor).
+#   doas /root/vh/optional/session-apparmor/enable            -- complain mode (log only)
+#   doas /root/vh/optional/session-apparmor/enable --enforce  -- deny
+# Start with complain: use the system for a week, review the denial log, then enforce.
+. "$(dirname "$0")/../lib.sh"
+mode=complain; [ "${1:-}" = --enforce ] && mode=""
+VH_AA_MODE=${mode:+, $mode}
+export VH_AA_MODE
+grep -q 'unix-chkpwd' /etc/runit/core-services/09-vh-apparmor.sh || die "the unix-chkpwd profile is missing from the load list"
+render "$MOD_DIR/vh.local.session" /etc/apparmor.d/vh.local.session
+sed -i 's/(attach_disconnected , /(attach_disconnected, /' /etc/apparmor.d/vh.local.session
+apparmor_parser --replace --write-cache --cache-loc /var/cache/apparmor /etc/apparmor.d/vh.local.session \
+	|| { rm -f /etc/apparmor.d/vh.local.session; die "the profile did not load"; }
+mark_enabled
+cat <<EOT
+Mode: ${mode:-enforce}. Applies to a RefursWM started after this (log out of the session).
+Denial log: doas svlogtail kernel | grep 'apparmor="\(DENIED\|ALLOWED\)".*vh.refurswm'
+Check in enforce mode (from a foot terminal):
+  unshare -U true -> Operation not permitted;   the RefursLine bar, its menus and swaylock work
+If the session does not start: log in as the admin on tty2 and run disable.
+EOT

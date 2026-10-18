@@ -1,0 +1,19 @@
+# void-hardperf-light: device node permissions (docs/05).
+# ":=" assignments are final: a later rule cannot override them. File order is lexical,
+# and "tpm-udev.rules" of tpm2-tss (no number in the name) comes AFTER "99-...": with a
+# plain "=" it handed /dev/tpm0 back to group _tss (found on the test bench).
+
+# GPU render node: 0666 by default in Void, so the i915 driver is reachable by any process.
+# Restricted to group render (the everyday user and the browser).
+SUBSYSTEM=="drm", KERNEL=="renderD*", GROUP:="render", MODE:="0660"
+# Writing /dev/rfkill lifts the radio block: root only (iwd, bluetoothd).
+KERNEL=="rfkill", OWNER:="root", GROUP:="root", MODE:="0600"
+# TPM: hierarchy operations are root only (tpm2-tss gives them to group tss).
+KERNEL=="tpm[0-9]*", OWNER:="root", GROUP:="root", MODE:="0600"
+KERNEL=="tpmrm[0-9]*", OWNER:="root", GROUP:="root", MODE:="0600"
+# Watchdog: opening it without "petting" means a reboot.
+KERNEL=="watchdog*", OWNER:="root", GROUP:="root", MODE:="0600"
+# /dev/kvm is 0666 in Void; if KVM is allowed (VH_VIRT=yes), group kvm only.
+KERNEL=="kvm", GROUP:="kvm", MODE:="0660"
+# Screen brightness: sysfs writable by group backlight, no SUID utilities.
+SUBSYSTEM=="backlight", ACTION=="add", RUN+="/usr/bin/chgrp backlight /sys%p/brightness", RUN+="/usr/bin/chmod g+w /sys%p/brightness"

@@ -1,0 +1,15 @@
+#!/bin/bash
+# void-hardperf-light: sandboxed viewers for untrusted files (docs/13, viewers).
+. "$(dirname "$0")/../lib.sh"
+say "packages: zathura (PDF, mupdf), imv (images), mpv (video)"
+xbps-install -Sy zathura zathura-pdf-mupdf imv mpv
+[ -x /usr/local/libexec/vh/vh-seccomp ] || die "no /usr/local/libexec/vh/vh-seccomp (base layer)"
+install -m 0755 "$MOD_DIR/vh-open" /usr/local/bin/vh-open
+/usr/local/libexec/vh/vh-seccomp --selftest
+mark_enabled
+cat <<EOT
+Open a download: vh-open ~/Downloads/file.pdf  (images, video, text: the same way)
+Your own videos with hardware decoding: vh-open --gpu ~/Videos/movie.mkv
+PDFs from the web: first in the browser's built-in viewer (throwaway profile).
+Do not install thumbnailers (tumbler and the like): a preview parses the file outside the sandbox.
+EOT

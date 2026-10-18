@@ -1,0 +1,90 @@
+#!/bin/sh
+# vh-bench: the same set of measurements for this system and for CachyOS (docs/15).
+#   sh tools/vh-bench          -- CPU, memory, idle, boot
+#   sh tools/vh-bench --fio    -- plus storage (needs fio; a 2 GB temporary file in $HOME)
+# Run as a regular user, on AC power, with the browser closed. Repeat 3 times.
+# Needs: zstd, gawk, coreutils (present in both Void and CachyOS). Installs nothing.
+set -u
+LC_ALL=C; export LC_ALL
+FIO=0; [ "${1:-}" = --fio ] && FIO=1
+if [ -z "${VH_BENCH_OUT:-}" ]; then
+	# all output goes both to the screen and to the report file (POSIX sh: no ">(tee)")
+	VH_BENCH_OUT=./vh-bench-$(uname -n)-$(date +%Y%m%d-%H%M%S).txt
+	export VH_BENCH_OUT
+	sh "$0" "$@" 2>&1 | tee "$VH_BENCH_OUT"
+	exit
+fi
+out=$VH_BENCH_OUT
+have() { command -v "$1" >/dev/null 2>&1; }
+sec() { printf '\n== %s\n' "$*"; }
+rd() { cat "$1" 2>/dev/null; }
+
+sec "System"
+printf 'kernel:      %s\n' "$(uname -r)"
+printf 'distribution: %s\n' "$(. /etc/os-release 2>/dev/null; echo "${PRETTY_NAME:-?}")"
+printf 'CPU:         %s\n' "$(grep -m1 'model name' /proc/cpuinfo | cut -d: -f2-)"
+printf 'cmdline:     %s\n' "$(rd /proc/cmdline | tr ' ' '\n' | grep -E '^(preempt|mitigations|init_on_free|iommu|intel_iommu)=' | paste -sd' ' -)"
+printf 'driver/EPP:  %s / %s\n' "$(rd /sys/devices/system/cpu/cpufreq/policy0/scaling_driver)" \
+	"$(rd /sys/devices/system/cpu/cpufreq/policy0/energy_performance_preference)"
+printf 'power:       %s\n' "$(for s in /sys/class/power_supply/*; do [ "$(rd "$s/type")" = Mains ] && rd "$s/online"; done | head -1 | sed 's/1/AC/;s/0/battery/')"
+
+sec "Boot (from kernel start)"
+printf 'uptime now: %s s\n' "$(cut -d' ' -f1 /proc/uptime)"
+if [ -r /var/log/socklog/kernel/current ] || dmesg >/dev/null 2>&1; then
+	dmesg 2>/dev/null | grep -m1 -E 'runit: enter stage: /etc/runit/2|systemd\[1\]: Startup finished|Reached target.*Graphical' || true
+fi
+have systemd-analyze && systemd-analyze 2>/dev/null | head -2
+
+sec "Idle: memory, processes, wakeups"
+awk '/MemTotal|MemAvailable|^Cached|SwapTotal|SwapFree/ {printf "%-14s %8.0f MiB\n", $1, $2/1024}' /proc/meminfo
+used=$(awk '/MemTotal/{t=$2} /MemAvailable/{a=$2} END{printf "%.0f", (t-a)/1024}' /proc/meminfo)
+echo "used (Total-Available): $used MiB"
+echo "processes (incl. kernel threads): $(ls -d /proc/[0-9]* | wc -l)"
+irq() { awk 'NR>1 {for (i=2; i<=NF && $i ~ /^[0-9]+$/; i++) s+=$i} END {print s}' /proc/interrupts; }
+echo "wakeups: measuring 30 s of idle (do not touch the mouse or keyboard)..."
+a=$(irq); sleep 30; b=$(irq)
+echo "interrupts per second: $(( (b - a) / 30 ))"
+
+sec "CPU and memory: zstd (higher is better)"
+if have zstd; then
+	# the corpus is zstd's built-in synthetic data (no file): identical on both systems
+	echo "-- multithreaded, level 3:"
+	zstd -b3 -e3 -T0 -i5 -B64MiB 2>&1 | tr "\r" "\n" | grep "MB/s" | tail -1
+	echo "-- single thread, level 19:"
+	zstd -b19 -i3 2>&1 | tr "\r" "\n" | grep "MB/s" | tail -1
+else
+	echo "no zstd"
+fi
+
+sec "Single thread: awk and sha256 (lower is better)"
+# best of 3 runs; gawk and coreutils exist on both systems (interpreters such as python3
+# are deliberately absent from this system: docs/17)
+ms() { a=$(date +%s%N); "$@" >/dev/null 2>&1; b=$(date +%s%N); echo $(( (b - a) / 1000000 )); }
+best() { name=$1; shift; m=999999; for _ in 1 2 3; do t=$(ms "$@"); [ "$t" -lt "$m" ] && m=$t; done; printf '%-14s %6s ms\n' "$name" "$m"; }
+best "awk loops" awk 'BEGIN { for (i = 0; i < 3000000; i++) s += i * i; print s }'
+best "awk strings" awk 'BEGIN { for (i = 0; i < 300000; i++) { a[i % 1000] = a[i % 1000] "x"; s = s sprintf("%d", i) } print length(s) }'
+best "awk regex" awk 'BEGIN { t = "lorem ipsum dolor sit amet"; for (i = 0; i < 300000; i++) n += match(t " " i, /[a-z]+or[a-z]* [0-9]+$/); print n }'
+best "sha256 256 MB" sh -c 'head -c 268435456 /dev/zero | sha256sum'
+
+if [ "$FIO" = 1 ]; then
+	sec "Storage: fio (higher is better)"
+	if have fio; then
+		f=$HOME/.vh-bench-fio.tmp
+		fio --name=rand4k --filename="$f" --size=2G --rw=randread --bs=4k --iodepth=32 \
+			--ioengine=libaio --direct=1 --runtime=20 --time_based --group_reporting 2>/dev/null \
+			| grep -E 'IOPS=|lat \(usec\).*avg' | head -3
+		fio --name=seqread --filename="$f" --size=2G --rw=read --bs=1M --iodepth=8 \
+			--ioengine=libaio --direct=1 --runtime=15 --time_based 2>/dev/null | grep -E 'bw=' | head -1
+		rm -f "$f"
+	else
+		echo "no fio"
+	fi
+fi
+
+sec "Temperature and frequency after the measurements"
+for z in /sys/class/thermal/thermal_zone*; do
+	[ "$(rd "$z/type")" = x86_pkg_temp ] && echo "CPU: $(( $(rd "$z/temp") / 1000 )) C"
+done
+awk '/MHz/ {s+=$4; n++} END {if (n) printf "average frequency: %.0f MHz\n", s/n}' /proc/cpuinfo
+echo
+echo "Report: $out"

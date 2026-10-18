@@ -1,0 +1,4 @@
+# void-hardperf-light: who may query the local unbound (127.0.0.1:53), BASE layer: everyone.
+# Strict mode (optional/strict-net) keeps the browser, chrony and temporary permissions:
+# otherwise a process without network exfiltrates data through DNS queries (docs/06, docs/13).
+ip daddr 127.0.0.1 meta l4proto { tcp, udp } th dport 53 accept
