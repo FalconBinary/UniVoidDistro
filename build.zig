@@ -10,7 +10,7 @@ const std = @import("std");
 /// dependency names from build.zig.zon, in build order
 const tracks = [_][]const u8{
     "tools", // zig/: the system tools and zig/lib
-    // "kernel",    track K: vh-kconf
+    "kernel", // track K: vh-kconf
     // "init",      track I: vh-init, vh-ctl, vh-logd
     // "sched",     track S: vh-sched (loader; the BPF part is built inside sched/)
     // "installer", track N: vh-install

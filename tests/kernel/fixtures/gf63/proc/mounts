@@ -1,0 +1,12 @@
+devtmpfs /dev devtmpfs rw,nosuid,noexec,relatime,size=8000000k,nr_inodes=2000000,mode=755 0 0
+proc /proc proc rw,nosuid,nodev,noexec,relatime 0 0
+sysfs /sys sysfs rw,nosuid,nodev,noexec,relatime 0 0
+/dev/mapper/luks-root / xfs rw,noatime,attr2,inode64,logbufs=8,logbsize=256k,noquota 0 0
+securityfs /sys/kernel/security securityfs rw,nosuid,nodev,noexec,relatime 0 0
+tmpfs /run tmpfs rw,nosuid,nodev,mode=755 0 0
+devpts /dev/pts devpts rw,nosuid,noexec,relatime,gid=5,mode=620,ptmxmode=000 0 0
+tmpfs /dev/shm tmpfs rw,nosuid,nodev,noexec,relatime,size=2097152k 0 0
+cgroup2 /sys/fs/cgroup cgroup2 rw,nosuid,nodev,noexec,relatime,nsdelegate,memory_recursiveprot 0 0
+efivarfs /sys/firmware/efi/efivars efivarfs rw,nosuid,nodev,noexec,relatime 0 0
+/dev/nvme0n1p1 /boot/efi vfat ro,nosuid,nodev,noexec,relatime,fmask=0177,dmask=0077,codepage=437,iocharset=iso8859-1,shortname=mixed,errors=remount-ro 0 0
+tmpfs /tmp tmpfs rw,nosuid,nodev,noexec,relatime,size=4194304k 0 0
