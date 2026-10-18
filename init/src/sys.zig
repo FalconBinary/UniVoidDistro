@@ -224,7 +224,7 @@ pub const MountInfo = struct {
         var out: std.ArrayList(u8) = .empty;
         var i: usize = 0;
         while (i < s.len) : (i += 1) {
-            if (s[i] == '\\' and i + 3 < s.len + 0 and i + 3 <= s.len - 1 + 1 and isOct(s[i + 1]) and isOct(s[i + 2]) and isOct(s[i + 3])) {
+            if (s[i] == '\\' and i + 3 < s.len and isOct(s[i + 1]) and isOct(s[i + 2]) and isOct(s[i + 3])) {
                 out.append(vh.gpa, (s[i + 1] - '0') * 64 + (s[i + 2] - '0') * 8 + (s[i + 3] - '0')) catch vh.oom();
                 i += 3;
             } else out.append(vh.gpa, s[i]) catch vh.oom();
