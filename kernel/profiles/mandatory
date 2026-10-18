@@ -1,0 +1,99 @@
+# kernel/profiles/mandatory: what no modalias asks for, but the system needs.
+#
+# localyesconfig keeps the drivers of the hardware it sees; these symbols are either
+# requested by nothing in sysfs (the RTC clock, the firewall expressions, cgroup controllers)
+# or must be =y for reasons of our own (BTF for vh-sched). vh-kconf diff treats a symbol
+# from this file that did not survive olddefconfig as an error (exit code 2).
+
+# The hardware clock: the system time is set from the CMOS RTC before chrony runs (NTS needs
+# a roughly correct clock to validate certificates).
+CONFIG_RTC_CLASS=y
+CONFIG_RTC_DRV_CMOS=y
+CONFIG_RTC_HCTOSYS=y
+CONFIG_RTC_HCTOSYS_DEVICE="rtc0"
+
+# POSIX ACLs on the XFS root: setfacl is used for the browser and session directories.
+CONFIG_XFS_FS=y
+CONFIG_XFS_POSIX_ACL=y
+
+# zram backends: VH_ZRAM_ALGO is zstd or lz4 (install/lib.sh); both are built so the choice
+# stays a runtime setting.
+CONFIG_ZRAM=y
+CONFIG_ZRAM_BACKEND_ZSTD=y
+CONFIG_ZRAM_BACKEND_LZ4=y
+
+# nftables: every expression rootfs/etc/nftables.conf.in and rootfs/etc/vh/nft/*.in use.
+# They are loaded on demand by the stock kernel (nft_* modules), which a kernel without
+# modules cannot do.
+CONFIG_NETFILTER_NETLINK=y
+CONFIG_NF_TABLES=y
+# "table inet vh": the mixed IPv4/IPv6 family
+CONFIG_NF_TABLES_INET=y
+CONFIG_NF_TABLES_IPV4=y
+CONFIG_NF_TABLES_IPV6=y
+# "ct state established,related": connection tracking
+CONFIG_NF_CONNTRACK=y
+CONFIG_NFT_CT=y
+# "log prefix ... level info": the log statement writes through the syslog logger
+CONFIG_NFT_LOG=y
+CONFIG_NF_LOG_SYSLOG=y
+# "limit rate 6/minute"
+CONFIG_NFT_LIMIT=y
+# meta (skuid, l4proto, iif), payload (tcp flags, ports, icmp type), sets with intervals and
+# timeouts, verdicts and jumps are part of nf_tables itself.
+
+# The i2c-hid touchpad hangs off the Comet Lake-H pin controller (GPIO interrupt).
+CONFIG_PINCTRL_INTEL=y
+CONFIG_PINCTRL_CANNONLAKE=y
+
+# User namespaces: the browser's bwrap sandbox and Steam's pressure-vessel.
+CONFIG_USER_NS=y
+# The kernel keyring: the LUKS passphrase cache of cryptsetup and the kernel's own keys.
+CONFIG_KEYS=y
+
+# cgroup2 controllers the service manager and the gaming session use (cpu, memory, io, pids,
+# freezer, devices through BPF).
+CONFIG_CGROUPS=y
+CONFIG_CGROUP_SCHED=y
+CONFIG_FAIR_GROUP_SCHED=y
+CONFIG_CFS_BANDWIDTH=y
+CONFIG_CGROUP_PIDS=y
+CONFIG_CGROUP_FREEZER=y
+CONFIG_CGROUP_DEVICE=y
+CONFIG_CGROUP_CPUACCT=y
+CONFIG_CGROUP_MISC=y
+CONFIG_CGROUP_BPF=y
+CONFIG_MEMCG=y
+CONFIG_BLK_CGROUP=y
+
+# vh-sched (track S): a sched_ext scheduler in BPF; the loader reads the kernel's BTF, so the
+# kernel carries BTF and is built with DWARF5 debug info for pahole.
+CONFIG_BPF_SYSCALL=y
+CONFIG_BPF_JIT=y
+CONFIG_BPF_JIT_ALWAYS_ON=y
+CONFIG_DEBUG_INFO=y
+CONFIG_DEBUG_INFO_DWARF5=y
+# CONFIG_DEBUG_INFO_NONE is not set
+# CONFIG_DEBUG_INFO_REDUCED is not set
+# CONFIG_DEBUG_INFO_SPLIT is not set
+CONFIG_DEBUG_INFO_BTF=y
+CONFIG_SCHED_CLASS_EXT=y
+
+# Measurements (bench/): package power through RAPL, core temperatures, firmware boot
+# timing from the ACPI FPDT table.
+CONFIG_HWMON=y
+CONFIG_INTEL_RAPL=y
+CONFIG_SENSORS_CORETEMP=y
+CONFIG_ACPI_FPDT=y
+
+# vh-deadman uses the chipset watchdog (iTCO).
+CONFIG_WATCHDOG=y
+CONFIG_ITCO_WDT=y
+CONFIG_ITCO_VENDOR_SUPPORT=y
+
+# /proc/sysrq-trigger for root (emergency sync and reboot); the key mask is 0 in hardening.
+CONFIG_MAGIC_SYSRQ=y
+
+# Firmware files are zstd-compressed in Void (see base too).
+CONFIG_FW_LOADER_COMPRESS=y
+CONFIG_FW_LOADER_COMPRESS_ZSTD=y

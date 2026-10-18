@@ -1,0 +1,100 @@
+# kernel/profiles/base: what every build of this machine's kernel has.
+#
+# A Kconfig fragment: CONFIG_X=y, CONFIG_X="text", "# CONFIG_X is not set". vh-kconf resolve
+# applies the fragments in this order: base, mandatory, hardening, perf, then the selected
+# features/*; a later fragment wins and the conflict is listed in resolve-report.txt.
+# Everything the running system had loaded as a module is turned on by localyesconfig from
+# the LSMOD list; this file names only what a boot of this machine cannot do without, so that
+# the diff report shows plainly if one of them did not survive olddefconfig.
+
+# One machine, every driver built in. Without loadable modules nothing can be loaded after
+# boot, modules_disabled=1 becomes moot, and the initrd carries firmware only
+# (dracut --no-kernel). features/game turns modules back on for the NVIDIA open modules.
+# CONFIG_MODULES is not set
+
+# The release string is 6.18.x-vh; the stock Void kernel is 6.18.x_1. vh-limine-update tells the
+# two UKI series apart by this suffix (kernel/README.md, "install").
+CONFIG_LOCALVERSION="-vh"
+# No "+" or git hash appended: the build must be reproducible from the pinned inputs.
+# CONFIG_LOCALVERSION_AUTO is not set
+CONFIG_BUILD_SALT=""
+CONFIG_DEFAULT_HOSTNAME="(none)"
+
+# Firmware lives in the UKI's initrd, never inside the kernel image: a firmware update must not
+# relink the kernel (docs/ROADMAP.md, "Firmware and microcode"). Void ships it zstd-compressed.
+CONFIG_EXTRA_FIRMWARE=""
+CONFIG_FW_LOADER=y
+CONFIG_FW_LOADER_COMPRESS=y
+CONFIG_FW_LOADER_COMPRESS_ZSTD=y
+# The sysfs fallback loader needs a user-space helper this system does not run.
+# CONFIG_FW_LOADER_USER_HELPER is not set
+
+# The kernel is an EFI application inside a UKI (systemd-stub), signed with our own keys.
+CONFIG_EFI=y
+CONFIG_EFI_STUB=y
+CONFIG_EFIVAR_FS=y
+# The initrd is zstd (dracut compress= in rootfs/etc/dracut.conf.d/10-vh.conf.in).
+CONFIG_RD_ZSTD=y
+
+# The boot path: NVMe -> LUKS2 (dm-crypt, aes-xts, AES-NI) -> XFS root; the ESP is vfat.
+CONFIG_BLK_DEV_NVME=y
+CONFIG_BLK_DEV_DM=y
+CONFIG_DM_CRYPT=y
+CONFIG_CRYPTO_AES_NI_INTEL=y
+CONFIG_CRYPTO_XTS=y
+CONFIG_CRYPTO_SHA256=y
+CONFIG_XFS_FS=y
+CONFIG_VFAT_FS=y
+CONFIG_FAT_DEFAULT_UTF8=y
+CONFIG_NLS_CODEPAGE_437=y
+CONFIG_NLS_ISO8859_1=y
+CONFIG_NLS_UTF8=y
+
+# The LUKS passphrase is typed on the internal keyboard (i8042/atkbd) or a USB keyboard
+# (xHCI, usbhid): the same set dracut's add_drivers names.
+CONFIG_SERIO_I8042=y
+CONFIG_KEYBOARD_ATKBD=y
+CONFIG_USB_XHCI_HCD=y
+CONFIG_USB_XHCI_PCI=y
+CONFIG_USB_HID=y
+CONFIG_HID_GENERIC=y
+CONFIG_INPUT_EVDEV=y
+
+# The console: EFI framebuffer until i915 takes over, then the DRM fbdev console (tty1-tty3).
+CONFIG_VT=y
+CONFIG_FRAMEBUFFER_CONSOLE=y
+CONFIG_FB_EFI=y
+CONFIG_DRM_I915=y
+CONFIG_DRM_FBDEV_EMULATION=y
+
+# The fTPM (Intel PTT) over the CRB interface: tpm2-totp and the measurement log.
+CONFIG_TCG_TPM=y
+CONFIG_TCG_CRB=y
+CONFIG_HW_RANDOM_TPM=y
+
+# Swap is zram only (rootfs/etc/runit/core-services/05-vh-zram.sh.in); the backends are in mandatory.
+CONFIG_SWAP=y
+CONFIG_ZRAM=y
+
+# Networking of the system: Wi-Fi (iwlwifi/iwlmvm come from LSMOD), the regulatory database is
+# read from the initrd and must be signed, otherwise the built-in cfg80211 falls into the world
+# domain (docs/ROADMAP.md).
+CONFIG_NET=y
+CONFIG_INET=y
+CONFIG_IPV6=y
+CONFIG_UNIX=y
+CONFIG_PACKET=y
+CONFIG_NETFILTER=y
+CONFIG_CFG80211=y
+CONFIG_CFG80211_REQUIRE_SIGNED_REGDB=y
+CONFIG_CFG80211_USE_KERNEL_REGDB_KEYS=y
+CONFIG_MAC80211=y
+CONFIG_RFKILL=y
+
+# eudev and the service manager need devtmpfs mounted by the kernel and tmpfs with ACLs/xattrs
+# (/run, /dev/shm).
+CONFIG_DEVTMPFS=y
+CONFIG_DEVTMPFS_MOUNT=y
+CONFIG_TMPFS=y
+CONFIG_TMPFS_POSIX_ACL=y
+CONFIG_TMPFS_XATTR=y

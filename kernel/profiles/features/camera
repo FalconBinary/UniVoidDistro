@@ -1,0 +1,13 @@
+# kernel/profiles/features/camera: the built-in USB webcam (UVC).
+#
+# Off when VH_CAMERA=no (install/lib.sh blacklists uvcvideo); then the feature is not selected
+# and vh-kconf resolve refuses uvcvideo even if the camera's modalias matches it. The BIOS can
+# disable the camera outright (docs/ru/00-prepare.md), which is the stronger choice.
+
+CONFIG_MEDIA_SUPPORT=y
+CONFIG_MEDIA_USB_SUPPORT=y
+CONFIG_MEDIA_CAMERA_SUPPORT=y
+CONFIG_VIDEO_DEV=y
+CONFIG_USB_VIDEO_CLASS=y
+# the camera button, if any, as an input device
+CONFIG_USB_VIDEO_CLASS_INPUT_EVDEV=y

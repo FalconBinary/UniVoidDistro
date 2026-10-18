@@ -1,0 +1,172 @@
+# kernel/profiles/hardening: the protection of Void-Hardened-Refurs, as build options.
+#
+# Two kinds of lines: the cmdline parameters of install/lib.sh vh_cmdline() become build
+# defaults (the custom UKI's cmdline keeps them too, so the stock UKI and the custom one behave
+# the same), and features that the cmdline or module_blacklist= only disabled are not built
+# at all. Everything that was =m in the Void config and is not in the LSMOD list is already
+# dropped by localyesconfig; this file names what was =y or what must stay off even if a
+# module of the same name was loaded.
+#
+# What this file deliberately does not do: RANDSTRUCT (it breaks the BTF-based type
+# information vh-sched relies on), GCC plugins (the build is clang), X86_USER_SHADOW_STACK
+# (Comet Lake has no CET; Void's value is kept).
+
+# lockdown=confidentiality: forced at build time; no cmdline can lower it.
+CONFIG_SECURITY_LOCKDOWN_LSM=y
+CONFIG_SECURITY_LOCKDOWN_LSM_EARLY=y
+CONFIG_LOCK_DOWN_KERNEL_FORCE_CONFIDENTIALITY=y
+# lsm=landlock,lockdown,yama,apparmor: the same order, as the default; the BPF LSM is off
+# (docs/principles.md: unprivileged BPF off, BPF LSM off).
+CONFIG_SECURITY=y
+CONFIG_SECURITY_LANDLOCK=y
+CONFIG_SECURITY_YAMA=y
+CONFIG_SECURITY_APPARMOR=y
+CONFIG_LSM="landlock,lockdown,yama,apparmor"
+# CONFIG_BPF_LSM is not set
+# CONFIG_SECURITY_SELINUX is not set
+# CONFIG_SECURITY_SMACK is not set
+# CONFIG_SECURITY_TOMOYO is not set
+# CONFIG_SECURITY_LOADPIN is not set
+# CONFIG_SECURITY_SAFESETID is not set
+
+# init_on_alloc=1 init_on_free=1: both as build defaults. init_on_free costs 3-8 % in the
+# published measurements [VERIFY by bench/ on this machine]; the running system already pays
+# it through the cmdline, so the protection level does not change here.
+CONFIG_INIT_ON_ALLOC_DEFAULT_ON=y
+CONFIG_INIT_ON_FREE_DEFAULT_ON=y
+# slab_nomerge: separate caches, no cross-cache overflow between kernel objects.
+# CONFIG_SLAB_MERGE_DEFAULT is not set
+CONFIG_SLAB_FREELIST_RANDOM=y
+CONFIG_SLAB_FREELIST_HARDENED=y
+# page_alloc.shuffle=1 has no build-time default; this makes it possible, the cmdline keeps it on.
+CONFIG_SHUFFLE_PAGE_ALLOCATOR=y
+CONFIG_RANDOMIZE_KSTACK_OFFSET=y
+CONFIG_RANDOMIZE_KSTACK_OFFSET_DEFAULT=y
+CONFIG_RANDOMIZE_BASE=y
+CONFIG_RANDOMIZE_MEMORY=y
+
+# Compiler and memory hardening that the Void kernel already has; named here so the diff
+# report shows them.
+CONFIG_HARDENED_USERCOPY=y
+CONFIG_FORTIFY_SOURCE=y
+CONFIG_STACKPROTECTOR=y
+CONFIG_STACKPROTECTOR_STRONG=y
+CONFIG_VMAP_STACK=y
+CONFIG_ZERO_CALL_USED_REGS=y
+CONFIG_BUG_ON_DATA_CORRUPTION=y
+CONFIG_DEBUG_LIST=y
+CONFIG_SCHED_STACK_END_CHECK=y
+CONFIG_STRICT_KERNEL_RWX=y
+CONFIG_DEBUG_WX=y
+CONFIG_SECURITY_DMESG_RESTRICT=y
+# kCFI (forward-edge control-flow integrity): clang only, which the CI build is (LLVM=1);
+# CONFIG_CFI since 6.18 (CFI_CLANG before). Not permissive: a violation is a panic.
+CONFIG_CFI=y
+# CONFIG_CFI_PERMISSIVE is not set
+
+# intel_iommu=on iommu.strict=1 iommu.passthrough=0 efi=disable_early_pci_dma: DMA protection
+# as build defaults.
+CONFIG_IOMMU_SUPPORT=y
+CONFIG_INTEL_IOMMU=y
+CONFIG_INTEL_IOMMU_DEFAULT_ON=y
+CONFIG_IOMMU_DEFAULT_DMA_STRICT=y
+CONFIG_EFI_DISABLE_PCI_DMA=y
+
+# bdev_allow_write_mounted=0: no writes to a block device that is mounted.
+# CONFIG_BLK_DEV_WRITE_MOUNTED is not set
+# efi_pstore.pstore_disable=1: no kernel logs into EFI variables.
+# CONFIG_EFI_VARS_PSTORE is not set
+# proc_mem.force_override=never: /proc/PID/mem cannot bypass page protections.
+CONFIG_PROC_MEM_NO_FORCE=y
+# panic=10: a panic reboots after ten seconds (the watchdog covers hangs).
+CONFIG_PANIC_TIMEOUT=10
+# kernel.sysrq=0 (sysctl): no magic keys by default; /proc/sysrq-trigger stays for root.
+CONFIG_MAGIC_SYSRQ_DEFAULT_ENABLE=0x0
+# kernel.unprivileged_bpf_disabled=1 as the build default.
+CONFIG_BPF_UNPRIV_DEFAULT_OFF=y
+
+# Interfaces that are not built (the sysctls that disabled them vanish: the sysctl loader
+# skips ENOENT, vh-audit checks "absent" instead of a value).
+# X32 and ia32: no 32-bit ABI; features/game re-enables ia32 for Steam, guarded by the cmdline.
+# CONFIG_X86_X32_ABI is not set
+# CONFIG_IA32_EMULATION is not set
+# kexec: a signed-kernel bypass and a rootkit vector; kernel.kexec_load_disabled=1 today.
+# CONFIG_KEXEC is not set
+# CONFIG_KEXEC_FILE is not set
+# CONFIG_CRASH_DUMP is not set
+# CONFIG_PROC_VMCORE is not set
+# Hibernation writes the whole RAM, keys included, to disk.
+# CONFIG_HIBERNATION is not set
+# debugfs=off on the cmdline today; not built.
+# CONFIG_DEBUG_FS is not set
+# /proc/kcore and /dev/mem, /dev/port expose kernel memory.
+# CONFIG_PROC_KCORE is not set
+# CONFIG_DEVMEM is not set
+# CONFIG_DEVPORT is not set
+# binfmt_misc: foreign-binary handlers registered from user space (module_blacklist today).
+# CONFIG_BINFMT_MISC is not set
+# io_uring: kernel.io_uring_disabled=2 today; a frequent source of privilege escalations.
+# CONFIG_IO_URING is not set
+# modify_ldt: 16-bit segments; features/game turns it on [VERIFY for Wine].
+# CONFIG_MODIFY_LDT_SYSCALL is not set
+# MPTCP: net.mptcp.enabled=0 today.
+# CONFIG_MPTCP is not set
+# userfaultfd: vm.unprivileged_userfaultfd=0 today; a race-condition tool in exploits.
+# CONFIG_USERFAULTFD is not set
+# KSM merges pages across processes: a side channel.
+# CONFIG_KSM is not set
+# Legacy terminals: TIOCSTI injects input into another terminal; legacy ptys predate /dev/pts.
+# CONFIG_LEGACY_TIOCSTI is not set
+# CONFIG_LEGACY_PTYS is not set
+# iopl/ioperm: user-space port I/O.
+# CONFIG_X86_IOPL_IOPERM is not set
+# ACPI table upgrades from the initrd: a firmware-level override from a file.
+# CONFIG_ACPI_TABLE_UPGRADE is not set
+
+# Hardware classes from module_blacklist= (install/lib.sh): not built.
+# DMA-capable ports: FireWire, Thunderbolt/USB4, USB/IP.
+# CONFIG_FIREWIRE is not set
+# CONFIG_USB4 is not set
+# CONFIG_USBIP_CORE is not set
+# The Intel ME interface: AMT is off, the fTPM works through tpm_crb.
+# CONFIG_INTEL_MEI is not set
+# CONFIG_INTEL_MEI_ME is not set
+# Rare network protocols reachable through socket() without privileges.
+# CONFIG_IP_SCTP is not set
+# CONFIG_RDS is not set
+# CONFIG_TIPC is not set
+# CONFIG_CAN is not set
+# CONFIG_ATM is not set
+# CONFIG_HAMRADIO is not set
+# CONFIG_X25 is not set
+# CONFIG_ATALK is not set
+# CONFIG_IEEE802154 is not set
+# CONFIG_NFC is not set
+# CONFIG_NET_9P is not set
+# CONFIG_AF_RXRPC is not set
+# CONFIG_AF_KCM is not set
+# CONFIG_BATMAN_ADV is not set
+# CONFIG_L2TP is not set
+# CONFIG_PHONET is not set
+# CONFIG_CAIF is not set
+# CONFIG_OPENVSWITCH is not set
+# File systems never mounted here, and the two (fuse, overlay) that a user namespace could
+# otherwise mount.
+# CONFIG_CRAMFS is not set
+# CONFIG_HFS_FS is not set
+# CONFIG_HFSPLUS_FS is not set
+# CONFIG_UDF_FS is not set
+# CONFIG_CIFS is not set
+# CONFIG_SMB_SERVER is not set
+# CONFIG_NFS_FS is not set
+# CONFIG_9P_FS is not set
+# CONFIG_JFFS2_FS is not set
+# CONFIG_VXFS_FS is not set
+# CONFIG_FUSE_FS is not set
+# CONFIG_OVERLAY_FS is not set
+# Miscellaneous: uhid (features/game turns it on for Steam Input), the PC speaker, the
+# virtual video test driver, the ACPI button driver that bypasses vh-acpid.
+# CONFIG_UHID is not set
+# CONFIG_INPUT_PCSPKR is not set
+# CONFIG_VIDEO_VIVID is not set
+# CONFIG_ACPI_TINY_POWER_BUTTON is not set

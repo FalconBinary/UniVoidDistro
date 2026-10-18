@@ -1,0 +1,58 @@
+# kernel/profiles/perf: speed, where a measurement or the hardware itself justifies it.
+#
+# Every line is either what the Void kernel already does (named so the diff report shows it),
+# a consequence of building for one machine, or marked [VERIFY] with the bench/ measurement
+# that decides it (docs/principles.md: "faster" is claimed only with a measurement).
+
+# 1000 Hz timer ticks: lower scheduling latency for the desktop and games (Void's value).
+CONFIG_HZ_1000=y
+CONFIG_HZ=1000
+# preempt=full is on the cmdline today; the build default becomes full, and PREEMPT_DYNAMIC
+# keeps "preempt=lazy" selectable at boot without a rebuild [VERIFY by measurement: full
+# against lazy, bench/ 1 % lows].
+CONFIG_PREEMPT=y
+CONFIG_PREEMPT_DYNAMIC=y
+# One machine: 6 cores, 12 threads. Smaller per-CPU arrays and bitmaps.
+CONFIG_NR_CPUS=12
+# Thin LTO with clang (LLVM=1 in CI): cross-module inlining; kCFI from hardening works with it.
+CONFIG_LTO_CLANG_THIN=y
+# CONFIG_X86_NATIVE_CPU only when building on the machine itself (clang's -march=native);
+# in CI the workflow passes KCFLAGS=-march=skylake instead (Comet Lake is Skylake-class).
+# CONFIG_X86_NATIVE_CPU is not set
+
+# The CPU: intel_pstate with schedutil as the default governor (sched_ext's cpuperf hooks
+# act only with schedutil, docs/ROADMAP.md), intel_idle, SMT and multi-core aware scheduling.
+CONFIG_X86_INTEL_PSTATE=y
+CONFIG_CPU_FREQ_DEFAULT_GOV_SCHEDUTIL=y
+CONFIG_INTEL_IDLE=y
+CONFIG_SCHED_MC=y
+CONFIG_SCHED_MC_PRIO=y
+CONFIG_SCHED_SMT=y
+CONFIG_X86_X2APIC=y
+# Transparent huge pages in madvise mode (07-vh-mm.sh): the Void default, kept.
+CONFIG_TRANSPARENT_HUGEPAGE=y
+CONFIG_TRANSPARENT_HUGEPAGE_MADVISE=y
+
+# The kernel image compressed with zstd instead of gzip: faster decompression at boot
+# [VERIFY by measurement: bench/ boot time, firmware to login].
+CONFIG_KERNEL_ZSTD=y
+# CONFIG_KERNEL_GZIP is not set
+
+# Counters for bench/ and vh-session-usage: uncore, RAPL energy and C-state events, package
+# temperature.
+CONFIG_PERF_EVENTS=y
+CONFIG_PERF_EVENTS_INTEL_UNCORE=y
+CONFIG_PERF_EVENTS_INTEL_RAPL=y
+CONFIG_PERF_EVENTS_INTEL_CSTATE=y
+CONFIG_X86_PKG_TEMP_THERMAL=y
+
+# Network: BBR and fq are set by rootfs/etc/sysctl.d/50-vh-performance.conf and preloaded
+# today (tcp_bbr, sch_fq in install/30-lock.sh); built in here.
+CONFIG_NET_SCHED=y
+CONFIG_NET_SCH_FQ=y
+CONFIG_TCP_CONG_BBR=y
+
+# Kept from Void without a change, listed so nobody "optimises" them blindly: NO_HZ_FULL
+# (without nohz_full= it behaves as NO_HZ_IDLE), SCHED_CORE, SCHED_AUTOGROUP (vh-sched
+# replaces it in v0.2), every CONFIG_MITIGATION_* (protection is never traded for speed
+# silently: a mitigation is dropped only with a measurement and a row in the summary table).

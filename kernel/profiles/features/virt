@@ -1,0 +1,15 @@
+# kernel/profiles/features/virt: KVM on this machine (VH_VIRT=yes).
+#
+# Off when VH_VIRT=no: VT-x is then disabled in the BIOS too (docs/ru/00-prepare.md), so that
+# a kernel exploit cannot slip a thin hypervisor under the OS. Not selected by default.
+
+CONFIG_VIRTUALIZATION=y
+CONFIG_KVM=y
+CONFIG_KVM_INTEL=y
+# Guest networking: tap devices behind a bridge, vhost for virtio-net.
+CONFIG_TUN=y
+CONFIG_BRIDGE=y
+CONFIG_VHOST_NET=y
+# vsock between host and guest (agents, file sharing without a network).
+CONFIG_VSOCKETS=y
+CONFIG_VHOST_VSOCK=y
