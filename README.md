@@ -65,7 +65,8 @@ Zig 0.17.0 exactly (`zig/ZIG_VERSION`; `install/fetch-zig.sh` downloads and veri
 
 ```sh
 zig build -Dtarget=x86_64-linux --prefix build/out   # every Zig program of every track
-zig build test                                        # unit tests of every component
+zig build tests -Dtarget=x86_64-linux --prefix build/zt && for t in build/zt/test/*; do "$t"; done
+                                                      # unit tests: built once, run directly on Linux
 sh tests/zig/run.sh                                   # the tools in a Void container (docker)
 sh tests/thor/run.sh                                  # thor in a Void container (docker)
 python3 tests/vm/vhvm.py install --iso void-live-x86_64-20250202-base.iso

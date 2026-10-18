@@ -22,8 +22,10 @@ pub fn build(b: *std.Build) void {
     // ReleaseSafe by default, as in every component (zig/README.md)
     const optimize = b.option(std.builtin.Optimize, "optimize", "build mode (safe = ReleaseSafe)") orelse .safe;
 
+    // [VERIFY] `zig build test` (the build runner driving the test binaries) hangs with the
+    // zig/ tests (killed after 15 min in the Void container, 2026-10-19); the binaries pass when
+    // run directly. CI and tests/zig/run.sh therefore build them with `tests` and run them.
     const test_step = b.step("test", "unit tests of every component: build and run");
-    // CI and tests/zig/run.sh build the test binaries into PREFIX/test and run them directly
     const tests_step = b.step("tests", "unit tests of every component: build only, into PREFIX/test");
     for (tracks) |name| {
         const dep = b.dependency(name, .{ .target = target, .optimize = optimize });
