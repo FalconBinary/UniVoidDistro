@@ -32,9 +32,9 @@ jobs:
       - name: static PIE, no interpreter
         run: |
           set -e
+          # file(1) reports a static PIE as "static-pie linked" (a non-PIE static binary says "statically linked")
           for f in build/out/bin/*; do
-            file "$f" | grep -q 'statically linked' || { echo "$f is not static"; exit 1; }
-            file "$f" | grep -q 'pie' || { echo "$f is not PIE"; exit 1; }
+            file "$f" | grep -q 'static-pie linked' || { echo "$f is not a static PIE: $(file -b "$f")"; exit 1; }
           done
           ls -l build/out/bin
       - uses: actions/upload-artifact@v4
