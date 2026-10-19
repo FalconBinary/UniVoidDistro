@@ -1,7 +1,13 @@
-//! vh-kconf probe: sysfs and procfs -> hw.zon. Reads only; never a serial number, a MAC
-//! address or a UUID. With --save DIR every file and symlink it read is copied under DIR
-//! (a snapshot with the shape of sysfs); with --from DIR it reads such a snapshot instead
-//! of the live system, so the probe runs on a Mac and in unit tests (tests/kernel/fixtures).
+//! vh-kconf probe: sysfs, procfs and the device tree -> hw.zon. Reads only; never a serial
+//! number, a MAC address or a UUID: not the DMI serials, not a network interface's address,
+//! not the Uniq or Phys of an input device, not the device tree's serial-number. With
+//! --save DIR every file and symlink it read is copied under DIR (a snapshot with the shape
+//! of sysfs); with --from DIR it reads such a snapshot instead of the live system, so the
+//! probe runs on a Mac and in unit tests (tests/kernel/fixtures).
+//!
+//! The probe records facts, not judgements: no vendor or model is named here. What a fact
+//! means for the machine (a laptop, a hybrid GPU, an IOMMU) is decided by the rules of
+//! hwdb/ in vh-plan.
 const std = @import("std");
 const vh = @import("vh");
 const hw = @import("hw.zig");
@@ -34,9 +40,9 @@ pub const Src = struct {
 
     /// directory entries, sorted; empty when absent
     pub fn list(self: *const Src, rel: []const u8) []const []const u8 {
-        const names = vh.listDir(self.abs(rel)) catch return &.{};
+        const entries = vh.listDir(self.abs(rel)) catch return &.{};
         if (self.save) |dir| vh.mkdirs(vh.fmt("{s}{s}", .{ dir, self.resolve(dir, rel) }), 0o755);
-        const sorted = vh.gpa.dupe([]const u8, names) catch vh.oom();
+        const sorted = vh.gpa.dupe([]const u8, entries) catch vh.oom();
         mem.sort([]const u8, sorted, {}, vh.lessStr);
         return sorted;
     }
@@ -48,16 +54,63 @@ pub const Src = struct {
         return target;
     }
 
+    /// Whether `rel` exists. In a snapshot a directory is recreated and a file is marked by
+    /// an empty one, so that the replay answers the same; the content is not copied.
     pub fn exists(self: *const Src, rel: []const u8) bool {
         const ok = vh.pathExists(self.abs(rel));
-        if (ok and self.save != null) _ = self.resolve(self.save.?, rel);
+        if (ok) {
+            if (self.save) |dir| {
+                const path = vh.fmt("{s}{s}", .{ dir, self.resolve(dir, rel) });
+                if (vh.isDir(self.abs(rel))) vh.mkdirs(path, 0o755) else self.mark(path);
+            }
+        }
         return ok;
+    }
+
+    /// A file read through a filter: the snapshot gets the filtered text, never the original
+    /// (cpuinfo without a board's Serial line, mounts without paths, input devices without
+    /// addresses).
+    pub fn readClean(self: *const Src, rel: []const u8, comptime clean: fn ([]const u8) []const u8) ?[]const u8 {
+        const raw = vh.readFile(self.abs(rel)) catch return null;
+        const data = clean(raw);
+        if (self.save) |dir| self.saveFile(dir, rel, data);
+        return data;
+    }
+
+    /// the names in a directory whose entries are facts by name alone (ACPI tables: the
+    /// signature, never the content); a snapshot gets an empty file for each
+    pub fn names(self: *const Src, rel: []const u8) []const []const u8 {
+        const all = self.list(rel);
+        if (self.save) |dir| {
+            const resolved = self.resolve(dir, rel);
+            for (all) |n| {
+                if (vh.isDir(self.abs(vh.fmt("{s}/{s}", .{ rel, n })))) continue;
+                self.mark(vh.fmt("{s}{s}/{s}", .{ dir, resolved, n }));
+            }
+        }
+        return all;
+    }
+
+    fn mark(_: *const Src, path: []const u8) void {
+        if (vh.pathExists(path)) return;
+        vh.mkdirs(dirname(path), 0o755);
+        vh.writeAtomic(path, "", 0o644);
+    }
+
+    /// `rel` with every symlink on the way resolved (the real path under /sys/devices of a
+    /// /sys/class or /sys/block entry); with --save the symlinks are recreated in the snapshot
+    pub fn real(self: *const Src, rel: []const u8) []const u8 {
+        return self.walk(self.save, rel);
     }
 
     /// Walk `rel` component by component under the live root; every symlink on the way is
     /// recreated under `dir` with the same relative target, so that the snapshot resolves
     /// exactly as sysfs does. Returns the resolved path.
     fn resolve(self: *const Src, dir: []const u8, rel: []const u8) []const u8 {
+        return self.walk(dir, rel);
+    }
+
+    fn walk(self: *const Src, save_dir: ?[]const u8, rel: []const u8) []const u8 {
         var cur: []const u8 = "";
         var it = mem.tokenizeScalar(u8, rel, '/');
         while (it.next()) |comp| {
@@ -71,7 +124,7 @@ pub const Src = struct {
                     cur = next;
                     continue;
                 };
-                writeLink(vh.fmt("{s}{s}", .{ dir, next }), target);
+                if (save_dir) |dir| writeLink(vh.fmt("{s}{s}", .{ dir, next }), target);
                 cur = joinRel(next, target);
             } else {
                 cur = next;
@@ -81,8 +134,7 @@ pub const Src = struct {
     }
 
     fn saveFile(self: *const Src, dir: []const u8, rel: []const u8, data: []const u8) void {
-        const real = self.resolve(dir, rel);
-        const path = vh.fmt("{s}{s}", .{ dir, real });
+        const path = vh.fmt("{s}{s}", .{ dir, self.resolve(dir, rel) });
         vh.mkdirs(dirname(path), 0o755);
         vh.writeAtomic(path, data, 0o644);
     }
@@ -138,11 +190,46 @@ pub fn run(src: *const Src) hw.Hw {
     h.probe.source = if (src.root.len == 0) "live" else vh.dupe(basename(src.root));
     h.machine = machine(src);
     h.cpu = cpu(src);
+    h.arch = arch(src, h.cpu);
+    h.memory = memory(src);
     h.firmware = firmware(src);
+    h.virt = .{ .sys_type = src.line("/sys/hypervisor/type") };
     h.filesystems = filesystems(src);
     h.modules = modules(src);
     h.devices = devices(src);
+    h.blocks = blocks(src);
+    h.net = net(src);
+    h.power = power(src);
+    h.displays = displays(src, h.devices);
+    h.keyboards = keyboards(src);
+    h.sound = sound(src);
     return h;
+}
+
+/// uname -m of the probed kernel: /proc/sys/kernel/arch, uname(2) on the live system, else
+/// what cpuinfo shows (a snapshot of a kernel without the sysctl)
+fn arch(src: *const Src, c: hw.Cpu) []const u8 {
+    const a = src.line("/proc/sys/kernel/arch");
+    if (a.len > 0) return a;
+    if (src.root.len == 0) {
+        var uts: linux.utsname = undefined;
+        if (linux.uname(&uts) == 0) return vh.dupe(mem.sliceTo(&uts.machine, 0));
+    }
+    if (c.implementer.len > 0) return "aarch64";
+    if (c.vendor.len > 0) return "x86_64";
+    return "";
+}
+
+fn memory(src: *const Src) hw.Memory {
+    const info = src.read("/proc/meminfo") orelse return .{};
+    var lines = mem.tokenizeScalar(u8, info, '\n');
+    while (lines.next()) |l| {
+        if (!vh.startsWith(l, "MemTotal:")) continue;
+        var it = mem.tokenizeAny(u8, l["MemTotal:".len..], " \t");
+        const n = it.next() orelse break;
+        return .{ .total_kib = std.fmt.parseInt(u64, n, 10) catch 0 };
+    }
+    return .{};
 }
 
 fn machine(src: *const Src) hw.Machine {
@@ -163,10 +250,11 @@ fn machine(src: *const Src) hw.Machine {
 
 fn cpu(src: *const Src) hw.Cpu {
     var c: hw.Cpu = .{};
-    const info = src.read("/proc/cpuinfo") orelse "";
+    const info = src.readClean("/proc/cpuinfo", cleanCpuinfo) orelse "";
     var lines = mem.tokenizeScalar(u8, info, '\n');
     var threads: u32 = 0;
     var first = true;
+    var features: []const u8 = "";
     while (lines.next()) |raw| {
         const colon = mem.indexOfScalar(u8, raw, ':') orelse continue;
         const key = vh.strip(raw[0..colon]);
@@ -177,15 +265,34 @@ fn cpu(src: *const Src) hw.Cpu {
             continue;
         }
         if (!first) continue;
-        if (vh.eql(key, "vendor_id")) c.vendor = val else if (vh.eql(key, "cpu family")) c.family = num(val) else if (vh.eql(key, "model")) c.model = num(val) else if (vh.eql(key, "model name")) c.model_name = val else if (vh.eql(key, "stepping")) c.stepping = num(val) else if (vh.eql(key, "microcode")) c.microcode = val else if (vh.eql(key, "cpu cores")) c.cores = num(val) else if (vh.eql(key, "flags")) c.flags = val;
+        if (vh.eql(key, "vendor_id")) c.vendor = val else if (vh.eql(key, "cpu family")) c.family = num(val) else if (vh.eql(key, "model")) c.model = num(val) else if (vh.eql(key, "model name")) c.model_name = val else if (vh.eql(key, "stepping")) c.stepping = num(val) else if (vh.eql(key, "microcode")) c.microcode = val else if (vh.eql(key, "cpu cores")) c.cores = num(val) else if (vh.eql(key, "flags")) c.flags = val else if (vh.eql(key, "Features")) features = val else if (vh.eql(key, "CPU implementer")) c.implementer = val else if (vh.eql(key, "CPU part")) c.part = val;
     }
+    // ARM names its feature flags "Features"; the rules read both as flags
+    if (c.flags.len == 0) c.flags = features;
     // what sysfs says wins over the cpuinfo count: every present CPU, online or not
-    var present: u32 = 0;
+    var present: std.ArrayList(u32) = .empty;
     for (src.list("/sys/devices/system/cpu")) |n| {
-        if (n.len > 3 and vh.startsWith(n, "cpu") and std.ascii.isDigit(n[3])) present += 1;
+        if (n.len > 3 and vh.startsWith(n, "cpu") and allDigits(n[3..])) present.append(vh.gpa, num(n[3..])) catch vh.oom();
     }
-    c.threads = if (present > 0) present else threads;
+    mem.sort(u32, present.items, {}, std.sort.asc(u32));
+    c.threads = if (present.items.len > 0) @intCast(present.items.len) else threads;
+    c.possible = countList(src.line("/sys/devices/system/cpu/possible"));
     c.smt = vh.eql(src.line("/sys/devices/system/cpu/smt/active"), "1");
+    for (src.list("/sys/devices/system/cpu/cpufreq")) |p| {
+        if (!vh.startsWith(p, "policy")) continue;
+        const pd = vh.fmt("/sys/devices/system/cpu/cpufreq/{s}/", .{p});
+        c.freq_driver = src.line(vh.fmt("{s}scaling_driver", .{pd}));
+        c.epp = src.exists(vh.fmt("{s}energy_performance_available_preferences", .{pd}));
+        break;
+    }
+    c.topology = topology(src, present.items);
+    if (c.cores == 0) c.cores = countCores(c.topology);
+    c.numa = numa(src);
+    var vulns: std.ArrayList(hw.Vulnerability) = .empty;
+    for (src.list("/sys/devices/system/cpu/vulnerabilities")) |n| {
+        vulns.append(vh.gpa, .{ .name = n, .state = src.line(vh.fmt("/sys/devices/system/cpu/vulnerabilities/{s}", .{n})) }) catch vh.oom();
+    }
+    c.vulnerabilities = vulns.items;
     var caches: std.ArrayList(hw.Cache) = .empty;
     const cdir = "/sys/devices/system/cpu/cpu0/cache";
     for (src.list(cdir)) |n| {
@@ -219,17 +326,149 @@ fn sizeKb(s: []const u8) u32 {
     };
 }
 
+/// every present CPU: its package, die, cluster, core, SMT siblings, last-level cache,
+/// maximum frequency, capacity and, on a hybrid Intel CPU, its core type
+fn topology(src: *const Src, present: []const u32) []const hw.CpuTopo {
+    const p_cores = src.line("/sys/devices/cpu_core/cpus");
+    const e_cores = src.line("/sys/devices/cpu_atom/cpus");
+    var out: std.ArrayList(hw.CpuTopo) = .empty;
+    for (present) |n| {
+        const d = vh.fmt("/sys/devices/system/cpu/cpu{d}", .{n});
+        var t: hw.CpuTopo = .{ .cpu = n };
+        t.package = num(src.line(vh.fmt("{s}/topology/physical_package_id", .{d})));
+        t.die = num(src.line(vh.fmt("{s}/topology/die_id", .{d})));
+        t.cluster = num(src.line(vh.fmt("{s}/topology/cluster_id", .{d})));
+        t.core = num(src.line(vh.fmt("{s}/topology/core_id", .{d})));
+        t.siblings = src.line(vh.fmt("{s}/topology/core_cpus_list", .{d}));
+        if (t.siblings.len == 0) t.siblings = src.line(vh.fmt("{s}/topology/thread_siblings_list", .{d}));
+        // the last-level cache: the highest level this CPU has
+        var level: u32 = 0;
+        for (src.list(vh.fmt("{s}/cache", .{d}))) |ix| {
+            if (!vh.startsWith(ix, "index")) continue;
+            const p = vh.fmt("{s}/cache/{s}/", .{ d, ix });
+            const l = num(src.line(vh.fmt("{s}level", .{p})));
+            if (l <= level) continue;
+            level = l;
+            t.llc = src.line(vh.fmt("{s}shared_cpu_list", .{p}));
+            t.llc_kb = sizeKb(src.line(vh.fmt("{s}size", .{p})));
+        }
+        t.max_khz = num(src.line(vh.fmt("{s}/cpufreq/cpuinfo_max_freq", .{d})));
+        t.capacity = num(src.line(vh.fmt("{s}/cpu_capacity", .{d})));
+        if (inList(p_cores, n)) t.kind = "core" else if (inList(e_cores, n)) t.kind = "atom";
+        out.append(vh.gpa, t) catch vh.oom();
+    }
+    return out.items;
+}
+
+/// physical cores: the distinct (package, die, core) of the topology
+fn countCores(topo: []const hw.CpuTopo) u32 {
+    var seen: std.AutoHashMapUnmanaged([3]u32, void) = .empty;
+    for (topo) |t| seen.put(vh.gpa, .{ t.package, t.die, t.core }, {}) catch vh.oom();
+    return seen.count();
+}
+
+/// the CPU list of every NUMA node, in node order
+fn numa(src: *const Src) []const []const u8 {
+    var nodes: std.ArrayList(u32) = .empty;
+    for (src.list("/sys/devices/system/node")) |n| {
+        if (n.len > 4 and vh.startsWith(n, "node") and allDigits(n[4..])) nodes.append(vh.gpa, num(n[4..])) catch vh.oom();
+    }
+    mem.sort(u32, nodes.items, {}, std.sort.asc(u32));
+    var out: std.ArrayList([]const u8) = .empty;
+    for (nodes.items) |n| out.append(vh.gpa, src.line(vh.fmt("/sys/devices/system/node/node{d}/cpulist", .{n}))) catch vh.oom();
+    return out.items;
+}
+
+fn allDigits(s: []const u8) bool {
+    if (s.len == 0) return false;
+    for (s) |ch| if (!std.ascii.isDigit(ch)) return false;
+    return true;
+}
+
+/// the number of CPUs in a sysfs CPU list: "0-11" -> 12, "0,2-5,8" -> 6, "" -> 0
+pub fn countList(s: []const u8) u32 {
+    var n: u32 = 0;
+    var it = mem.tokenizeScalar(u8, s, ',');
+    while (it.next()) |part| {
+        if (mem.indexOfScalar(u8, part, '-')) |dash| {
+            const a = std.fmt.parseInt(u32, vh.strip(part[0..dash]), 10) catch continue;
+            const b = std.fmt.parseInt(u32, vh.strip(part[dash + 1 ..]), 10) catch continue;
+            if (b >= a) n += b - a + 1;
+        } else if (std.fmt.parseInt(u32, vh.strip(part), 10)) |_| {
+            n += 1;
+        } else |_| {}
+    }
+    return n;
+}
+
+/// whether CPU `cpu` is in a sysfs CPU list
+pub fn inList(s: []const u8, cpu_n: u32) bool {
+    var it = mem.tokenizeScalar(u8, s, ',');
+    while (it.next()) |part| {
+        if (mem.indexOfScalar(u8, part, '-')) |dash| {
+            const a = std.fmt.parseInt(u32, vh.strip(part[0..dash]), 10) catch continue;
+            const b = std.fmt.parseInt(u32, vh.strip(part[dash + 1 ..]), 10) catch continue;
+            if (cpu_n >= a and cpu_n <= b) return true;
+        } else if (std.fmt.parseInt(u32, vh.strip(part), 10)) |x| {
+            if (x == cpu_n) return true;
+        } else |_| {}
+    }
+    return false;
+}
+
+/// cpuinfo without the lines that identify one board (the Raspberry Pi kernel prints Serial)
+fn cleanCpuinfo(raw: []const u8) []const u8 {
+    var out: std.ArrayList(u8) = .empty;
+    var lines = mem.splitScalar(u8, raw, '\n');
+    var first = true;
+    while (lines.next()) |l| {
+        const colon = mem.indexOfScalar(u8, l, ':');
+        if (colon) |c| {
+            const key = vh.strip(l[0..c]);
+            if (vh.eql(key, "Serial")) continue;
+        }
+        if (!first) out.append(vh.gpa, '\n') catch vh.oom();
+        first = false;
+        out.appendSlice(vh.gpa, l) catch vh.oom();
+    }
+    return out.items;
+}
+
+/// mounts with only the file system type: no device names, no mount points
+fn cleanMounts(raw: []const u8) []const u8 {
+    var out: std.ArrayList(u8) = .empty;
+    var lines = mem.tokenizeScalar(u8, raw, '\n');
+    while (lines.next()) |l| {
+        var it = mem.tokenizeAny(u8, l, " \t");
+        _ = it.next();
+        _ = it.next();
+        const fstype = it.next() orelse continue;
+        out.print(vh.gpa, "- - {s} - 0 0\n", .{fstype}) catch vh.oom();
+    }
+    return out.items;
+}
+
+/// the efivar value byte: four bytes of attributes, then the value
+fn efiBool(src: *const Src, name: []const u8) ?bool {
+    const data = src.read(vh.fmt("/sys/firmware/efi/efivars/{s}", .{name})) orelse return null;
+    if (data.len <= 4) return null;
+    return data[4] == 1;
+}
+
 fn firmware(src: *const Src) hw.Firmware {
     var f: hw.Firmware = .{};
     f.efi = src.exists("/sys/firmware/efi");
     if (f.efi) {
         f.efi_bits = num(src.line("/sys/firmware/efi/fw_platform_size"));
+        // the UEFI global variables by name; no other variable is read
         for (src.list("/sys/firmware/efi/efivars")) |n| {
-            if (!vh.startsWith(n, "SecureBoot-")) continue;
-            const data = src.read(vh.fmt("/sys/firmware/efi/efivars/{s}", .{n})) orelse break;
-            // four bytes of attributes, then the value
-            if (data.len > 4) f.secure_boot = data[4] == 1;
-            break;
+            if (vh.startsWith(n, "SecureBoot-")) {
+                f.secure_boot = efiBool(src, n);
+            } else if (vh.startsWith(n, "SetupMode-")) {
+                f.setup_mode = efiBool(src, n);
+            } else if (vh.startsWith(n, "MemoryOverwriteRequestControl-")) {
+                f.mor = src.exists(vh.fmt("/sys/firmware/efi/efivars/{s}", .{n}));
+            }
         }
     }
     f.tpm = src.exists("/sys/class/tpm/tpm0");
@@ -237,12 +476,32 @@ fn firmware(src: *const Src) hw.Firmware {
         f.tpm_version = num(src.line("/sys/class/tpm/tpm0/tpm_version_major"));
         if (src.link("/sys/class/tpm/tpm0/device/driver")) |t| f.tpm_driver = vh.dupe(basename(t));
     }
+    // the ACPI tables by signature only: their content is never read (MSDM holds a product key)
+    var tables: vh.Strv = .{};
+    for (src.names("/sys/firmware/acpi/tables")) |n| {
+        if (vh.eql(n, "data") or vh.eql(n, "dynamic")) continue;
+        const sig = n[0..@min(n.len, 4)];
+        if (!tables.has(sig)) tables.add(sig);
+    }
+    tables.sort();
+    f.acpi_tables = tables.slice();
+    for (src.list("/sys/class/iommu")) |n| {
+        if (src.link(vh.fmt("/sys/class/iommu/{s}", .{n})) != null) f.iommu_units += 1;
+    }
+    // the device tree of a board: the model and the compatible list, nothing else
+    if (src.read("/sys/firmware/devicetree/base/model")) |m| f.dt_model = vh.dupe(mem.trimEnd(u8, m, "\x00\n"));
+    if (src.read("/sys/firmware/devicetree/base/compatible")) |cpt| {
+        var list: vh.Strv = .{};
+        var it = mem.tokenizeScalar(u8, cpt, 0);
+        while (it.next()) |x| list.add(x);
+        f.dt_compatible = list.slice();
+    }
     return f;
 }
 
 fn filesystems(src: *const Src) []const []const u8 {
     var set: vh.Strv = .{};
-    const mounts = src.read("/proc/mounts") orelse "";
+    const mounts = src.readClean("/proc/mounts", cleanMounts) orelse "";
     var lines = mem.tokenizeScalar(u8, mounts, '\n');
     while (lines.next()) |l| {
         var it = mem.tokenizeAny(u8, l, " \t");
@@ -297,6 +556,291 @@ fn lessDevice(_: void, a: hw.Device, b: hw.Device) bool {
     return mem.order(u8, a.name, b.name) == .lt;
 }
 
+// ---------------------------------------------------------------- what hangs off the buses
+
+/// the driver bound to a device directory, with its module ("" when built in)
+fn linkOf(src: *const Src, dev: []const u8) ?hw.Link {
+    const t = src.link(vh.fmt("{s}/driver", .{dev})) orelse return null;
+    var l: hw.Link = .{ .driver = vh.dupe(basename(t)) };
+    if (src.link(vh.fmt("{s}/driver/module", .{dev}))) |m| l.module = vh.dupe(basename(m));
+    return l;
+}
+
+/// the drivers from a device directory up to the top of /sys/devices, nearest first
+pub fn driverChain(src: *const Src, path: []const u8) []const hw.Link {
+    var out: std.ArrayList(hw.Link) = .empty;
+    var cur = path;
+    while (vh.startsWith(cur, "/sys/devices/")) : (cur = dirname(cur)) {
+        if (linkOf(src, cur)) |l| out.append(vh.gpa, l) catch vh.oom();
+    }
+    return out.items;
+}
+
+/// how a device is attached, from its real path under /sys/devices: usb, virtio, mmc, nvme,
+/// ata, scsi, pci, platform, other (a USB disk is "usb" even though SCSI carries it)
+pub fn busOf(path: []const u8) []const u8 {
+    const has = struct {
+        fn f(p: []const u8, s: []const u8) bool {
+            return mem.indexOf(u8, p, s) != null;
+        }
+    }.f;
+    if (has(path, "/usb")) return "usb";
+    if (has(path, "/virtio")) return "virtio";
+    if (has(path, "/mmc_host/")) return "mmc";
+    if (has(path, "/nvme")) return "nvme";
+    if (has(path, "/ata")) return "ata";
+    if (has(path, "/host") and has(path, "/target")) return "scsi";
+    if (vh.startsWith(path, "/sys/devices/pci")) return "pci";
+    if (vh.startsWith(path, "/sys/devices/platform/")) return "platform";
+    return "other";
+}
+
+/// a name that carries a hardware address (a MAC in "wlx001122334455" or
+/// "hid-00:11:22:33:44:55-battery") is never written
+fn addressLike(name: []const u8) bool {
+    var colons: usize = 0;
+    var hex_run: usize = 0;
+    for (name) |ch| {
+        if (ch == ':') colons += 1;
+        hex_run = if (std.ascii.isHex(ch)) hex_run + 1 else 0;
+        if (hex_run >= 12) return true;
+    }
+    return colons >= 5;
+}
+
+/// disks that are not hardware: loop devices, RAM disks, zram, device mapper, RAID, optical
+fn virtualDisk(name: []const u8) bool {
+    const skip = [_][]const u8{ "loop", "ram", "zram", "dm-", "md", "sr", "fd", "nbd", "zd" };
+    for (skip) |s| if (vh.startsWith(name, s)) return true;
+    // the boot and RPMB partitions of an eMMC are separate block devices
+    if (vh.startsWith(name, "mmcblk") and (mem.indexOf(u8, name, "boot") != null or mem.indexOf(u8, name, "rpmb") != null)) return true;
+    return false;
+}
+
+fn blocks(src: *const Src) []const hw.Block {
+    var out: std.ArrayList(hw.Block) = .empty;
+    for (src.list("/sys/block")) |name| {
+        if (virtualDisk(name)) continue;
+        const base = vh.fmt("/sys/block/{s}", .{name});
+        const real = src.real(base);
+        var b: hw.Block = .{ .name = vh.dupe(name) };
+        // the kernel's own names settle the bus where the path does not (NVMe multipath
+        // namespaces live under /sys/devices/virtual)
+        b.bus = if (vh.startsWith(name, "nvme")) "nvme" else if (vh.startsWith(name, "mmcblk")) "mmc" else if (vh.startsWith(name, "vd")) "virtio" else busOf(real);
+        b.rotational = vh.eql(src.line(vh.fmt("{s}/queue/rotational", .{base})), "1");
+        b.removable = vh.eql(src.line(vh.fmt("{s}/removable", .{base})), "1");
+        b.logical_block = num(src.line(vh.fmt("{s}/queue/logical_block_size", .{base})));
+        b.physical_block = num(src.line(vh.fmt("{s}/queue/physical_block_size", .{base})));
+        b.discard = (std.fmt.parseInt(u64, src.line(vh.fmt("{s}/queue/discard_max_bytes", .{base})), 10) catch 0) > 0;
+        b.size_mib = (std.fmt.parseInt(u64, src.line(vh.fmt("{s}/size", .{base})), 10) catch 0) / 2048;
+        b.model = src.line(vh.fmt("{s}/device/model", .{base}));
+        if (b.model.len == 0) b.model = src.line(vh.fmt("{s}/device/name", .{base}));
+        b.drivers = driverChain(src, real);
+        if (b.drivers.len == 0 and src.exists(vh.fmt("{s}/device", .{base}))) b.drivers = driverChain(src, src.real(vh.fmt("{s}/device", .{base})));
+        out.append(vh.gpa, b) catch vh.oom();
+    }
+    return out.items;
+}
+
+fn net(src: *const Src) []const hw.Net {
+    var out: std.ArrayList(hw.Net) = .empty;
+    for (src.list("/sys/class/net")) |name| {
+        const base = vh.fmt("/sys/class/net/{s}", .{name});
+        // an interface without a device is virtual: lo, bridges, tunnels
+        if (src.link(vh.fmt("{s}/device", .{base})) == null) continue;
+        const real = src.real(vh.fmt("{s}/device", .{base}));
+        var n: hw.Net = .{
+            .name = if (addressLike(name)) "(named by its address)" else vh.dupe(name),
+            .wireless = src.exists(vh.fmt("{s}/phy80211", .{base})) or src.exists(vh.fmt("{s}/wireless", .{base})),
+            .bus = busOf(real),
+            .path = if (vh.startsWith(real, "/sys/devices/")) real["/sys/devices/".len..] else real,
+        };
+        if (linkOf(src, real)) |l| {
+            n.driver = l.driver;
+            n.module = l.module;
+        }
+        out.append(vh.gpa, n) catch vh.oom();
+    }
+    return out.items;
+}
+
+fn power(src: *const Src) hw.Power {
+    var p: hw.Power = .{};
+    var supplies: std.ArrayList(hw.PowerSupply) = .empty;
+    for (src.list("/sys/class/power_supply")) |name| {
+        const base = vh.fmt("/sys/class/power_supply/{s}", .{name});
+        const scope = src.line(vh.fmt("{s}/scope", .{base}));
+        // a peripheral's battery (a mouse, a headset) says nothing about the machine, and
+        // Bluetooth ones are named by their address
+        if (vh.eql(scope, "Device") or addressLike(name)) continue;
+        supplies.append(vh.gpa, .{ .name = vh.dupe(name), .kind = src.line(vh.fmt("{s}/type", .{base})), .scope = scope }) catch vh.oom();
+    }
+    p.supplies = supplies.items;
+    var lights: std.ArrayList(hw.Backlight) = .empty;
+    for (src.list("/sys/class/backlight")) |name| {
+        lights.append(vh.gpa, .{ .name = vh.dupe(name), .kind = src.line(vh.fmt("/sys/class/backlight/{s}/type", .{name})) }) catch vh.oom();
+    }
+    p.backlights = lights.items;
+    var profiles: vh.Strv = .{};
+    var it = mem.tokenizeAny(u8, src.line("/sys/firmware/acpi/platform_profile_choices"), " \t");
+    while (it.next()) |x| profiles.add(x);
+    p.profiles = profiles.slice();
+    return p;
+}
+
+/// the PCI class of a modalias ("pci:...bc03sc00i00" -> "03"), "" when it is not PCI
+pub fn pciClass(modalias: []const u8) []const u8 {
+    if (!vh.startsWith(modalias, "pci:")) return "";
+    const i = mem.indexOf(u8, modalias, "bc") orelse return "";
+    if (i + 4 > modalias.len) return "";
+    return modalias[i + 2 .. i + 4];
+}
+
+fn displays(src: *const Src, devices_: []const hw.Device) []const hw.Display {
+    var out: std.ArrayList(hw.Display) = .empty;
+    // PCI display controllers (class 03), with or without a driver
+    for (devices_) |d| {
+        if (!vh.eql(d.bus, "pci") or !vh.eql(pciClass(d.modalias), "03")) continue;
+        out.append(vh.gpa, .{
+            .name = d.name,
+            .bus = "pci",
+            .boot_vga = vh.eql(src.line(vh.fmt("/sys/bus/pci/devices/{s}/boot_vga", .{d.name})), "1"),
+            .driver = d.driver,
+            .module = d.module,
+        }) catch vh.oom();
+    }
+    // DRM cards: their connectors, and the GPU of a board that is not on PCI
+    const cards = src.list("/sys/class/drm");
+    for (cards) |card| {
+        if (!vh.startsWith(card, "card") or !allDigits(card[4..])) continue;
+        const dev = vh.fmt("/sys/class/drm/{s}/device", .{card});
+        if (src.link(dev) == null and !src.exists(dev)) continue;
+        const real = src.real(dev);
+        const name = basename(real);
+        var idx: ?usize = null;
+        for (out.items, 0..) |x, i| if (vh.eql(x.name, name)) {
+            idx = i;
+        };
+        if (idx == null) {
+            var x: hw.Display = .{ .name = vh.dupe(name), .bus = busOf(real) };
+            if (linkOf(src, real)) |l| {
+                x.driver = l.driver;
+                x.module = l.module;
+            }
+            out.append(vh.gpa, x) catch vh.oom();
+            idx = out.items.len - 1;
+        }
+        var conns: vh.Strv = .{};
+        const prefix = vh.fmt("{s}-", .{card});
+        for (cards) |c| {
+            if (!vh.startsWith(c, prefix)) continue;
+            const status = src.line(vh.fmt("/sys/class/drm/{s}/status", .{c}));
+            conns.add(vh.fmt("{s} {s}", .{ c[prefix.len..], if (status.len > 0) status else "unknown" }));
+        }
+        if (conns.len() > 0) out.items[idx.?].connectors = conns.slice();
+    }
+    mem.sort(hw.Display, out.items, {}, struct {
+        fn less(_: void, a: hw.Display, b: hw.Display) bool {
+            return mem.order(u8, a.name, b.name) == .lt;
+        }
+    }.less);
+    return out.items;
+}
+
+/// /proc/bus/input/devices with what a snapshot may keep: no Phys and no Uniq lines (they
+/// carry Bluetooth addresses and serial numbers), and no Bluetooth or virtual device at all
+pub fn cleanInput(raw: []const u8) []const u8 {
+    var out: std.ArrayList(u8) = .empty;
+    var blocks_it = mem.splitSequence(u8, raw, "\n\n");
+    while (blocks_it.next()) |blk| {
+        if (vh.strip(blk).len == 0) continue;
+        const bus = inputBus(blk);
+        if (bus == 0x05 or bus == 0x06) continue;
+        var lines = mem.tokenizeScalar(u8, blk, '\n');
+        while (lines.next()) |l| {
+            if (vh.startsWith(l, "P:") or vh.startsWith(l, "U:")) continue;
+            out.appendSlice(vh.gpa, l) catch vh.oom();
+            out.append(vh.gpa, '\n') catch vh.oom();
+        }
+        out.append(vh.gpa, '\n') catch vh.oom();
+    }
+    return out.items;
+}
+
+/// the input bus number of a /proc/bus/input/devices block ("I: Bus=0011 ...")
+fn inputBus(blk: []const u8) u32 {
+    const i = mem.indexOf(u8, blk, "Bus=") orelse return 0;
+    const end = mem.indexOfAnyPos(u8, blk, i + 4, " \n") orelse blk.len;
+    return std.fmt.parseInt(u32, blk[i + 4 .. end], 16) catch 0;
+}
+
+/// the value after "KEY=" or "EV=" in a block, as the bitmap's lowest 64 bits
+fn inputBits(blk: []const u8, key: []const u8) u64 {
+    var lines = mem.tokenizeScalar(u8, blk, '\n');
+    while (lines.next()) |l| {
+        const at = mem.indexOf(u8, l, key) orelse continue;
+        if (!vh.startsWith(l, "B:")) continue;
+        const words = vh.strip(l[at + key.len ..]);
+        // the kernel prints the bitmap as longs, most significant first: the last word holds bits 0-63
+        const last = if (mem.lastIndexOfScalar(u8, words, ' ')) |s| words[s + 1 ..] else words;
+        return std.fmt.parseInt(u64, last, 16) catch 0;
+    }
+    return 0;
+}
+
+/// a keyboard: it reports keys, among them A, Z and Enter (a power button reports keys too)
+pub fn isKeyboard(blk: []const u8) bool {
+    const ev = inputBits(blk, "EV=");
+    if ((ev & (1 << 1)) == 0) return false;
+    const keys = inputBits(blk, "KEY=");
+    const want: u64 = (1 << 28) | (1 << 30) | (1 << 44);
+    return (keys & want) == want;
+}
+
+fn keyboards(src: *const Src) []const hw.Keyboard {
+    const text = src.readClean("/proc/bus/input/devices", cleanInput) orelse return &.{};
+    var out: std.ArrayList(hw.Keyboard) = .empty;
+    var blocks_it = mem.splitSequence(u8, text, "\n\n");
+    while (blocks_it.next()) |blk| {
+        if (!isKeyboard(blk)) continue;
+        var k: hw.Keyboard = .{};
+        k.bus = switch (inputBus(blk)) {
+            0x03 => "usb",
+            0x11 => "i8042",
+            0x18 => "i2c",
+            0x19 => "host",
+            0x1C => "spi",
+            else => "other",
+        };
+        var lines = mem.tokenizeScalar(u8, blk, '\n');
+        var sysfs: []const u8 = "";
+        while (lines.next()) |l| {
+            if (vh.startsWith(l, "N: Name=")) k.name = vh.dupe(mem.trim(u8, l["N: Name=".len..], "\""));
+            if (vh.startsWith(l, "S: Sysfs=")) sysfs = l["S: Sysfs=".len..];
+        }
+        if (sysfs.len > 0) k.drivers = driverChain(src, src.real(vh.fmt("/sys{s}", .{sysfs})));
+        out.append(vh.gpa, k) catch vh.oom();
+    }
+    return out.items;
+}
+
+fn sound(src: *const Src) []const hw.Sound {
+    var out: std.ArrayList(hw.Sound) = .empty;
+    for (src.list("/sys/class/sound")) |card| {
+        if (!vh.startsWith(card, "card") or !allDigits(card[4..])) continue;
+        const dev = vh.fmt("/sys/class/sound/{s}/device", .{card});
+        if (src.link(dev) == null) continue;
+        const real = src.real(dev);
+        var s: hw.Sound = .{ .card = vh.dupe(card), .bus = busOf(real) };
+        if (linkOf(src, real)) |l| {
+            s.driver = l.driver;
+            s.module = l.module;
+        }
+        out.append(vh.gpa, s) catch vh.oom();
+    }
+    return out.items;
+}
+
 // ---------------------------------------------------------------- tests
 
 /// the repository root for the tests: $VH_REPO, or ".", ".." or "../.." (the tests run from
@@ -329,6 +873,94 @@ test "paths" {
     try std.testing.expectEqual(@as(u32, 12288), sizeKb("12288K"));
     try std.testing.expectEqual(@as(u32, 1024), sizeKb("1M"));
     try std.testing.expectEqual(@as(u32, 0), sizeKb(""));
+}
+
+test "cpu lists" {
+    try std.testing.expectEqual(@as(u32, 12), countList("0-11"));
+    try std.testing.expectEqual(@as(u32, 6), countList("0,2-5,8"));
+    try std.testing.expectEqual(@as(u32, 0), countList(""));
+    try std.testing.expectEqual(@as(u32, 1), countList("7"));
+    try std.testing.expect(inList("0-3,8-11", 9));
+    try std.testing.expect(!inList("0-3,8-11", 5));
+    try std.testing.expect(inList("4", 4));
+    try std.testing.expect(!inList("", 0));
+}
+
+test "buses, classes and addresses" {
+    try std.testing.expectEqualStrings("nvme", busOf("/sys/devices/pci0000:00/0000:00:1b.0/0000:02:00.0/nvme/nvme0/nvme0n1"));
+    try std.testing.expectEqualStrings("ata", busOf("/sys/devices/pci0000:00/0000:00:17.0/ata1/host0/target0:0:0/0:0:0:0/block/sda"));
+    try std.testing.expectEqualStrings("usb", busOf("/sys/devices/pci0000:00/0000:00:14.0/usb2/2-1/2-1:1.0/host6/target6:0:0/6:0:0:0/block/sdb"));
+    try std.testing.expectEqualStrings("virtio", busOf("/sys/devices/pci0000:00/0000:00:04.0/virtio1/block/vda"));
+    try std.testing.expectEqualStrings("mmc", busOf("/sys/devices/platform/soc/fe300000.mmcnr/mmc_host/mmc1/mmc1:0001/mmc1:0001:1/net/wlan0"));
+    try std.testing.expectEqualStrings("pci", busOf("/sys/devices/pci0000:00/0000:00:1c.0/0000:03:00.0"));
+    try std.testing.expectEqualStrings("platform", busOf("/sys/devices/platform/i8042/serio0"));
+    try std.testing.expectEqualStrings("03", pciClass("pci:v00008086d00009BC4sv00001462sd000012D5bc03sc00i00"));
+    try std.testing.expectEqualStrings("02", pciClass("pci:v000010ECd00008168sv0000ABC0sd000012D5bc02sc00i00"));
+    try std.testing.expectEqualStrings("", pciClass("usb:v8087p0026d0002dcE0dsc01dp01icE0isc01ip01in00"));
+    try std.testing.expect(addressLike("wlx001122334455"));
+    try std.testing.expect(addressLike("hid-00:11:22:33:44:55-battery"));
+    try std.testing.expect(!addressLike("wlp0s20f3"));
+    try std.testing.expect(!addressLike("enp3s0"));
+    try std.testing.expect(!addressLike("BAT0"));
+    try std.testing.expect(virtualDisk("loop0") and virtualDisk("zram0") and virtualDisk("dm-0") and virtualDisk("mmcblk0boot1"));
+    try std.testing.expect(!virtualDisk("nvme0n1") and !virtualDisk("sda") and !virtualDisk("mmcblk0") and !virtualDisk("vda"));
+}
+
+test "input devices: keyboards, and what a snapshot keeps" {
+    const text =
+        \\I: Bus=0011 Vendor=0001 Product=0001 Version=ab41
+        \\N: Name="AT Translated Set 2 keyboard"
+        \\P: Phys=isa0060/serio0/input0
+        \\S: Sysfs=/devices/platform/i8042/serio0/input/input0
+        \\U: Uniq=
+        \\H: Handlers=sysrq kbd event0 leds
+        \\B: PROP=0
+        \\B: EV=120013
+        \\B: KEY=402000000 3803078f800d001 feffffdfffefffff fffffffffffffffe
+        \\B: MSC=10
+        \\B: LED=7
+        \\
+        \\I: Bus=0019 Vendor=0000 Product=0001 Version=0000
+        \\N: Name="Power Button"
+        \\P: Phys=LNXPWRBN/button/input0
+        \\S: Sysfs=/devices/LNXSYSTM:00/LNXPWRBN:00/input/input1
+        \\U: Uniq=
+        \\H: Handlers=kbd event1
+        \\B: PROP=0
+        \\B: EV=3
+        \\B: KEY=10000000000000 0
+        \\
+        \\I: Bus=0005 Vendor=046d Product=b35b Version=0011
+        \\N: Name="Somebody's keyboard"
+        \\P: Phys=00:11:22:33:44:55
+        \\S: Sysfs=/devices/virtual/misc/uhid/0005:046D:B35B.0003/input/input9
+        \\U: Uniq=66:77:88:99:aa:bb
+        \\H: Handlers=sysrq kbd event9
+        \\B: PROP=0
+        \\B: EV=12001f
+        \\B: KEY=3f000303ff 0 0 483ffff17aff32d bfd4444600000000 1 130ff38b17d000 677bfad9415fed 9ed68000004400 10000002
+        \\
+    ;
+    const clean = cleanInput(text);
+    try std.testing.expect(mem.indexOf(u8, clean, "Phys=") == null);
+    try std.testing.expect(mem.indexOf(u8, clean, "Uniq=") == null);
+    try std.testing.expect(mem.indexOf(u8, clean, "Somebody") == null);
+    try std.testing.expect(mem.indexOf(u8, clean, "AT Translated Set 2 keyboard") != null);
+    var it = mem.splitSequence(u8, clean, "\n\n");
+    const kbd = it.next().?;
+    const button = it.next().?;
+    try std.testing.expect(isKeyboard(kbd));
+    try std.testing.expect(!isKeyboard(button));
+    try std.testing.expectEqual(@as(u32, 0x11), inputBus(kbd));
+}
+
+test "cpuinfo and mounts keep nothing that names one machine" {
+    const c = cleanCpuinfo("processor\t: 0\nFeatures\t: fp asimd aes\nCPU implementer\t: 0x41\n\nHardware\t: BCM2835\nRevision\t: d04170\nSerial\t\t: 1000000012345678\nModel\t\t: Raspberry Pi 5 Model B Rev 1.0\n");
+    try std.testing.expect(mem.indexOf(u8, c, "Serial") == null);
+    try std.testing.expect(mem.indexOf(u8, c, "12345678") == null);
+    try std.testing.expect(mem.indexOf(u8, c, "Features\t: fp asimd aes") != null);
+    const m = cleanMounts("/dev/mapper/luks-root / xfs rw,noatime 0 0\n/dev/sdb1 /run/media/someone/Photos vfat rw 0 0\n");
+    try std.testing.expectEqualStrings("- - xfs - 0 0\n- - vfat - 0 0\n", m);
 }
 
 test "probe: the GF63 fixture" {
