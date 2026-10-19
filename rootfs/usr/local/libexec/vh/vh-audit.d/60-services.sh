@@ -2,7 +2,7 @@
 # vh-audit: runit services (docs/05). Sourced by vh-audit.
 sec "Services"
 # every machine's; what the hardware needs (iwd, vh-acpid ...) is checked against the plan (area plan)
-for sv in dbus unbound chronyd seatd socklog-unix nanoklogd vh-check; do
+for sv in dbus unbound chronyd seatd socklog-unix nanoklogd vh-check vh-boot-assess; do
 	sv status "$sv" 2>/dev/null | grep -q '^run:' && ok "service $sv is running" || bad "service $sv is not running"
 done
 for sv in sshd acpid dhcpcd wpa_supplicant cronie snooze-daily; do

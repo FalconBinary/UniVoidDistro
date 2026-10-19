@@ -25,11 +25,29 @@ if mountpoint -q /boot/efi; then
 	else
 		unk "Secure Boot keys are offline: sbctl verify skipped without the media"
 	fi
-	n=$(ls /boot/efi/EFI/void/linux-*.efi 2>/dev/null | wc -l)
-	[ "$n" -ge 1 ] && [ "$n" -le 3 ] && ok "UKIs on the ESP: $n" || bad "UKIs on the ESP: $n (expected 1-3)"
+	# two series (docs/uni/kernel.md): the stock UKIs, KEEP of them and the running one, and the
+	# machine UKIs linux-A.B.C-vh_N.efi, which never take their place
+	nstock=0 nmachine=0
+	for f in /boot/efi/EFI/void/linux-*.efi; do
+		[ -e "$f" ] || continue
+		case $f in *-vh_[0-9]*.efi) nmachine=$((nmachine + 1)) ;; *) nstock=$((nstock + 1)) ;; esac
+	done
+	[ "$nstock" -ge 1 ] && [ "$nstock" -le 3 ] && ok "stock UKIs on the ESP: $nstock" || bad "stock UKIs on the ESP: $nstock (expected 1-3)"
+	[ "$nmachine" = 0 ] || ok "machine UKIs on the ESP: $nmachine"
 	[ "$esp" = 1 ] && umount /boot/efi
 else
 	unk "the ESP did not mount: signatures not checked"
+fi
+# the boot assessment of a machine kernel: limine.conf does not change for it, the EFI variables do
+if [ -e /var/lib/vh/boot-assess ]; then
+	assess=$(/usr/local/sbin/vh-limine-update --status 2>/dev/null | sed -n 's/^VH_BOOT_ASSESS //p')
+	case $assess in
+		*" state=failed "*) unk "machine kernel: a trial failed, the default did not change ($assess; doas vh-limine-update --status)" ;;
+		*" state=trying "*) unk "machine kernel: on trial, not the default yet ($assess)" ;;
+		default=stock*) ok "machine kernel: none is the default, the stock UKI boots ($assess)" ;;
+		?*) ok "machine kernel: the default passed its boot assessment ($assess)" ;;
+		*) unk "machine kernel: vh-limine-update --status gave no summary" ;;
+	esac
 fi
 if [ -e /etc/vh/modlock.enabled ]; then
 	chk kernel.modules_disabled "$(cat /proc/sys/kernel/modules_disabled)" 1

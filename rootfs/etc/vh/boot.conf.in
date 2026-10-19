@@ -7,3 +7,9 @@ TIMEOUT=@VH_LIMINE_TIMEOUT@
 # impossible without the media attached, and before signing the UKI is checked against the
 # reference values from the same media (vh-uki-verify).
 KEYS_OFFLINE=no
+# UniVoidDistro, the machine kernel (docs/uni/kernel.md): a new machine UKI becomes Limine's
+# default after this many good boots in a row on trial (1-10); the stock UKIs above are the
+# fallback and are never deleted for it.
+MACHINE_BOOTS=3
+# How many machine UKIs to keep (1-5), besides the default, the one on trial and the running one.
+KEEP_MACHINE=2

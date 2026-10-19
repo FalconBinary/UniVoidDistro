@@ -109,13 +109,14 @@ laptop produces the real one [VERIFY].
    Output: `/boot/efi/EFI/void/linux-6.18.57-vh_1.efi` (the `_N` counts installs of the same
    version).
 4. **Signing and Limine.** `sbctl sign` as today (the key media must be attached in the
-   offline-keys module). `vh-limine-update` learns two UKI series: `linux-A.B.C_D.efi` (the
-   stock one, pinned: never deleted, never demoted) and `linux-A.B.C-vh_N.efi` (custom,
-   `KEEP=2`). Today its `parseUki` accepts only the stock pattern and would delete the
-   fallback; the `kernel.d` hooks and the `vh-audit` check "UKI: 1-3" change with it. The
-   default entry stays the stock UKI until the runbook's flip step: boot the custom entry
-   once from the menu, check `uname -r`, Wi-Fi, sound, the touchpad, `vh-audit`, then make it
-   the default; the way back is the menu.
+   offline-keys module), then `vh-limine-update --new 6.18.57-vh_1`. It knows the two UKI
+   series (U3): `linux-A.B.C_D.efi` (the stock one: never deleted, never demoted, always at
+   the head of the menu) and `linux-A.B.C-vh_N.efi` (the machine one, `KEEP_MACHINE=2`), and
+   `vh-audit` counts them apart. The new UKI is on trial: Limine's one-shot entry boots it,
+   the `vh-boot-assess` service judges each boot by `vh-kconf check`, and after
+   `MACHINE_BOOTS` good boots it becomes Limine's default; a boot that fails leaves the next
+   one to the old default by itself, and `vh-limine-update --demote` is the way back
+   ([docs/uni/kernel.md](../docs/uni/kernel.md#the-boot-assessment)).
 5. **check** (a service at start, done in U2: see above): a modalias without a driver in
    sysfs -> a message at the admin login on tty2, with the `vh-kconf probe` + CI steps of the
    runbook as the answer.

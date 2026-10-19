@@ -1,0 +1,13 @@
+#!/bin/sh
+# UniVoidDistro: the boot assessment of a machine kernel (docs/uni/kernel.md). Once a boot,
+# with the other services: vh-limine-update --booted counts a good boot of the machine UKI on
+# trial (vh-kconf check's verdict, which it waits for) and sets Limine's one-shot entry for
+# the next one, or makes it Limine's default after MACHINE_BOOTS good boots, or records a trial
+# that did not reach this point. EFI variables and /var/lib/vh/boot-assess only: limine.conf is
+# not touched. News goes to /run/vh/boot-assess, shown at the admin's login on tty2. A service
+# rather than a step of stage 1, like vh-check: it runs with either stage 1, off the boot's
+# critical path; then it rests until the next boot.
+exec 2>&1
+[ -x /usr/local/sbin/vh-limine-update ] || exec pause
+/usr/local/sbin/vh-limine-update --booted
+exec pause
