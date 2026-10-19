@@ -63,9 +63,10 @@ load_config() {
 	yesno VH_IPV6 "$VH_IPV6"
 	yesno VH_HOME_NOEXEC "$VH_HOME_NOEXEC"
 	yesno VH_FIRMWARE_TRIM "$VH_FIRMWARE_TRIM"
-	case $VH_GPU in igpu|nouveau) ;; *) die "VH_GPU: igpu or nouveau" ;; esac
+	case $VH_SECURITY in strict|tiered) ;; *) die "VH_SECURITY: strict or tiered" ;; esac
+	case $VH_GPU in auto|igpu|nouveau) ;; *) die "VH_GPU: auto, igpu or nouveau" ;; esac
 	case $VH_BLUETOOTH in off|optional|on) ;; *) die "VH_BLUETOOTH: off, optional or on" ;; esac
-	case $VH_ETH in dhcp|static|off) ;; *) die "VH_ETH: dhcp, static or off" ;; esac
+	case $VH_ETH in auto|dhcp|static|off) ;; *) die "VH_ETH: auto, dhcp, static or off" ;; esac
 	case $VH_INITRD_COMPRESS in zstd|lz4) ;; *) die "VH_INITRD_COMPRESS: zstd or lz4" ;; esac
 	case $VH_ZRAM_ALGO in zstd|lz4|lzo-rle) ;; *) die "VH_ZRAM_ALGO: zstd, lz4 or lzo-rle" ;; esac
 	case $VH_MIRROR in https://*) ;; *) die "VH_MIRROR must start with https://" ;; esac
@@ -80,6 +81,40 @@ load_config() {
 	if [ -n "$VH_DEV_DIR" ]; then
 		[[ $VH_DEV_DIR =~ ^[A-Za-z0-9._-]+$ ]] || die "VH_DEV_DIR must be a single directory name, without \"/\""
 	fi
+}
+
+# The plan of this machine (vh-plan, install/plan.sh): the VH_PLAN_* values. plan.env is
+# checked before it is sourced: every line is a comment, empty, or VH_PLAN_NAME='value' with
+# nothing a shell would expand inside the quotes (vh-plan writes only such lines; a file that
+# says anything else was not written by it).
+load_plan() {
+	local f=${1:-/tmp/vh/plan.env}
+	[ -r "$f" ] || die "no plan $f: run install/plan.sh first (it probes the machine and plans it)"
+	if grep -v -E "^(#.*)?$" "$f" | grep -q -v -E "^VH_PLAN_[A-Z0-9_]+='[A-Za-z0-9_.,:=/*+@ -]*'$"; then
+		die "$f has lines vh-plan does not write; refusing to source it"
+	fi
+	set -a
+	# shellcheck source=/dev/null
+	. "$f"
+	set +a
+	[ -n "${VH_PLAN_TIER:-}" ] || die "$f: no VH_PLAN_TIER"
+}
+
+# The security gate (docs/uni/principles.md): refused stops; reduced stops in strict mode and
+# asks for a typed confirmation of every residual risk in tiered mode. The report lists them.
+security_gate() {
+	local report=${1:-/tmp/vh/plan-report.txt}
+	case $VH_PLAN_TIER in
+		full) ok "security: every protection of this architecture is available" ;;
+		refused)
+			sed -n '/^Requirements not met/,/^$/p' "$report" >&2
+			die "this machine is below the floor of the security gate (see above)" ;;
+		reduced)
+			sed -n '/^Requirements not met/,/^$/p' "$report"
+			[ "$VH_SECURITY" = tiered ] || die "VH_SECURITY=strict refuses a machine that misses a requirement (above: what is missing and the firmware setting that fixes it); VH_SECURITY=tiered installs it with the risks confirmed"
+			confirm_exact "accept $VH_PLAN_ACKNOWLEDGE" "Install with these residual risks? Missing: $VH_PLAN_ACKNOWLEDGE." ;;
+		*) die "VH_PLAN_TIER: $VH_PLAN_TIER" ;;
+	esac
 }
 
 # Partition names: nvme0n1 -> nvme0n1p1, sda -> sda1.
@@ -146,7 +181,10 @@ install_tree() {
 export -f render 2>/dev/null || true
 
 # Modules the kernel refuses to load (module_blacklist= on the cmdline and
-# "install ... /bin/false" in modprobe.d). Rationale: docs/03, docs/05.
+# "install ... /bin/false" in modprobe.d). Rationale: docs/03, docs/05. The policy below is
+# the same on every machine; what depends on the hardware or on vh.conf (the ME interface of
+# an Intel CPU, nouveau beside a sleeping dGPU, Bluetooth off, the camera, the card reader,
+# KVM) comes from the plan (VH_PLAN_DENY, hwdb/).
 vh_module_blacklist() {
 	local m=(
 		# rare network protocols, reachable without privileges through socket()
@@ -166,45 +204,31 @@ vh_module_blacklist() {
 		# and instead sends init a "Ctrl+Alt+Del": vh-acpid never sees the button and its
 		# action bypasses /etc/vh/acpi.conf (found on the test bench, kernel 6.18.57)
 		tiny_power_button
-		# Intel ME interface (AMT is off; the fTPM works through tpm_crb)
-		mei mei_me mei_hdcp mei_pxp mei_wdt
 	)
-	[ "$VH_BLUETOOTH" = off ] && m+=(bluetooth btusb btintel btrtl btbcm btmtk)
-	[ "$VH_CAMERA" = no ] && m+=(uvcvideo)
-	[ "$VH_CARDREADER" = no ] && m+=(rtsx_pci rtsx_pci_sdmmc)
-	[ "$VH_VIRT" = no ] && m+=(kvm kvm_intel)
-	[ "$VH_GPU" = igpu ] && m+=(nouveau)
+	# shellcheck disable=SC2206 # the plan's list, one word per module
+	m+=(${VH_PLAN_DENY:-})
 	printf '%s\n' "${m[@]}"
 }
 
-# Firmware: only the files this laptop needs are extracted (VH_FIRMWARE_TRIM=yes).
-# linux-firmware-network is 440 MB of firmware for every network chip (Qualcomm, Mediatek,
-# Broadcom...); here only iwlwifi (AX201), Intel BT, rtl_nic (RTL8111), i915 and the
-# microcode are needed. noextract also applies to updates; "!" re-includes a match
-# (man xbps.d). docs/02.
+# Firmware: only the files this machine's drivers need are extracted (VH_FIRMWARE_TRIM=yes).
+# The linux-firmware packages hold hundreds of MB for every chip; the plan lists what the
+# modules of this machine's devices name (kernel/pins/modules.firmware), narrowed to the device
+# where a rule of hwdb/ knows it, plus the microcode and regulatory.db (VH_PLAN_FIRMWARE).
+# noextract also applies to updates; "!" re-includes a match (man xbps.d). docs/02.
 vh_firmware_noextract() {
-	local keep=(
-		"intel-ucode/*"          # CPU microcode (dracut early_microcode)
-		"regulatory.db*"         # Wi-Fi regulatory database (wireless-regdb)
-		"i915/kbl_*" "i915/cml_*"   # Comet Lake: DMC (and GuC/HuC if enabled)
-		"iwlwifi-Qu*"            # AX201 CNVi: Qu/QuZ-*-hr-*
-		"intel/ibt-*"            # AX201 Bluetooth (8087:0026)
-		"rtl_nic/*"              # RTL8111/8168 (r8169)
-	)
-	[ "$VH_GPU" = nouveau ] && keep+=("nvidia/tu11*")   # TU117: GSP, PMU and so on
 	local k
-	echo "# void-hardperf-light: firmware for this hardware only (VH_FIRMWARE_TRIM=yes, docs/02)."
-	echo "# To get everything back: delete this file and run xbps-install -f linux-firmware-network linux-firmware-intel"
+	echo "# UniVoidDistro: firmware for this machine's hardware only (VH_FIRMWARE_TRIM=yes, docs/02, the plan)."
+	echo "# To get everything back: delete this file and run xbps-install -f linux-firmware-network linux-firmware-intel linux-firmware-amd"
 	echo "noextract=/usr/lib/firmware/*"
 	# shellcheck disable=SC2206 # intentional word splitting
-	for k in "${keep[@]}" ${VH_FIRMWARE_KEEP:-}; do
+	for k in ${VH_PLAN_FIRMWARE:-} ${VH_FIRMWARE_KEEP:-}; do
 		echo "noextract=!/usr/lib/firmware/$k"
 	done
 }
 
 # Kernel command line embedded in the UKI. Under Secure Boot systemd-stub ignores
 # anything passed from outside, so changing it means rebuilding the UKI.
-# Every parameter is explained in docs/03-boot.md.
+# Every parameter is explained in docs/03-boot.md; the hardware's in hwdb/.
 vh_cmdline() {
 	local bl
 	bl=$(vh_module_blacklist | paste -sd, -)
@@ -216,14 +240,18 @@ vh_cmdline() {
 		panic=10
 		lockdown=confidentiality module.sig_enforce=1
 		lsm=landlock,lockdown,yama,apparmor
-		intel_iommu=on iommu.strict=1 iommu.passthrough=0 efi=disable_early_pci_dma
+		iommu.strict=1 iommu.passthrough=0
 		init_on_alloc=1 init_on_free=1 slab_nomerge page_alloc.shuffle=1
-		debugfs=off ia32_emulation=0
+		debugfs=off
 		bdev_allow_write_mounted=0 efi_pstore.pstore_disable=1 proc_mem.force_override=never
 		"cfg80211.ieee80211_regdom=$VH_REGDOM"
 		preempt=full
 		"module_blacklist=$bl"
 	)
+	# what the hardware asks for: intel_iommu=on with a DMAR table, efi=disable_early_pci_dma
+	# and ia32_emulation=0 on x86_64 (VH_PLAN_CMDLINE, hwdb/)
+	# shellcheck disable=SC2206 # the plan's list, one word per parameter
+	c+=(${VH_PLAN_CMDLINE:-})
 	[ "$VH_IPV6" = no ] && c+=(ipv6.disable=1)
 	# shellcheck disable=SC2206 # intentional word splitting
 	[ -n "${VH_EXTRA_CMDLINE:-}" ] && c+=($VH_EXTRA_CMDLINE)

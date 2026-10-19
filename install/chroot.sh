@@ -4,6 +4,7 @@
 
 . /root/vh/install/lib.sh
 load_config /root/vh/vh.conf
+load_plan /root/vh/plan.env
 set -a
 # shellcheck source=/dev/null
 . /root/vh/ids
@@ -67,7 +68,10 @@ render /root/vh/rootfs/etc/sysctl.d/40-vh-network.conf.cin /etc/sysctl.d/40-vh-n
 	vh_module_blacklist | sed 's|.*|install & /bin/false|'
 } > /etc/modprobe.d/vh-blacklist.conf
 
-[ "$VH_GPU" = igpu ] || rm -f /etc/udev/rules.d/99-vh-dgpu-off.rules
+# rule files a hwdb rule selects (the dGPU that sleeps): only those the plan names stay
+for f in ${VH_PLAN_UDEV_KNOWN:-}; do
+	case " ${VH_PLAN_UDEV:-} " in *" $f "*) ;; *) rm -f "/etc/udev/rules.d/$f" ;; esac
+done
 
 ESP_DEV="UUID=$VH_ESP_UUID"
 HOME_OPTS="bind,nosuid,nodev"
@@ -116,20 +120,20 @@ say "runit services"
 SVDIR=/etc/runit/runsvdir/default
 for t in 3 4 5 6; do rm -f "$SVDIR/agetty-tty$t"; done
 enable_sv() { [ -d "/etc/sv/$1" ] || die "no service $1"; ln -sfn "/etc/sv/$1" "$SVDIR/$1"; }
-for s in agetty-tty1 agetty-tty2 udevd dbus iwd unbound chronyd seatd socklog-unix nanoklogd vh-acpid; do
+for s in agetty-tty1 agetty-tty2 udevd dbus unbound chronyd seatd socklog-unix nanoklogd; do
 	enable_sv "$s"
 done
-case $VH_ETH in
-	dhcp) enable_sv dhcpcd-eth0 ;;
-	static) enable_sv vh-eth-static ;;
-esac
-[ "$VH_TRIM" = yes ] && enable_sv vh-fstrim
+# what the hardware needs: iwd with Wi-Fi, dhcpcd on a wired interface, vh-acpid with a lid or a
+# power button, vh-fstrim with a disk that accepts discard, bluetoothd (VH_PLAN_SERVICES, hwdb/)
+for s in ${VH_PLAN_SERVICES:-}; do
+	enable_sv "$s"
+done
+[ "$VH_ETH" = static ] && enable_sv vh-eth-static
 if [ "${VH_TEST_SERIAL:-no}" = yes ]; then
 	# tests/vm bench: admin login on ttyS0 (never enable on real hardware)
 	enable_sv agetty-ttyS0
 	sed -i "/^- : ALL : ALL/i + : $VH_ADMIN : ttyS0" /etc/security/access.conf
 fi
-[ "$VH_BLUETOOTH" = on ] && enable_sv bluetoothd
 for s in sshd dhcpcd wpa_supplicant acpid; do rm -f "$SVDIR/$s"; done
 
 # ---------------------------------------------------------------- desktop (docs/08)

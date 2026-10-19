@@ -84,8 +84,10 @@ Zig 0.17.0 exactly (`zig/ZIG_VERSION`; `install/fetch-zig.sh` downloads and veri
 zig build -Dtarget=x86_64-linux --prefix build/out    # every Zig program of every track
 zig build tests -Dtarget=x86_64-linux --prefix build/zt && for t in build/zt/test/*; do "$t"; done
                                                        # unit tests: built once, run on Linux
-sh tests/adapt/run.sh                                  # vh-plan against the golden plans of every fixture
-sh tests/kernel/run.sh                                 # vh-kconf: probe, resolve, the GF63 oracle
+sh tests/adapt/run.sh                                  # vh-plan against the golden plans of every machine
+sh tests/kernel/run.sh                                 # vh-kconf: probe, resolve
+sh tests/kernel/oracle.sh                              # the GF63 oracle: the kernel config of upstream
+sh tests/install/run.sh                                # the installer's lists per plan; the GF63's = upstream's
 sh tests/zig/run.sh                                    # the tools in a Void container (docker)
 python3 tests/vm/vhvm.py install --iso void-live-x86_64-20250202-base.iso
 python3 tests/vm/check.py all                          # base, enroll, sb, lock, desktop

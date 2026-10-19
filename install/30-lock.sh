@@ -12,6 +12,7 @@
 . "$(dirname "$0")/lib.sh"
 need_root
 load_config /root/vh/vh.conf
+load_plan /root/vh/plan.env
 
 LIST=/etc/vh/modules.preload
 mapfile -t blocked < <(vh_module_blacklist)

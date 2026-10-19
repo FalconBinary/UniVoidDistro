@@ -1,11 +1,13 @@
-# dracut: a minimal initramfs for this hardware only (docs/03).
+# dracut: a minimal initramfs for this hardware only (docs/03, the plan).
 hostonly="yes"
 hostonly_cmdline="no"
 compress="@VH_INITRD_COMPRESS@"
 early_microcode="yes"
 reproducible="yes"
 uefi_stub="/usr/lib/systemd/boot/efi/linuxx64.efi.stub"
-# Needed for the LUKS passphrase: the keyboard (internal i8042 or USB).
-add_drivers+=" xhci_pci usbhid hid_generic atkbd i8042 "
+# Needed for the LUKS passphrase: a USB keyboard on any machine, and every driver on the way
+# from this machine's keyboards to their controller (the plan: i8042/atkbd, I2C-HID, VMD for
+# the disk ...).
+add_drivers+=" @VH_DRACUT_DRIVERS@ "
 add_dracutmodules+=" crypt "
 omit_dracutmodules+=" plymouth bluetooth network network-legacy nfs iscsi nbd lvm mdraid dmraid multipath btrfs qemu qemu-net biosdevname systemd "

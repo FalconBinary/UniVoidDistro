@@ -76,6 +76,8 @@ pub const Plan = struct {
     kernel: Kernel = .{},
     /// devices with no driver, no module in the tables and no rule: new hardware shows up here
     unknown: []const []const u8 = &.{},
+    /// every udev rule file a rule of hwdb can name: the installer removes those not in udev
+    udev_known: []const []const u8 = &.{},
 };
 
 pub const Opts = struct {
@@ -519,6 +521,10 @@ pub fn compute(o: Opts) Result {
     };
     unknown.sort();
     plan.unknown = unknown.slice();
+    var known: vh.Strv = .{};
+    for (o.db.rules) |r| for (r.udev) |u| if (!known.has(u)) known.add(u);
+    known.sort();
+    plan.udev_known = known.slice();
 
     // the report
     w(&rep, "vh-plan report", .{});

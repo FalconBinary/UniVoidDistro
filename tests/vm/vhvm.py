@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Test rig [VM-TEST]: qemu x86_64 + OVMF (Secure Boot) + swtpm (TPM 2.0, CRB) + NVMe.
+"""Test rig [VM-TEST]: qemu x86_64 + OVMF (Secure Boot) + swtpm (TPM 2.0, CRB) + VT-d + NVMe.
 
 Works on Linux and macOS (qemu from Homebrew) and drives the VM over the serial console,
 with no human involved. Scenarios:
@@ -160,6 +160,10 @@ class VM:
         cmd = [
             "qemu-system-x86_64", "-machine", "q35,smm=on", "-accel", os.environ.get("VH_ACCEL", "tcg"),
             "-cpu", "max", "-smp", str(self.smp), "-m", str(self.mem),
+            # an emulated VT-d (a DMAR table) before any PCI device: the rig has the full
+            # protection of the security gate (VH_SECURITY=strict); no interrupt remapping, so
+            # no split irqchip is needed [VERIFY under TCG and KVM]
+            "-device", "intel-iommu,intremap=off",
             "-global", "driver=cfi.pflash01,property=secure,value=on",
             "-drive", f"if=pflash,format=raw,unit=0,readonly=on,file={self.code}",
             "-drive", f"if=pflash,format=raw,unit=1,file={self.vars}",

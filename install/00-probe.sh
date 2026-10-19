@@ -6,6 +6,8 @@
 #   ./install/00-probe.sh                 -- only what the live image already has
 #   ./install/00-probe.sh --install-tools -- first install pciutils, usbutils, tpm2-tools,
 #                                           nvme-cli, iw, efibootmgr into the live environment (RAM)
+#   ./install/00-probe.sh --plan          -- then the machine's plan too (install/plan.sh: what
+#                                           hwdb/ decides for it, and the security gate)
 #
 # Report: /tmp/vh-probe-<date>.txt -- handy to attach to a question or to keep.
 
@@ -13,6 +15,8 @@
 set +e +o pipefail   # the probe must not stop at the first missing utility
 need_root
 
+WANT_PLAN=0
+for a in "$@"; do [ "$a" = --plan ] && WANT_PLAN=1; done
 if [ "${1:-}" = "--install-tools" ]; then
 	say "installing utilities into the live environment (RAM only)"
 	xbps-install -Syu xbps >/dev/null 2>&1
@@ -219,4 +223,9 @@ sec "Recommendations"
 for r in "${REC[@]}"; do printf ' * %s\n' "$r"; done
 echo
 echo "Report saved: $OUT"
+if [ "$WANT_PLAN" = 1 ]; then
+	sec "The plan of this machine (hwdb/)"
+	bash "$VH_ROOT/install/plan.sh"
+	echo "plan.env, plan-report.txt and the probe's snapshot: /tmp/vh"
+fi
 echo "Copy it to a USB stick or over the network before rebooting: /tmp lives in RAM."

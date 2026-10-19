@@ -42,6 +42,12 @@ pub fn safeValue(v: []const u8) bool {
     return true;
 }
 
+fn known(list: []const []const u8) []const u8 {
+    var s: vh.Strv = .{};
+    for (list) |x| s.add(x);
+    return s.join(" ");
+}
+
 fn values(items: []const Item) []const u8 {
     var s: vh.Strv = .{};
     for (items) |x| s.add(x.value);
@@ -79,6 +85,7 @@ pub fn renderEnv(p: Plan) []u8 {
         .{ "VH_PLAN_CMDLINE", values(p.cmdline) },
         .{ "VH_PLAN_SERVICES", values(p.services) },
         .{ "VH_PLAN_UDEV", values(p.udev) },
+        .{ "VH_PLAN_UDEV_KNOWN", known(p.udev_known) },
         .{ "VH_PLAN_DENY", values(p.deny) },
         .{ "VH_PLAN_DRACUT", values(p.dracut) },
         .{ "VH_PLAN_LUKS_CIPHER", p.luks.cipher },

@@ -6,6 +6,9 @@
 #   ./install/10-install.sh                       -- install
 #
 # What it does (the same steps by hand: docs/01...docs/03):
+#   0. probes the machine and plans it (install/plan.sh: hwdb/ decides packages, firmware,
+#      the kernel command line, services, initrd drivers and LUKS parameters); the security
+#      gate (VH_SECURITY) stops here when the machine misses a protection;
 #   1. partitions the disk as GPT: ESP (FAT32) + LUKS2 (XFS inside), no swap partition;
 #   2. builds thor (xbps + security policy, docs/18) in the live environment's RAM and
 #      installs the packages into /mnt through it from an HTTPS mirror, in parallel,
@@ -41,7 +44,7 @@ NONFREE=$VH_MIRROR/current/nonfree
 # ---------------------------------------------------------------- checks
 say "checks"
 [ -d /sys/firmware/efi/efivars ] || die "not booted in UEFI mode"
-[ "$(uname -m)" = x86_64 ] || die "x86_64 required"
+[ "$(uname -m)" = x86_64 ] || die "x86_64 required: the ARM64 installation path is milestone U5 (docs/uni/ROADMAP.md); vh-plan already plans ARM64 machines"
 [ -n "$VH_DISK" ] || die "VH_DISK is not set in vh.conf"
 [ -b "$VH_DISK" ] || die "$VH_DISK is not a block device"
 case $(lsblk -dno TYPE "$VH_DISK") in disk) ;; *) die "$VH_DISK is not a whole disk" ;; esac
@@ -56,6 +59,26 @@ ESP_PART=$(part "$VH_DISK" 1)
 LUKS_PART=$(part "$VH_DISK" 2)
 ok "disk $VH_DISK, $size_gib GiB: $ESP_PART (ESP $VH_ESP_SIZE) + $LUKS_PART (LUKS2)"
 
+# ---------------------------------------------------------------- the plan of this machine
+say "the plan of this machine (install/plan.sh: the probe and the rules of hwdb/)"
+if [ -n "${VH_PLAN_ENV:-}" ]; then
+	# tests: a plan made beforehand
+	PLAN_DIR=$(dirname "$VH_PLAN_ENV")
+else
+	PLAN_DIR=${VH_PLAN_DIR:-/tmp/vh}
+	rc=0
+	VH_PLAN_DIR=$PLAN_DIR bash "$VH_ROOT/install/plan.sh" --config "$CFG" || rc=$?
+	[ "$rc" = 0 ] || [ "$rc" = 3 ] || die "the plan failed ($rc)"
+fi
+load_plan "$PLAN_DIR/plan.env"
+security_gate "$PLAN_DIR/plan-report.txt"
+# a USB keyboard always; the drivers on the way to this machine's own keyboards
+VH_DRACUT_DRIVERS=$(printf '%s\n' xhci_pci usbhid hid_generic ${VH_PLAN_DRACUT:-} | awk '!seen[$0]++' | paste -sd' ' -)
+export VH_DRACUT_DRIVERS
+# Argon2id memory: vh.conf's value, unless the machine's RAM caps it (the plan; tiered only)
+LUKS_MEM=$VH_LUKS_MEM_KIB
+[ "${VH_PLAN_LUKS_MEM_KIB:-$LUKS_MEM}" -lt "$LUKS_MEM" ] && LUKS_MEM=$VH_PLAN_LUKS_MEM_KIB
+
 cat <<EOF
 
 Installation plan:
@@ -63,7 +86,9 @@ Installation plan:
   host            $VH_HOSTNAME, $VH_TIMEZONE, $VH_LOCALE, keymap $VH_KEYMAP, Wi-Fi regulatory domain $VH_REGDOM
   users           $VH_ADMIN (admin, tty2), $VH_USER (tty1), $VH_BROWSER_USER (browser)
   kernel          $VH_KERNEL, initramfs $VH_INITRD_COMPRESS, Limine timeout $VH_LIMINE_TIMEOUT
+  machine         $VH_PLAN_CLASS ($VH_PLAN_ARCH), protection $VH_PLAN_TIER ($VH_SECURITY), $PLAN_DIR/plan-report.txt
   GPU             $VH_GPU   Bluetooth $VH_BLUETOOTH   Ethernet $VH_ETH   IPv6 $VH_IPV6
+  hardware        $(printf '%s' "$VH_PLAN_PACKAGES" | fold -s -w 80 | sed '2,$s/^/                  /')
   TRIM            $VH_TRIM  zram $VH_ZRAM_ALGO ${VH_ZRAM_PERCENT}%
   desktop         RefursWM + RefursLine from desktop/ (built in the live environment's RAM)
   mirror          $VH_MIRROR
@@ -98,9 +123,9 @@ EOF
 fi
 
 # ---------------------------------------------------------------- LUKS2
-say "LUKS2: aes-xts-plain64, 512 bits, 4096-byte sectors, Argon2id (${VH_LUKS_ITER_MS} ms, $((VH_LUKS_MEM_KIB/1024)) MiB)"
-LUKS_ARGS=(--type luks2 --cipher aes-xts-plain64 --key-size 512 --hash sha512
-	--pbkdf argon2id --pbkdf-memory "$VH_LUKS_MEM_KIB" --pbkdf-parallel 4
+say "LUKS2: $VH_PLAN_LUKS_CIPHER, $VH_PLAN_LUKS_KEY_SIZE bits, 4096-byte sectors, Argon2id (${VH_LUKS_ITER_MS} ms, $((LUKS_MEM/1024)) MiB, $VH_PLAN_LUKS_PARALLEL threads)"
+LUKS_ARGS=(--type luks2 --cipher "$VH_PLAN_LUKS_CIPHER" --key-size "$VH_PLAN_LUKS_KEY_SIZE" --hash sha512
+	--pbkdf argon2id --pbkdf-memory "$LUKS_MEM" --pbkdf-parallel "$VH_PLAN_LUKS_PARALLEL"
 	--iter-time "$VH_LUKS_ITER_MS" --sector-size 4096 --label cryptroot)
 OPEN_ARGS=(--perf-no_read_workqueue --perf-no_write_workqueue --persistent)
 [ "$VH_TRIM" = yes ] && OPEN_ARGS+=(--allow-discards)
@@ -199,7 +224,20 @@ install_tree "$VH_ROOT/rootfs" "$MNT"
 run install -d -m 0700 "$MNT/root/vh"
 # the C tools (src/) were removed when the tools moved to Zig; zig/ is copied instead
 run cp -a "$VH_ROOT/install" "$VH_ROOT/tools" "$VH_ROOT/rootfs" "$VH_ROOT/optional" \
-	"$VH_ROOT/zig" "$VH_ROOT/thor" "$VH_ROOT/vh.conf.example" "$MNT/root/vh/"
+	"$VH_ROOT/zig" "$VH_ROOT/thor" "$VH_ROOT/hwdb" "$VH_ROOT/adapt" "$VH_ROOT/vh.conf.example" "$MNT/root/vh/"
+run install -d -m 0700 "$MNT/root/vh/kernel"
+run cp -a "$VH_ROOT/kernel/pins" "$VH_ROOT/kernel/profiles" "$VH_ROOT/kernel/src" "$VH_ROOT/kernel/build.zig" \
+	"$VH_ROOT/kernel/build.zig.zon" "$MNT/root/vh/kernel/"
+# the plan of this machine stays with it: the installer's scripts (chroot.sh, 30-lock.sh) read
+# plan.env, vh-kconf and vh-plan re-plan it after a hardware change (U2)
+run install -m 0600 "$PLAN_DIR/plan.env" "$MNT/root/vh/plan.env"
+run install -d -m 0755 "$MNT/etc/vh"
+for f in hw.zon plan.zon plan-report.txt; do
+	run install -m 0644 "$PLAN_DIR/$f" "$MNT/etc/vh/$f"
+done
+if [ -x "$PLAN_DIR/bin/vh-plan" ]; then
+	run install -m 0755 "$PLAN_DIR/bin/vh-kconf" "$PLAN_DIR/bin/vh-plan" "$MNT/usr/local/sbin/"
+fi
 # Zig tools: the compiler lives only in the live environment's RAM; the system gets binaries
 run bash "$VH_ROOT/install/build-tools.sh" "$MNT"
 [ -f "$CFG" ] && run install -m 0600 "$CFG" "$MNT/root/vh/vh.conf"
