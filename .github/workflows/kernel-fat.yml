@@ -35,10 +35,19 @@ jobs:
           curl -fsSL -o "linux-$KVER.tar.xz" "https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-$KVER.tar.xz"
           curl -fsSL -o "linux-$KVER.tar.sign" "https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-$KVER.tar.sign"
           export GNUPGHOME=$(mktemp -d)
-          # the keys by fingerprint only: whatever the keyserver returns must match the pins
-          while read -r fpr _; do
+          # the keys by fingerprint only: whatever a source returns must match the pins. A key counts
+          # once gpg has it: keys.openpgp.org serves keys without the user IDs of unverified
+          # addresses, which gpg skips while exiting 0 (run 39317084780). kernel.org's own WKD
+          # first, by the address next to the fingerprint, then the keyservers
+          while read -r fpr owner; do
             case $fpr in ''|'#'*) continue;; esac
-            gpg --batch --keyserver hkps://keys.openpgp.org --recv-keys "$fpr" || gpg --batch --keyserver hkps://keyserver.ubuntu.com --recv-keys "$fpr"
+            mail=$(printf '%s\n' "$owner" | sed -n 's/.*<\(.*\)>.*/\1/p')
+            [ -z "$mail" ] || gpg --batch --auto-key-locate clear,nodefault,wkd --locate-external-keys "$mail" || true
+            for ks in hkps://keyserver.ubuntu.com hkps://keys.openpgp.org; do
+              gpg --batch --list-keys "$fpr" >/dev/null 2>&1 && break
+              gpg --batch --keyserver "$ks" --recv-keys "$fpr" || true
+            done
+            gpg --batch --list-keys "$fpr" >/dev/null 2>&1 || echo "no source gave the key $fpr ($owner)"
           done < ../kernel/pins/kernel-org.fingerprints
           unxz -k "linux-$KVER.tar.xz"
           gpg --batch --status-fd 1 --verify "linux-$KVER.tar.sign" "linux-$KVER.tar" | tee verify.log
