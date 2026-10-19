@@ -203,6 +203,9 @@ def make_repo_iso(out):
                     "--exclude", ".git", "--exclude", "tests/vm/work", "--exclude", "__pycache__",
                     # the installer builds everything itself: Zig caches and build/ are not needed in the VM
                     "--exclude", ".zig-cache", "--exclude", "zig-out", "--exclude", "zig-pkg",
+                    # a live ISO kept in the checkout (kvm-smoke downloads it into iso/) stays out: in
+                    # the VM it took 1 GiB of the live environment's RAM and filled the system's /tmp
+                    "--exclude", "*.iso",
                     "--exclude", f"{os.path.basename(REPO)}/build",
                     "-C", os.path.dirname(REPO), os.path.basename(REPO)], check=True,
                    env=dict(os.environ, COPYFILE_DISABLE="1"))
