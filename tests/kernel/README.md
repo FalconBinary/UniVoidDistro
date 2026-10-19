@@ -3,6 +3,7 @@
 ```sh
 sh tests/kernel/run.sh              # the unit tests of kernel/ in an Alpine container, plus a smoke run
 sh tests/kernel/oracle.sh           # the GF63 oracle: resolve gives what void-hardperf-light gives
+sh tests/kernel/matrix.sh           # every x86_64 machine: plan (tiered) and resolve, the checks without a kernel tree
 python3 tests/kernel/mkfixture.py   # rewrites the synthesised fixtures from tests/kernel/machines/
 ```
 
@@ -59,3 +60,10 @@ between hardening and the game feature.
 `oracle.sh` holds the GF63 to void-hardperf-light: `tests/kernel/golden/gf63` is the LSMOD list,
 the fragment's symbols and the sorted `.config` that upstream's resolve and profiles give for
 `kernel/hw/gf63.zon`.
+
+`matrix.sh` is the cheap half of the CI matrix ([docs/uni/kernel.md](../../docs/uni/kernel.md#the-ci-matrix)):
+every x86_64 machine of `kernel/hw` planned in tiered mode and resolved with its plan, twice;
+the same bytes both times, every symbol a class of the plan sets known to the pinned config,
+no fragment conflict with a class or the machine fragment, the build's invariants in the
+requested `.config`, `NR_CPUS` within the pinned range, and the plan's `-march` in `kcflags`,
+accepted by clang where there is one. The results stay in `build/km/MACHINE`.

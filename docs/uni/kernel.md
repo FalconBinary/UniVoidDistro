@@ -6,6 +6,29 @@ not only of the laptop void-hardperf-light was written for. `vh-plan` decides fr
 `vh-kconf resolve --plan` turns that into the LSMOD list and the `.config` of the build
 ([kernel/README.md](../../kernel/README.md)). This file describes what U3 adds around it.
 
+## The CI matrix
+
+Every x86_64 machine of `kernel/hw` (today gf63, amd-desktop, intel-hybrid-laptop, qemu-q35)
+gets its kernel resolved on every push and built on request. The aarch64 fixtures stay out
+until U5: there are no arm64 pins (Void's arm64 `.config` and module tables) to resolve against.
+
+**On every push** (the `adapt` workflow, `sh tests/kernel/matrix.sh`, a few seconds; it runs on
+the Mac as well): each machine is planned in tiered mode (a kernel can be built for a machine
+the strict gate would refuse to install on) and resolved with its plan, twice. The checks need
+no kernel source:
+
+| Check | What it catches before a build |
+|---|---|
+| the two runs give the same bytes (plan and resolve) | a nondeterministic plan or `.config` |
+| every symbol a class of the plan sets is known to the pinned config | a class symbol olddefconfig would drop: the build would fail on it |
+| no fragment conflict involves a class or the machine fragment | two classes that disagree, a later fragment overriding a driver |
+| the invariants of the build hold in the requested `.config` | a profile that lost `MODULES=n`, sched_ext, BTF, lockdown or the io_uring ban |
+| `NR_CPUS` is the plan's and within the pinned range (2..512) | a machine with more CPUs than the config allows |
+| `kcflags` is the plan's `-march`, and clang accepts it | a CPU the compiler does not know: `znver5` needs clang 19 or newer [VERIFY], and the build takes the clang of `ubuntu-latest` |
+
+Before this, `tests/kernel/run.sh` resolved the GF63 only and `tests/adapt/run.sh` planned every
+machine without resolving.
+
 ## -march
 
 The plan carries the `-march` of a kernel that is built elsewhere (in CI): `vh-plan` sets the

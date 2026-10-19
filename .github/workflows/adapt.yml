@@ -1,8 +1,10 @@
 # Track A: the plan of any machine. The hardware-constant lint (tests/adapt/lint.sh), vh-plan's
 # unit tests and the golden plans of every machine in kernel/hw (tests/adapt/run.sh), vh-kconf's
 # tests with the probe of every fixture and resolve on the GF63's plan (tests/kernel/run.sh),
-# the GF63 oracle (tests/kernel/oracle.sh), and the installer's lists per plan, the GF63's
-# against upstream's (tests/install/run.sh).
+# the GF63 oracle (tests/kernel/oracle.sh), the cheap half of the kernel matrix: every x86_64
+# machine planned in tiered mode and resolved, with the checks that need no kernel tree
+# (tests/kernel/matrix.sh; the build is kernel-custom with hw=all, docs/uni/kernel.md), and the
+# installer's lists per plan, the GF63's against upstream's (tests/install/run.sh).
 name: adapt
 on:
   push:
@@ -33,6 +35,12 @@ jobs:
         run: sh tests/kernel/run.sh
       - name: the GF63 oracle (the kernel configuration of upstream)
         run: sh tests/kernel/oracle.sh
+      - name: the machine kernel of every x86_64 machine without a kernel tree (plan, resolve, the checks)
+        run: |
+          set -eu
+          # the -march check asks the compiler kernel-custom builds with
+          command -v clang >/dev/null || { sudo apt-get update -q && sudo apt-get install -y -q clang; }
+          sh tests/kernel/matrix.sh
       - name: the installer's lists per plan (the GF63's are upstream's)
         run: sh tests/install/run.sh
       - uses: actions/upload-artifact@v4
@@ -40,4 +48,12 @@ jobs:
         with:
           name: plans
           path: build/at/plans
+          if-no-files-found: ignore
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: kernel-matrix
+          path: |
+            build/km
+            !build/km/bin
           if-no-files-found: ignore
