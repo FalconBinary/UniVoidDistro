@@ -25,10 +25,17 @@ declare -A ZIG_SHA256=(
 )
 ARCH=$(uname -m)
 
-# the live image has neither xz (the Zig archive is .tar.xz) nor minisign: installed into RAM
+# the live image has neither xz (the Zig archive is .tar.xz) nor minisign: installed into RAM.
+# Its xbps is older than the repositories', and xbps refuses every other package until it
+# has updated itself: so xbps first, as 10-install.sh does
+missing=
 for t in minisign xz; do
-	command -v "$t" >/dev/null || xbps-install -Sy "$t" >/dev/null || die "could not install $t into the live environment"
+	command -v "$t" >/dev/null || missing="$missing $t"
 done
+if [ -n "$missing" ]; then
+	xbps-install -Syu xbps >/dev/null || die "could not update xbps in the live environment"
+	xbps-install -Sy $missing >/dev/null || die "could not install$missing into the live environment"
+fi
 
 tarball=zig-$ARCH-linux-$VER.tar.xz
 zig=$DIR/zig-$ARCH-linux-$VER/zig
