@@ -40,6 +40,14 @@ CONFIG_KERNEL_ZSTD=y
 # Counters for bench/ and vh-session-usage; the CPU's own (uncore, RAPL, C-states) are in its class.
 CONFIG_PERF_EVENTS=y
 
+# The I/O schedulers the runtime rule rootfs/etc/udev/rules.d/99-vh-iosched.rules chooses
+# from by what a disk is (none for NVMe and virtio, mq-deadline for an SSD on SATA, bfq for a
+# spinning disk, eMMC and SD cards): Void builds them in; named here so that a kernel built
+# for this machine keeps them for a disk plugged in later and the diff report shows them
+# [VERIFY by measurement per class].
+CONFIG_MQ_IOSCHED_DEADLINE=y
+CONFIG_IOSCHED_BFQ=y
+
 # Network: BBR and fq are set by rootfs/etc/sysctl.d/50-vh-performance.conf and preloaded
 # today (tcp_bbr, sch_fq in install/30-lock.sh); built in here.
 CONFIG_NET_SCHED=y

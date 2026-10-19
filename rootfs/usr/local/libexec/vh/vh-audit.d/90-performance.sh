@@ -5,8 +5,17 @@ sec "Performance"
 	|| unk "firmware: everything extracted ($(du -sm /usr/lib/firmware 2>/dev/null | cut -f1) MB)"
 chk "THP defrag" "$(sed 's/.*\[\(.*\)\].*/\1/' /sys/kernel/mm/transparent_hugepage/defrag 2>/dev/null)" "defer+madvise"
 swapon --noheadings --show=NAME 2>/dev/null | grep -q zram && ok "zram is active" || bad "zram is not active"
-for q in /sys/block/nvme*/queue/scheduler; do
-	[ -e "$q" ] && chk "${q%/queue/scheduler}" "$(sed 's/.*\[\(.*\)\].*/\1/' "$q")" none
+# the I/O scheduler of every disk, by what it is, as rootfs/etc/udev/rules.d/99-vh-iosched.rules sets it
+for b in /sys/block/*; do
+	[ -r "$b/queue/scheduler" ] || continue
+	n=${b##*/}
+	case $n in nvme*|vd*|sd*|mmcblk*) ;; *) continue ;; esac
+	case $n:$(readlink -f "$b") in
+		nvme*|*/virtio*) want=none ;;
+		mmcblk*) want=bfq ;;
+		*) if [ "$(cat "$b/queue/rotational")" = 1 ]; then want=bfq; else want=mq-deadline; fi ;;
+	esac
+	chk "I/O scheduler of $n" "$(sed 's/.*\[\(.*\)\].*/\1/' "$b/queue/scheduler")" "$want"
 done
 st=$(cat /run/vh/power 2>/dev/null || echo ?)
 epp=$(cat /sys/devices/system/cpu/cpufreq/policy0/energy_performance_preference 2>/dev/null || echo none)

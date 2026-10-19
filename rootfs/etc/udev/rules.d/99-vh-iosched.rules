@@ -1,0 +1,23 @@
+# UniVoidDistro: the I/O scheduler by what the disk is, installed on every machine
+# (docs/uni/runtime.md; docs/uni/principles.md, rule 5: a runtime rule by attributes costs
+# nothing and needs no plan). [VERIFY by measurement per class: bench/, fio latency and the
+# desktop's responsiveness while a large copy runs]
+#   NVMe, virtio (virtio-blk and the disks of virtio-scsi): none -- the device's own queues
+#       (or the host) order the requests; a scheduler would only cost CPU time per request;
+#   an SSD on SATA or another SCSI transport: mq-deadline -- one hardware queue, reads served
+#       before writes, and nothing starves;
+#   a spinning disk, eMMC and SD cards: bfq -- a slow device shared fairly keeps the desktop
+#       responsive while something copies.
+# Partitions, device mapper, loop, zram and optical drives keep what the kernel gives them.
+# mq-deadline and bfq are built into the stock kernel and named in kernel/profiles/perf for
+# the machine kernel; the ATTR guards keep udev quiet on a kernel without them, and
+# vh-audit (area performance) reports such a disk.
+ACTION!="add|change", GOTO="vh_iosched_end"
+SUBSYSTEM!="block", GOTO="vh_iosched_end"
+ENV{DEVTYPE}!="disk", GOTO="vh_iosched_end"
+KERNEL=="nvme*", ATTR{queue/scheduler}="none", GOTO="vh_iosched_end"
+SUBSYSTEMS=="virtio", ATTR{queue/scheduler}="none", GOTO="vh_iosched_end"
+KERNEL=="mmcblk*", ATTR{queue/scheduler}=="*bfq*", ATTR{queue/scheduler}="bfq", GOTO="vh_iosched_end"
+KERNEL=="sd*", ATTR{queue/rotational}=="1", ATTR{queue/scheduler}=="*bfq*", ATTR{queue/scheduler}="bfq", GOTO="vh_iosched_end"
+KERNEL=="sd*", ATTR{queue/rotational}=="0", ATTR{queue/scheduler}=="*mq-deadline*", ATTR{queue/scheduler}="mq-deadline"
+LABEL="vh_iosched_end"

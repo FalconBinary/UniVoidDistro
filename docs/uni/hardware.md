@@ -92,11 +92,11 @@ Sound runs through PipeWire everywhere, as upstream.
 
 | Controller | Detected by | Effect |
 |---|---|---|
-| NVMe | the nvme driver | class `storage-nvme`; I/O scheduler `none` (a runtime udev rule) |
-| SATA (AHCI) | ahci | class `storage-ahci`; SSD: `mq-deadline`, HDD: `bfq` [VERIFY by measurement] |
+| NVMe | the nvme driver | class `storage-nvme`; I/O scheduler `none` (a runtime udev rule, [runtime](runtime.md#the-io-scheduler)) |
+| SATA (AHCI) | ahci | class `storage-ahci`; SSD: `mq-deadline`, HDD: `bfq` (the same rule) [VERIFY by measurement] |
 | Intel VMD ("RAID"/RST mode) | the vmd driver on a PCI device of class 0x0104 | class `storage-vmd`, `vmd` in the initrd; the report suggests AHCI mode in the firmware setup |
-| eMMC, SD | sdhci, mmc_block | class `storage-mmc` |
-| virtio-blk, virtio-scsi | virtio_blk, virtio_scsi | class `storage-virtio` |
+| eMMC, SD | sdhci, mmc_block | class `storage-mmc`; I/O scheduler `bfq` (the same rule) [VERIFY by measurement] |
+| virtio-blk, virtio-scsi | virtio_blk, virtio_scsi | class `storage-virtio`; I/O scheduler `none` (the same rule) |
 | USB disks | usb-storage, uas | built in (feature `usb-common`) |
 
 The installer formats the chosen disk as GPT (ESP + LUKS2 + XFS with 4096-byte sectors)

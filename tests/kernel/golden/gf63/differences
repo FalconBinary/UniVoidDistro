@@ -3,3 +3,5 @@
 # +LINE (the other way round), then the reason after "#".
 lsmod -rtsx_pci         # VH_CARDREADER=no: upstream refuses the card reader on the stock kernel (install/lib.sh) yet builds it into the machine kernel; the plan refuses it in both
 lsmod -rtsx_pci_sdmmc   # the same, its SD host driver
+fragment.symbols +CONFIG_IOSCHED_BFQ=y          # U2: kernel/profiles/perf names the schedulers of rootfs/etc/udev/rules.d/99-vh-iosched.rules; Void builds them in, so .config is unchanged
+fragment.symbols +CONFIG_MQ_IOSCHED_DEADLINE=y  # the same, the scheduler of an SSD on SATA
