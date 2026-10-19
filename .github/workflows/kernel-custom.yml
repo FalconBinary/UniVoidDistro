@@ -6,12 +6,17 @@
 # fixed KBUILD_BUILD_* for reproducibility; the tarball is PGP-verified as in kernel-fat.yml.
 # Results: an artifact, and a release "kernel-custom-NAME-KVER-rRUN" so they can be fetched
 # without GitHub credentials (docs/runbook-gf63.md). Kernels from CI contain no firmware.
+# hw=all builds every x86_64 machine of kernel/hw, one job each and no release (the U3 matrix,
+# docs/uni/kernel.md): a symbol of mandatory, a class or the machine fragment that olddefconfig
+# lost fails that machine's job (vh-kconf diff exits 2), the others go on. The aarch64 fixtures
+# wait for the arm64 pins (U5). The cheap half, plan and resolve on every push, is
+# tests/kernel/matrix.sh in the adapt workflow.
 name: kernel-custom
 on:
   workflow_dispatch:
     inputs:
       hw:
-        description: hw.zon committed under kernel/hw/
+        description: "hw.zon committed under kernel/hw/, or all: every x86_64 machine there (no release)"
         default: kernel/hw/gf63.zon
       kver:
         description: kernel version (6.18.y)
@@ -27,12 +32,44 @@ permissions:
   contents: read
 env:
   KVER: ${{ github.event.inputs.kver || '6.18.57' }}
-  HW: ${{ github.event.inputs.hw || 'kernel/hw/gf63.zon' }}
   FEATURES: ${{ github.event.inputs.features || 'auto' }}
 jobs:
+  machines:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      list: ${{ steps.list.outputs.list }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: the machines to build (all = every x86_64 machine of kernel/hw)
+        id: list
+        env:
+          HW_INPUT: ${{ github.event.inputs.hw || 'kernel/hw/gf63.zon' }}
+        run: |
+          set -euo pipefail
+          list=$HW_INPUT
+          if [ "$HW_INPUT" = all ]; then
+            list=""
+            for f in kernel/hw/*.zon; do
+              a=$(sed -n 's/^    \.arch = "\(.*\)",$/\1/p' "$f")
+              if [ "$a" = x86_64 ]; then list="$list $f"; else echo "$f: $a, not built before the arm64 pins (U5)"; fi
+            done
+            test -n "$list"
+          fi
+          # shellcheck disable=SC2086 # the paths of kernel/hw have no spaces
+          json=$(printf '%s\n' $list | jq -R . | jq -s -c .)
+          echo "list=$json" >> "$GITHUB_OUTPUT"
+          echo "machines: $json"
   build:
+    needs: machines
     runs-on: ubuntu-latest
     timeout-minutes: 240
+    strategy:
+      fail-fast: false
+      matrix:
+        hw: ${{ fromJSON(needs.machines.outputs.list) }}
+    env:
+      HW: ${{ matrix.hw }}
     outputs:
       name: ${{ steps.name.outputs.name }}
     steps:
@@ -161,12 +198,25 @@ jobs:
           name: kernel-custom-${{ steps.name.outputs.name }}-${{ env.KVER }}
           path: dl/out
           if-no-files-found: error
+      - name: what a failed machine leaves (the plan, resolve, the diff report)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel-custom-${{ steps.name.outputs.name }}-${{ env.KVER }}-failed
+          path: |
+            dl/plan
+            dl/resolve
+            dl/out
+          if-no-files-found: ignore
   release:
-    if: github.event.inputs.release == 'true'
+    # one machine only: hw=all checks that every machine builds
+    if: github.event.inputs.release == 'true' && github.event.inputs.hw != 'all'
     needs: build
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    env:
+      HW: ${{ github.event.inputs.hw || 'kernel/hw/gf63.zon' }}
     steps:
       - uses: actions/download-artifact@v4
         with:

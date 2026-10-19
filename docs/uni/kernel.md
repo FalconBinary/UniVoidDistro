@@ -29,6 +29,22 @@ no kernel source:
 Before this, `tests/kernel/run.sh` resolved the GF63 only and `tests/adapt/run.sh` planned every
 machine without resolving.
 
+**On request** (the `kernel-custom` workflow with `hw=all`): one job per machine, in parallel,
+each the whole build of [kernel/README.md](../../kernel/README.md): the PGP-verified tarball, the
+plan, resolve, localyesconfig, olddefconfig, `vh-kconf diff`, the invariants, bzImage with the
+plan's `-march`. A symbol of `mandatory`, of a class the plan names or of the machine fragment
+that olddefconfig did not keep makes `diff` exit 2 and fails that machine's job; the others go on
+(`fail-fast: false`), and a failed job keeps its plan, its resolve output and its diff report
+as the artifact `kernel-custom-NAME-KVER-failed`. A run for all machines makes no release (a
+release is for one machine, the runbook's). The steps are kernel-custom's own: the matrix is an
+input of that workflow rather than a copy of its shell or a reusable workflow, so that a merge of
+upstream's changes to the file stays small. Each job takes the 30 to 60 minutes of a kernel
+build, so it runs on request:
+
+```sh
+gh workflow run kernel-custom -R FalconBinary/UniVoidDistro -f hw=all
+```
+
 ## -march
 
 The plan carries the `-march` of a kernel that is built elsewhere (in CI): `vh-plan` sets the
