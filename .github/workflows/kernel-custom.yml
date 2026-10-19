@@ -5,7 +5,9 @@
 # decide; vh-kconf diff reports what survived. The build is clang/lld, the plan's -march, no modules,
 # fixed KBUILD_BUILD_* for reproducibility; the tarball is PGP-verified as in kernel-fat.yml.
 # Results: an artifact, and a release "kernel-custom-NAME-KVER-rRUN" so they can be fetched
-# without GitHub credentials (docs/runbook-gf63.md). Kernels from CI contain no firmware.
+# without GitHub credentials (docs/runbook-gf63.md). Kernels from CI contain no firmware: vh-kconf
+# install on the machine puts it into the UKI's initrd; it reads BUILD (the commit and the hw.zon),
+# the final config and the kernel's modules.builtin* (kernel/README.md, "install").
 # hw=all builds every x86_64 machine of kernel/hw, one job each and no release (the U3 matrix,
 # docs/uni/kernel.md): a symbol of mandatory, a class or the machine fragment that olddefconfig
 # lost fails that machine's job (vh-kconf diff exits 2), the others go on. The aarch64 fixtures
@@ -182,12 +184,21 @@ jobs:
           cp arch/x86/boot/bzImage "$out/bzImage-vh-$KVER"
           cp .config "$out/config-vh-$KVER"
           cp System.map "$out/System.map-vh-$KVER"
+          # the built-in modules and their parameters, as the build wrote them from the final
+          # .config (scripts/Makefile.vmlinux_o, with CONFIG_MODULES=n too [VERIFY with the first
+          # run]): vh-kconf install keeps only the command-line parameters of modules this kernel has
+          for f in modules.builtin modules.builtin.modinfo; do
+            test -s "$f" || { echo "::error::$f was not built: vh-kconf install needs it"; exit 1; }
+            cp "$f" "$out/$f-vh-$KVER"
+          done
           llvm-objcopy --dump-section .BTF="$out/vmlinux-vh-$KVER.btf" vmlinux
           cp "$GITHUB_WORKSPACE/dl/resolve/resolve-report.txt" "$GITHUB_WORKSPACE/dl/resolve/fragment.config" "$GITHUB_WORKSPACE/dl/resolve/lsmod" "$out/"
           cp "$GITHUB_WORKSPACE/dl/plan/plan.zon" "$GITHUB_WORKSPACE/dl/plan/plan-report.txt" "$out/"
           cp "$GITHUB_WORKSPACE/$HW" "$out/"
           {
             echo "kernel-custom $NAME: linux-$KVER, features $FEATURES, commit $GITHUB_SHA, run $GITHUB_RUN_NUMBER"
+            # the probe the kernel was resolved from: vh-kconf install refuses it on another machine
+            echo "hw.zon: $HW sha256 $(sha256sum "$GITHUB_WORKSPACE/$HW" | cut -d' ' -f1)"
             echo "KBUILD_BUILD_TIMESTAMP=$KBUILD_BUILD_TIMESTAMP KCFLAGS=$KCFLAGS LLVM=1 $(clang --version | head -1)"
             strings arch/x86/boot/bzImage | grep -m1 -E '^Linux version ' || true
           } > "$out/BUILD"
@@ -231,6 +242,6 @@ jobs:
           set -euo pipefail
           tag="kernel-custom-$NAME-$KVER-r$GITHUB_RUN_NUMBER"
           gh release create "$tag" --target "$GITHUB_SHA" --title "$tag" \
-            --notes "Custom kernel for $NAME from $HW: linux-$KVER, features $FEATURES, built by run $GITHUB_RUN_NUMBER at commit $GITHUB_SHA. See BUILD, diff-report.txt and resolve-report.txt; verify with sha256sum -c SHA256SUMS. No firmware inside: the initrd carries it (docs/runbook-gf63.md)."
+            --notes "Custom kernel for $NAME from $HW: linux-$KVER, features $FEATURES, built by run $GITHUB_RUN_NUMBER at commit $GITHUB_SHA. See BUILD, diff-report.txt and resolve-report.txt; verify with sha256sum -c SHA256SUMS. No firmware inside: doas vh-kconf install DIR on the machine builds the signed UKI with it in the initrd and puts it on trial (docs/runbook-gf63.md, 1.6)."
           gh release upload "$tag" out/* --clobber
           echo "release: https://github.com/$GH_REPO/releases/tag/$tag"
