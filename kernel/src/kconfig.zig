@@ -38,6 +38,14 @@ pub const DotConfig = struct {
         self.map.put(vh.gpa, vh.dupe(name), vh.dupe(value)) catch vh.oom();
     }
 
+    /// set and move to the end, as merge_config.sh does: for a choice (PREEMPT, LTO, the
+    /// lockdown mode) conf takes the member that is =y last in the file, so a fragment's
+    /// pick must come after the base's
+    pub fn setLast(self: *DotConfig, name: []const u8, value: []const u8) void {
+        _ = self.map.orderedRemove(name);
+        self.set(name, value);
+    }
+
     pub fn get(self: *const DotConfig, name: []const u8) ?[]const u8 {
         return self.map.get(name);
     }
@@ -74,6 +82,9 @@ pub fn show(v: ?[]const u8) []const u8 {
 pub const Def = struct {
     where: []const u8,
     prompt: bool = false,
+    /// the "if EXPR" of the prompt: while it is n the option keeps its default, whatever
+    /// the .config says
+    prompt_cond: ?[]const u8 = null,
     /// AND-ed conditions, as written: the block's own "depends on" lines and those of the
     /// enclosing if, menu and choice blocks
     depends: std.ArrayList([]const u8) = .empty,
@@ -195,11 +206,15 @@ pub const Tree = struct {
                 const d = &s.defs.items[s.defs.items.len - 1];
                 if (vh.eql(kw, "bool") or vh.eql(kw, "tristate") or vh.eql(kw, "string") or vh.eql(kw, "int") or vh.eql(kw, "hex")) {
                     s.kind = vh.dupe(kw);
-                    if (rest.len > 0 and (rest[0] == '"' or rest[0] == '\'')) d.prompt = true;
+                    if (rest.len > 0 and (rest[0] == '"' or rest[0] == '\'')) {
+                        d.prompt = true;
+                        d.prompt_cond = promptCond(rest);
+                    }
                 } else if (vh.eql(kw, "def_bool") or vh.eql(kw, "def_tristate")) {
                     s.kind = vh.dupe(kw[4..]);
                 } else if (vh.eql(kw, "prompt")) {
                     d.prompt = true;
+                    d.prompt_cond = promptCond(rest);
                 } else if (vh.eql(kw, "select")) {
                     s.selects.append(vh.gpa, vh.dupe(rest)) catch vh.oom();
                 }
@@ -290,6 +305,15 @@ fn stripComment(line: []const u8) []const u8 {
         } else if (c == '#') return line[0..i];
     }
     return line;
+}
+
+/// `"prompt text" if EXPR` -> EXPR; null without a condition
+fn promptCond(rest: []const u8) ?[]const u8 {
+    if (rest.len == 0 or (rest[0] != '"' and rest[0] != '\'')) return null;
+    const end = mem.indexOfScalarPos(u8, rest, 1, rest[0]) orelse return null;
+    const after = vh.strip(rest[end + 1 ..]);
+    if (!vh.startsWith(after, "if ")) return null;
+    return vh.dupe(vh.strip(after[3..]));
 }
 
 fn unquote(s: []const u8) []const u8 {
@@ -462,9 +486,13 @@ pub fn explain(tree: ?*const Tree, cfg: *const DotConfig, name: []const u8) []co
     if (s.choice) out.appendSlice(vh.gpa, ", a choice member (one of the choice is y, the others n)") catch vh.oom();
     if (!s.hasPrompt()) out.appendSlice(vh.gpa, ", no prompt (its value comes from defaults and selects only, not from a fragment)") catch vh.oom();
     var satisfied: ?[]const u8 = null;
+    var macro = false;
+    var hidden: vh.Strv = .{};
+    var visible_prompt = false;
     for (s.defs.items) |d| {
         var failed: vh.Strv = .{};
         for (d.depends.items) |expr| {
+            if (mem.indexOf(u8, expr, "$(") != null) macro = true;
             const e = Eval.run(cfg, expr);
             if (e.result == 0) failed.add(vh.fmt("\"{s}\" [{s}]", .{ expr, e.why() }));
         }
@@ -473,9 +501,45 @@ pub fn explain(tree: ?*const Tree, cfg: *const DotConfig, name: []const u8) []co
         } else {
             out.print(vh.gpa, "; at {s} unmet: {s}", .{ d.where, failed.join("; ") }) catch vh.oom();
         }
+        if (d.prompt) {
+            if (d.prompt_cond) |c| {
+                const e = Eval.run(cfg, c);
+                if (e.result == 0) hidden.add(vh.fmt("\"{s}\" [{s}]", .{ c, e.why() })) else visible_prompt = true;
+            } else visible_prompt = true;
+        }
     }
-    if (satisfied) |w| out.print(vh.gpa, "; dependencies satisfied at {s}: the value was decided elsewhere (a select of n, a later fragment, MODULES=n for an =m)", .{w}) catch vh.oom();
+    if (s.hasPrompt() and !visible_prompt and hidden.len() > 0)
+        out.print(vh.gpa, "; the prompt is hidden by {s}: a hidden option keeps its default, whatever the fragment says", .{hidden.join("; ")}) catch vh.oom();
+    const by = selectedBy(t, cfg, name);
+    if (by.len() > 0) out.print(vh.gpa, "; selected by {s} (a select cannot be undone by a fragment)", .{by.join(", ")}) catch vh.oom();
+    if (macro) out.appendSlice(vh.gpa, "; a $(...) macro in the dependencies was assumed y: the toolchain decides it (clang-only options need LLVM=1)") catch vh.oom();
+    if (satisfied != null and !(s.hasPrompt() and !visible_prompt) and by.len() == 0)
+        out.print(vh.gpa, "; dependencies satisfied at {s}: the value was decided elsewhere (a default, a choice, a later fragment, MODULES=n for an =m)", .{satisfied.?}) catch vh.oom();
     return out.items;
+}
+
+/// the symbols that are y or m in the final config and select `name` with their condition
+/// holding; at most eight, for the report
+fn selectedBy(t: *const Tree, cfg: *const DotConfig, name: []const u8) vh.Strv {
+    var by: vh.Strv = .{};
+    var it = t.syms.iterator();
+    while (it.next()) |kv| {
+        const s = kv.value_ptr.*;
+        if (s.selects.items.len == 0 or cfg.tri(s.name) == 0) continue;
+        for (s.selects.items) |sel| {
+            var target = sel;
+            var cond: ?[]const u8 = null;
+            if (mem.indexOf(u8, sel, " if ")) |i| {
+                target = vh.strip(sel[0..i]);
+                cond = vh.strip(sel[i + 4 ..]);
+            }
+            if (!vh.eql(target, name)) continue;
+            if (cond) |c| if (Eval.run(cfg, c).result == 0) continue;
+            if (by.len() < 8 and !by.has(s.name)) by.add(s.name);
+        }
+    }
+    by.sort();
+    return by;
 }
 
 // ---------------------------------------------------------------- Kbuild: module -> symbol
@@ -576,6 +640,9 @@ test "DotConfig: parse, values, render" {
     c.set("B", "y");
     c.set("NEW", "n");
     try std.testing.expectEqualStrings("CONFIG_A=y\nCONFIG_B=y\n# CONFIG_C is not set\nCONFIG_S=\"text\"\nCONFIG_N=12\nCONFIG_H=0x10\n# CONFIG_NEW is not set\n", c.render());
+    c.setLast("A", "n");
+    try std.testing.expectEqualStrings("CONFIG_B=y\n# CONFIG_C is not set\nCONFIG_S=\"text\"\nCONFIG_N=12\nCONFIG_H=0x10\n# CONFIG_NEW is not set\n# CONFIG_A is not set\n", c.render());
+    try std.testing.expectEqual(@as(usize, 7), c.count());
     try std.testing.expect(DotConfig.parseLine("CONFIG_=y") == null);
     try std.testing.expect(DotConfig.parseLine("# CONFIG_X") == null);
 }
@@ -645,7 +712,15 @@ test "Tree: blocks, scopes, help, continuation, choice" {
         "\n" ++
         "config D\n" ++
         "\tdef_bool y\n" ++
-        "\tdepends on A\n", "t/Kconfig", 0);
+        "\tdepends on A\n" ++
+        "config E\n" ++
+        "\tbool \"e\" if EXPERT\n" ++
+        "\tdefault y\n" ++
+        "config F\n" ++
+        "\tbool\n" ++
+        "\tprompt \"f\" if EXPERT && A\n" ++
+        "\tselect B if P\n" ++
+        "\tselect D\n", "t/Kconfig", 0);
     try std.testing.expectEqual(@as(usize, 8), indent("\tx"));
     try std.testing.expectEqual(@as(usize, 10), indent("\t  x"));
     try std.testing.expectEqual(@as(usize, 8), indent("   \tx"));
@@ -673,14 +748,30 @@ test "Tree: blocks, scopes, help, continuation, choice" {
     try std.testing.expectEqual(@as(usize, 1), d.defs.items[0].depends.items.len);
     try std.testing.expectEqual(@as(usize, 0), t.frames.items.len);
 
+    const e = t.get("E").?;
+    try std.testing.expect(e.hasPrompt());
+    try std.testing.expectEqualStrings("EXPERT", e.defs.items[0].prompt_cond.?);
+    try std.testing.expectEqualStrings("EXPERT && A", t.get("F").?.defs.items[0].prompt_cond.?);
+    try std.testing.expect(a.defs.items[0].prompt_cond == null);
+
     var cfg: DotConfig = .{};
-    cfg.parse("CONFIG_M=y\n# CONFIG_I is not set\nCONFIG_P=y\n");
+    cfg.parse("CONFIG_M=y\n# CONFIG_I is not set\nCONFIG_P=y\nCONFIG_E=y\nCONFIG_F=y\nCONFIG_D=y\n# CONFIG_EXPERT is not set\n");
     const why = explain(&t, &cfg, "B");
     try std.testing.expect(mem.indexOf(u8, why, "no prompt") != null);
     try std.testing.expect(mem.indexOf(u8, why, "\"I\" [I=n]") != null);
+    try std.testing.expect(mem.indexOf(u8, why, "selected by F") != null);
     try std.testing.expect(mem.indexOf(u8, explain(&t, &cfg, "NOPE"), "not a symbol") != null);
     try std.testing.expect(mem.indexOf(u8, explain(null, &cfg, "B"), "no kernel tree") != null);
     try std.testing.expect(mem.indexOf(u8, explain(&t, &cfg, "C1"), "choice member") != null);
+    const why_e = explain(&t, &cfg, "E");
+    try std.testing.expect(mem.indexOf(u8, why_e, "hidden by \"EXPERT\" [EXPERT=n]") != null);
+    try std.testing.expect(mem.indexOf(u8, why_e, "decided elsewhere") == null);
+    const why_d = explain(&t, &cfg, "D");
+    try std.testing.expect(mem.indexOf(u8, why_d, "selected by F") != null);
+    cfg.set("EXPERT", "y");
+    try std.testing.expect(mem.indexOf(u8, explain(&t, &cfg, "E"), "hidden") == null);
+    cfg.set("P", "n");
+    try std.testing.expect(mem.indexOf(u8, explain(&t, &cfg, "B"), "selected by") == null);
 }
 
 test "Kbuild: obj rules" {

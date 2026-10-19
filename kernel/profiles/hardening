@@ -87,6 +87,10 @@ CONFIG_BPF_UNPRIV_DEFAULT_OFF=y
 
 # Interfaces that are not built (the sysctls that disabled them vanish: the sysctl loader
 # skips ENOENT, vh-audit checks "absent" instead of a value).
+# EXPERT only reveals prompts: io_uring, modify_ldt and a few others are "bool ... if EXPERT",
+# and an option whose prompt is hidden keeps its default (y) whatever the .config says. Every
+# other option keeps the value of the pinned config.
+CONFIG_EXPERT=y
 # X32 and ia32: no 32-bit ABI; features/game re-enables ia32 for Steam, guarded by the cmdline.
 # CONFIG_X86_X32_ABI is not set
 # CONFIG_IA32_EMULATION is not set
@@ -97,7 +101,9 @@ CONFIG_BPF_UNPRIV_DEFAULT_OFF=y
 # CONFIG_PROC_VMCORE is not set
 # Hibernation writes the whole RAM, keys included, to disk.
 # CONFIG_HIBERNATION is not set
-# debugfs=off on the cmdline today; not built.
+# debugfs=off on the cmdline today; not built. blktrace selects it (and is a tracing
+# interface of its own), so it goes first.
+# CONFIG_BLK_DEV_IO_TRACE is not set
 # CONFIG_DEBUG_FS is not set
 # /proc/kcore and /dev/mem, /dev/port expose kernel memory.
 # CONFIG_PROC_KCORE is not set

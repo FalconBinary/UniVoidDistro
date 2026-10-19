@@ -225,7 +225,8 @@ pub fn resolve(h: hw.Hw, o: Opts) Result {
     rep.print(vh.gpa, "Fragment conflicts ({d}): the later fragment wins\n", .{r.conflicts.items.len}) catch vh.oom();
     for (r.conflicts.items) |c| rep.print(vh.gpa, "  CONFIG_{s}: {s}={s}, {s}={s}\n", .{ c.name, c.first_src, c.first, c.src, c.value }) catch vh.oom();
 
-    // 6. the pinned .config with the fragment applied (merge_config.sh -m does the same)
+    // 6. the pinned .config with the fragment applied, the fragment's lines last, as
+    //    merge_config.sh -m does: the kernel's conf takes the last =y member of a choice
     r.config.parse(readOrDie(base_path));
     var changed: usize = 0;
     var added: usize = 0;
@@ -233,7 +234,7 @@ pub fn resolve(h: hw.Hw, o: Opts) Result {
         if (r.config.get(k)) |old| {
             if (!vh.eql(old, v)) changed += 1;
         } else added += 1;
-        r.config.set(k, v);
+        r.config.setLast(k, v);
     }
     rep.print(vh.gpa, "\n.config: {s} ({d} symbols) + fragment ({d} symbols): {d} changed, {d} not in the base; the kernel's olddefconfig decides the rest, vh-kconf diff reports it.\n", .{ base_path, r.config.count() - added, r.fragment.count(), changed, added }) catch vh.oom();
     rep.print(vh.gpa, "\nLSMOD ({d}): {s}\n", .{ r.lsmod.len(), r.lsmod.join(" ") }) catch vh.oom();
@@ -364,6 +365,15 @@ test "resolve: the GF63 fixture against the pinned tables" {
     try std.testing.expectEqualStrings("\"-vh\"", r.config.get("LOCALVERSION").?);
     try std.testing.expectEqualStrings("m", r.config.get("IWLWIFI").?);
     try std.testing.expect(r.config.count() > 10000);
+    // the fragment's choice picks come after the base's members (PREEMPT after PREEMPT_VOLUNTARY)
+    const keys = r.config.map.keys();
+    var i_vol: usize = 0;
+    var i_full: usize = 0;
+    for (keys, 0..) |k, i| {
+        if (vh.eql(k, "PREEMPT_VOLUNTARY")) i_vol = i;
+        if (vh.eql(k, "PREEMPT")) i_full = i;
+    }
+    try std.testing.expect(i_full > i_vol and i_full >= keys.len - r.fragment.count());
     try std.testing.expect(mem.indexOf(u8, r.report.items, "0000:00:14.3") != null);
     try std.testing.expect(mem.indexOf(u8, renderFragment(&r), "# from: hardening\n# CONFIG_IO_URING is not set\n") != null);
 

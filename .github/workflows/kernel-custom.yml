@@ -89,8 +89,13 @@ jobs:
         run: |
           set -euo pipefail
           cd "dl/linux-$KVER"
-          # the LSMOD list is in lsmod format; new prompts take their default (yes "")
+          # the LSMOD list is in lsmod format; new prompts take their default (yes ""), and
+          # yes dies of SIGPIPE when make is done, so the pipeline's status is make's alone
+          set +o pipefail
           yes "" | make LLVM=1 localyesconfig LSMOD="$GITHUB_WORKSPACE/dl/resolve/lsmod"
+          rc=$?
+          set -o pipefail
+          test "$rc" = 0
           make LLVM=1 olddefconfig
           grep -E '^(CONFIG_MODULES|# CONFIG_MODULES|CONFIG_LOCALVERSION|CONFIG_SCHED_CLASS_EXT|CONFIG_DEBUG_INFO_BTF|CONFIG_LTO_CLANG_THIN|CONFIG_CFI|CONFIG_PREEMPT|CONFIG_NR_CPUS|CONFIG_IWLWIFI|CONFIG_R8169|CONFIG_XFS_FS|CONFIG_DM_CRYPT|CONFIG_NF_TABLES)[= ]' .config
           echo "symbols =y: $(grep -c '=y$' .config), =m: $(grep -c '=m$' .config || true), not set: $(grep -c 'is not set$' .config)"
