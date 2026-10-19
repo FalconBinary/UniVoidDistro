@@ -128,8 +128,11 @@ def boot(a, extra=None):
         tar = os.path.join(vm.d, "repo.tar")
         flags = ["--no-xattrs"] + (["--no-fflags", "--no-mac-metadata"] if sys.platform == "darwin" else [])
         # the rig itself (the disk image, this tar) lives under tests/vm/work by default: never inside the archive
+        # a live ISO kept in the checkout (kvm-smoke downloads it into iso/) stays out too: the VM
+        # unpacks this tar into /tmp, a tmpfs of 25% of the RAM, which the ISO filled
         subprocess.run(["tar", *flags, "-cf", tar, "--exclude", ".git", "--exclude", "__pycache__", "--exclude", ".zig-cache",
-                        "--exclude", "zig-out", "--exclude", "tests/vm/work", *[x for d in VM_SKIP_BUILD for x in ("--exclude", f"build/{d}")],
+                        "--exclude", "zig-out", "--exclude", "tests/vm/work", "--exclude", "*.iso",
+                        *[x for d in VM_SKIP_BUILD for x in ("--exclude", f"build/{d}")],
                         "-C", os.path.dirname(vhvm.REPO), os.path.basename(vhvm.REPO)], check=True,
                        env=dict(os.environ, COPYFILE_DISABLE="1"))
         extra += ["-drive", f"file={tar},if=none,id=repo,format=raw,readonly=on",
