@@ -1,0 +1,66 @@
+// hwdb/cpu-arm.zon: ARM64 CPUs. The ARM64 installation path is milestone U5; these rules make
+// the plan of an ARM64 machine correct and complete already.
+.{
+    .rules = .{
+        .{
+            .id = "arm.iommu.iort",
+            .why = "An ACPI ARM machine describes its SMMU in the IORT table [VERIFY: IORT may describe the I/O topology without an SMMU].",
+            .when = .{ .arch = .{"aarch64"}, .acpi_table = .{"IORT"} },
+            .sets = .{"iommu"},
+        },
+        .{
+            .id = "arm.kernel",
+            .why = "The machine kernel's ARM64 class: the generic timer, PSCI, CPPC or SCMI frequency control, the errata of the cores.",
+            .when = .{ .arch = .{"aarch64"} },
+            .kconfig = .{"cpu-arm64"},
+        },
+        .{
+            .id = "arm.mcpu.cortex-a76",
+            .why = "Cortex-A76 (implementer 0x41, part 0xd0b), the cores of the Raspberry Pi 5: -mcpu=cortex-a76.",
+            .when = .{ .arch = .{"aarch64"}, .arm_implementer = .{"0x41"}, .arm_part = .{"0xd0b"} },
+            .set = .{.{ .key = "march", .value = "cortex-a76" }},
+            .priority = 10,
+        },
+        .{
+            .id = "arm.mcpu.cortex-a72",
+            .why = "Cortex-A72 (0x41, 0xd08), the cores of the Raspberry Pi 4: -mcpu=cortex-a72. They have no Crypto Extensions: no AES in hardware.",
+            .when = .{ .arch = .{"aarch64"}, .arm_implementer = .{"0x41"}, .arm_part = .{"0xd08"} },
+            .set = .{.{ .key = "march", .value = "cortex-a72" }},
+            .priority = 10,
+        },
+        .{
+            .id = "arm.mcpu.neoverse-n1",
+            .why = "Neoverse N1 (0x41, 0xd0c), the cores of Ampere Altra servers: -mcpu=neoverse-n1.",
+            .when = .{ .arch = .{"aarch64"}, .arm_implementer = .{"0x41"}, .arm_part = .{"0xd0c"} },
+            .set = .{.{ .key = "march", .value = "neoverse-n1" }},
+            .priority = 10,
+        },
+        .{
+            .id = "arm.mcpu.generic",
+            .why = "Any other ARMv8 core: -march=armv8-a, the instruction set every ARM64 CPU has.",
+            .when = .{ .arch = .{"aarch64"} },
+            .set = .{.{ .key = "march", .value = "armv8-a" }},
+            .priority = 1,
+        },
+        .{
+            .id = "arm.watchdog.bcm2835",
+            .why = "The Raspberry Pi's power-management watchdog, for optional/deadman.",
+            .when = .{ .device = .{ .module = .{"bcm2835_wdt"} } },
+            .set = .{.{ .key = "watchdog", .value = "bcm2835_wdt" }},
+            .priority = 10,
+        },
+        .{
+            .id = "arm.watchdog.sbsa",
+            .why = "The SBSA generic watchdog of ARM servers, for optional/deadman.",
+            .when = .{ .device = .{ .module = .{"sbsa_gwdt"} } },
+            .set = .{.{ .key = "watchdog", .value = "sbsa_gwdt" }},
+            .priority = 10,
+        },
+        .{
+            .id = "arm.aes",
+            .why = "The ARMv8 Crypto Extensions: AES-XTS through the ce-blk driver, built into the machine kernel.",
+            .when = .{ .arch = .{"aarch64"}, .cpu_flags = .{"aes"} },
+            .kconfig = .{"cpu-arm64-aes"},
+        },
+    },
+}

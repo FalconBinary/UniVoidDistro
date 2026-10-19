@@ -9,6 +9,7 @@
         .kernel = .{ .path = "kernel" },
         .init = .{ .path = "init" },
         .sched = .{ .path = "sched" },
+        .adapt = .{ .path = "adapt" },
     },
     .paths = .{
         "build.zig",

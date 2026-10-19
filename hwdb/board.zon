@@ -1,0 +1,67 @@
+// hwdb/board.zon: motherboards and machine makers: where their firmware setup hides the
+// Secure Boot keys, their sensors and embedded controllers. The menu names are [VERIFY]: they
+// change between firmware generations; the report shows them as a starting point.
+.{
+    .rules = .{
+        .{
+            .id = "board.asus.secure-boot",
+            .why = "ASUS firmware: the keys are cleared under Boot, Secure Boot, Key Management.",
+            .when = .{ .dmi = .{.{ .field = "board_vendor", .any = .{"ASUSTeK*"} }} },
+            .note = "ASUS: Advanced Mode, Boot, Secure Boot, Key Management, Clear Secure Boot Keys puts the firmware in Setup Mode for vh-firstboot.",
+        },
+        .{
+            .id = "board.msi.secure-boot",
+            .why = "MSI firmware: Secure Boot Mode Custom, then delete the variables.",
+            .when = .{ .dmi = .{.{ .field = "sys_vendor", .any = .{"Micro-Star*"} }} },
+            .note = "MSI: Settings, Advanced, Windows OS Configuration, Secure Boot, Secure Boot Mode Custom, Key Management, Delete All Secure Boot Variables.",
+        },
+        .{
+            .id = "board.dell.secure-boot",
+            .why = "Dell firmware: Expert Key Management.",
+            .when = .{ .dmi = .{.{ .field = "sys_vendor", .any = .{"Dell*"} }} },
+            .note = "Dell: Secure Boot, Expert Key Management, Enable Custom Mode, then Delete All Keys.",
+        },
+        .{
+            .id = "board.lenovo.secure-boot",
+            .why = "Lenovo firmware: Reset to Setup Mode.",
+            .when = .{ .dmi = .{.{ .field = "sys_vendor", .any = .{"LENOVO"} }} },
+            .note = "Lenovo: Security, Secure Boot, Reset to Setup Mode (and Clear All Secure Boot Keys).",
+        },
+        .{
+            .id = "board.hp.secure-boot",
+            .why = "HP firmware: Clear Secure Boot Keys.",
+            .when = .{ .dmi = .{.{ .field = "sys_vendor", .any = .{ "HP", "Hewlett-Packard" } }} },
+            .note = "HP: Security, Secure Boot Configuration, Clear Secure Boot Keys (confirm with the code shown at the next boot).",
+        },
+        .{
+            .id = "board.gigabyte.secure-boot",
+            .why = "Gigabyte firmware: Secure Boot Mode Custom, Delete All Secure Boot Variables.",
+            .when = .{ .dmi = .{.{ .field = "board_vendor", .any = .{"Gigabyte*"} }} },
+            .note = "Gigabyte: Boot, Secure Boot, Secure Boot Mode Custom, Key Management, Delete All Secure Boot Variables.",
+        },
+        .{
+            .id = "board.asrock.secure-boot",
+            .why = "ASRock firmware: Clear Secure Boot Keys.",
+            .when = .{ .dmi = .{.{ .field = "board_vendor", .any = .{"ASRock*"} }} },
+            .note = "ASRock: Security, Secure Boot, Secure Boot Mode Custom, Clear Secure Boot Keys.",
+        },
+        .{
+            .id = "board.msi.ec",
+            .why = "MSI laptops: msi-ec drives the fan and the power modes when it knows this EC firmware; otherwise they are available in Windows only.",
+            .when = .{ .has = .{"laptop"}, .dmi = .{.{ .field = "sys_vendor", .any = .{"Micro-Star*"} }} },
+            .note = "MSI laptop: msi-ec controls the fan and the power modes if it supports this EC firmware (ls /sys/devices/platform/msi-ec).",
+        },
+        .{
+            .id = "board.superio",
+            .why = "A desktop board: its Super I/O chip (fans, voltages, temperatures) sits on ISA ports a probe cannot see.",
+            .when = .{ .has = .{"acpi"}, .lacks = .{ "laptop", "vm", "server" }, .dmi = .{.{ .field = "chassis_type", .any = .{ "3", "4", "5", "6", "7", "13", "15", "16", "35", "36" } }} },
+            .note = "The board's sensors (Super I/O) are not probed: on most ASUS, MSI and ASRock boards it is a Nuvoton chip (nct6775) [VERIFY with sensors-detect from a live image].",
+        },
+        .{
+            .id = "board.asus.nct6775",
+            .why = "ASUS AM5 and AM4 boards carry a Nuvoton NCT679x Super I/O; nct6775 reads it [VERIFY on the board].",
+            .when = .{ .dmi = .{ .{ .field = "board_vendor", .any = .{"ASUSTeK*"} }, .{ .field = "board_name", .any = .{ "*B650*", "*X670*", "*B550*", "*X570*", "*B450*", "*X470*" } } } },
+            .kconfig = .{"hwmon-nct6775"},
+        },
+    },
+}

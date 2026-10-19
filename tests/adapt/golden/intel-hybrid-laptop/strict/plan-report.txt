@@ -1,0 +1,145 @@
+vh-plan report
+machine: intel-hybrid-laptop (Dell Inc. XPS 13 9320; 12th Gen Intel(R) Core(TM) i7-1260P), arch x86_64, 15286 MiB, 16 CPUs
+module tables: the pinned stock kernel's
+security: strict; tier: full
+tags: acpi backlight battery bluetooth camera disk disk-discard disk-nvme disk-on-nvme disk-on-vmd display efi efi64 epp hybrid iommu iommu-active keyboard keyboard-i8042 laptop lid mains mor platform-profile power-button secure-boot secure-boot-on smt sound tpm tpm2 usb-power wifi x86-64-v2 x86-64-v3
+
+Rules that apply (47):
+  x86.level.v2 [arch.zon]: x86-64-v2: CMPXCHG16B, LAHF/SAHF, POPCNT, SSE3 to SSE4.2 (Nehalem, Bulldozer and later).
+  x86.level.v3 [arch.zon]: x86-64-v3: AVX, AVX2, BMI1/2, F16C, FMA, LZCNT, MOVBE, XSAVE (Haswell, Excavator and later).
+  x86.march.v2 [arch.zon]: A kernel built elsewhere (CI) for a CPU no model rule names: the instruction set it has for sure.
+  x86.march.v3 [arch.zon]: The same at x86-64-v3.
+  x86.efi.early-dma [arch.zon]: efi=disable_early_pci_dma: bus mastering stays off from the EFI stub until the IOMMU is up, closing the window in which a device could write to memory at boot.
+  x86.ia32-off [arch.zon]: ia32_emulation=0: no 32-bit syscall entry; the gaming session's own UKI turns it on (docs/principles.md).
+  x86.aes [arch.zon]: The disk is AES-XTS: the AES-NI driver built into the machine kernel, not loaded on demand.
+  audio.sof.intel [audio.zon]: The audio DSP of Intel laptops (SOF): its firmware and topology files are named at run time; UCM tells PipeWire how to use the digital microphones.
+  board.dell.secure-boot [board.zon]: Dell firmware: Expert Key Management.
+  cpu.intel.microcode [cpu-intel.zon]: Microcode updates for Intel CPUs, loaded early from the initrd (dracut early_microcode): fixes and mitigations the firmware of the board may lack.
+  cpu.intel.kernel [cpu-intel.zon]: The machine kernel's Intel class: intel_pstate, intel_idle, RAPL and the uncore counters, coretemp, the iTCO watchdog.
+  cpu.intel.me [cpu-intel.zon]: The Management Engine interface: AMT is not used and the firmware TPM works through tpm_crb; the HECI driver is attack surface without a use here.
+  cpu.intel.watchdog [cpu-intel.zon]: The chipset watchdog (iTCO) for optional/deadman; it needs LPC or SMBus to be found.
+  cpu.intel.kvm-off [cpu-intel.zon]: VH_VIRT=no: KVM is refused, so a kernel exploit cannot slip a thin hypervisor under the system; disable VT-x in the firmware as well.
+  cpu.intel.hybrid [cpu-intel.zon]: P and E cores: the scheduler places tasks by core type and cluster (ITMT, SCHED_CLUSTER); vh-sched reads the topology at load (U4).
+  cpu.intel.march.alderlake [cpu-intel.zon]: Alder Lake and Raptor Lake (models 0x97, 0x9A, 0xB7, 0xBA, 0xBF): -march=alderlake.
+  gpu.i915 [gpu.zon]: Intel graphics up to Gen12 (Skylake to Raptor Lake, DG2): the i915 driver, VA-API through intel-media-driver (Broadwell and newer [VERIFY] older parts need libva-intel-driver), its firmware in linux-firmware-intel.
+  gpu.i915.adlp [gpu.zon]: Alder Lake-P and Raptor Lake-P graphics (Iris Xe): the DMC and GuC of ADL-P, the HuC of Tiger Lake [VERIFY on hardware].
+  gpu.renderer.gles2 [gpu.zon]: A GPU with a DRM driver: RefursWM renders with GLES2.
+  net.wifi [net.zon]: A wireless interface: iwd, the regulatory database (signed, read by cfg80211 from the initrd of a machine kernel), iw for diagnosis, the firmware package of network chips.
+  net.iwlwifi [net.zon]: Intel Wi-Fi: iwlwifi's firmware, one pattern for every generation it names.
+  net.iwlwifi.so-gf [net.zon]: Intel Wi-Fi 6E AX211 on the CNVi of Alder/Raptor Lake (the So family with the GF radio): its firmware and PNVM [VERIFY on hardware].
+  bt.usb [net.zon]: A Bluetooth controller on USB (interface class E0).
+  bt.bluez [net.zon]: Bluetooth present and allowed (VH_BLUETOOTH optional or on): bluez, off until started with vh-bluetooth on (optional) or always running (on).
+  bt.intel [net.zon]: Intel Bluetooth (USB vendor 8087): btintel picks its ibt- firmware at run time.
+  class.laptop.chassis [platform.zon]: DMI chassis 8 (portable), 9 (laptop), 10 (notebook), 14 (sub-notebook), 30 (tablet), 31 (convertible), 32 (detachable).
+  class.laptop.battery [platform.zon]: A battery of the system (not of a peripheral) in a machine that is not virtual.
+  class.desktop [platform.zon]: Every other machine.
+  class.laptop [platform.zon]: The laptop class: power follows AC and battery, the lid and the backlight are handled.
+  iommu.dmar [platform.zon]: VT-d is described by the DMAR table; intel_iommu=on turns it on (Void's kernel leaves it off by default) so that every device's DMA is translated.
+  acpi.lid [platform.zon]: An ACPI lid switch (PNP0C0D).
+  acpi.power-button [platform.zon]: An ACPI power button (PNP0C0C, or the fixed LNXPWRBN).
+  acpid.lid [platform.zon]: vh-acpid handles the lid (lock, then a regular poweroff; suspend is forbidden) and the power button.
+  acpid.button [platform.zon]: vh-acpid handles the power button (a regular poweroff by default).
+  input.i8042 [platform.zon]: A PS/2 keyboard (most laptops, virtual machines): the i8042 controller and atkbd built into the machine kernel, so the LUKS passphrase can be typed.
+  tpm.tools [platform.zon]: A TPM 2.0: tpm2-tools reads the measurement log (the Option ROM check before key enrolment) and serves tpm2-totp.
+  tpm.crb [platform.zon]: A firmware TPM through the Command Response Buffer interface (Intel PTT, AMD fTPM).
+  usb.common [platform.zon]: What a USB port must handle after the module lock: storage, keyboards and mice, audio.
+  camera.usb [platform.zon]: A USB video device (interface class 0E).
+  camera.off [platform.zon]: VH_CAMERA=no: the UVC driver is refused (the firmware setup can disable the camera outright, which is stronger).
+  cardreader.off [platform.zon]: VH_CARDREADER=no: the Realtek card reader's drivers are refused.
+  watchdog.softdog [platform.zon]: No hardware watchdog known: softdog, which does not survive a hung kernel (a row in the cost table).
+  quirk.thunderbolt [quirks.zon]: Thunderbolt and USB4 controllers: the driver stays refused (it tunnels PCIe, that is DMA from a cable); USB and DisplayPort through these ports work without it.
+  quirk.fingerprint [quirks.zon]: A fingerprint reader without a kernel driver: libfprint is not installed, logins use passwords.
+  storage.nvme [storage.zon]: An NVMe disk: the driver built into the machine kernel (the root disk is behind it before the initrd can load anything).
+  storage.vmd [storage.zon]: Intel VMD (the firmware's RAID or RST mode): the NVMe disks sit behind it and are invisible without its driver, so the initrd carries it.
+  storage.trim [storage.zon]: A fixed disk that accepts discard and VH_TRIM=yes: fstrim once a week (SSD speed and wear levelling; the cost is that the disk shows which blocks are free).
+
+packages (11):
+  alsa-ucm-conf  <- audio.sof.intel
+  bluez  <- bt.bluez
+  intel-media-driver  <- gpu.i915
+  intel-ucode  <- cpu.intel.microcode
+  iw  <- net.wifi
+  iwd  <- net.wifi
+  linux-firmware-intel  <- gpu.i915, bt.intel
+  linux-firmware-network  <- net.wifi
+  sof-firmware  <- audio.sof.intel
+  tpm2-tools  <- tpm.tools
+  wireless-regdb  <- net.wifi
+
+kernel class fragments (10):
+  audio-sof-intel  <- audio.sof.intel
+  cpu-hybrid  <- cpu.intel.hybrid
+  cpu-intel  <- cpu.intel.kernel
+  cpu-x86-aes  <- x86.aes
+  gpu-i915  <- gpu.i915
+  input-i8042  <- input.i8042
+  iommu-vtd  <- iommu.dmar
+  storage-nvme  <- storage.nvme
+  storage-vmd  <- storage.vmd
+  tpm-crb  <- tpm.crb
+
+kernel features (2):
+  bluetooth  <- bt.bluez
+  usb-common  <- usb.common
+
+firmware kept (9):
+  i915/adlp_*  <- gpu.i915.adlp
+  i915/tgl_huc*  <- gpu.i915.adlp
+  intel-ucode/*  <- cpu.intel.microcode
+  intel/ibt-*  <- bt.intel
+  intel/ish/ish_*.bin*  <- module intel_ish_ipc
+  intel/ish/ish_lnlm.bin*  <- module intel_ish_ipc
+  intel/sof*  <- audio.sof.intel
+  iwlwifi-so-a0-gf*  <- net.iwlwifi.so-gf
+  regulatory.db*  <- net.wifi
+
+command line (3):
+  efi=disable_early_pci_dma  <- x86.efi.early-dma
+  ia32_emulation=0  <- x86.ia32-off
+  intel_iommu=on  <- iommu.dmar
+
+services (3):
+  iwd  <- net.wifi
+  vh-acpid  <- acpid.lid, acpid.button
+  vh-fstrim  <- storage.trim
+
+udev rules (0):
+
+denied modules (10):
+  kvm  <- cpu.intel.kvm-off
+  kvm_intel  <- cpu.intel.kvm-off
+  mei  <- cpu.intel.me
+  mei_hdcp  <- cpu.intel.me
+  mei_me  <- cpu.intel.me
+  mei_pxp  <- cpu.intel.me
+  mei_wdt  <- cpu.intel.me
+  rtsx_pci  <- cardreader.off
+  rtsx_pci_sdmmc  <- cardreader.off
+  uvcvideo  <- camera.off
+
+initrd drivers (3):
+  atkbd  <- keyboard i8042
+  i8042  <- keyboard i8042
+  vmd  <- storage.vmd
+
+notes (4):
+  Dell: Secure Boot, Expert Key Management, Enable Custom Mode, then Delete All Keys.  <- board.dell.secure-boot
+  Thunderbolt/USB4: the thunderbolt driver is refused; USB devices and displays on these ports work, docks with PCIe devices (a network card) do not.  <- quirk.thunderbolt
+  The fingerprint reader is not used: there is no libfprint here, and logins use passwords.  <- quirk.fingerprint
+  Intel VMD (RAID/RST mode) is on: Linux reaches the NVMe disk through it. Switching the firmware setup to AHCI mode is simpler, but it changes how an installed Windows boots.  <- storage.vmd
+
+scalars (4):
+  class = laptop  <- class.laptop
+  march = alderlake  <- cpu.intel.march.alderlake
+  renderer = gles2  <- gpu.renderer.gles2
+  watchdog = iTCO_wdt  <- cpu.intel.watchdog
+
+LUKS: aes-xts-plain64, 512-bit key, Argon2id 1048576 KiB, 4 threads
+kernel: NR_CPUS 16, -march alderlake
+modules of the devices (52): ac aesni_intel atkbd battery btusb button coretemp dcdbas dell_laptop dell_pc dell_smbios dell_smm_hwmon dell_wmi ghash_clmulni_intel hid_multitouch i2c_designware_platform i2c_hid_acpi i2c_i801 i8042 i915 iTCO_wdt int3400_thermal intel_cstate intel_hid intel_ish_ipc intel_lpss_pci intel_pmc_core intel_powerclamp intel_rapl_common intel_tcc_cooling intel_uncore intel_uncore_frequency intel_vsec iwlwifi nvme pinctrl_tigerlake polyval_clmulni processor_thermal_device_pci rapl shpchp snd_hda_codec_alc269 snd_hda_codec_intelhdmi snd_sof_pci_intel_tgl spi_intel_pci thunderbolt tiny_power_button tpm_crb ucsi_acpi usbcore vmd x86_pkg_temp_thermal xhci_pci
+
+Devices no driver, table or rule knows (4):
+  pci 0000:00:00.0 pci:v00008086d00004621sv00001028sd00000AF3bc06sc00i00
+  pci 0000:00:08.0 pci:v00008086d0000464Fsv00001028sd00000AF3bc08sc80i00
+  pci 0000:00:14.2 pci:v00008086d000051EFsv00001028sd00000AF3bc05sc00i00
+  pci 0000:00:1f.0 pci:v00008086d00005182sv00001028sd00000AF3bc06sc01i00

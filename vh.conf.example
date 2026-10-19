@@ -3,6 +3,14 @@
 # Shell format: NAME=value, no spaces around "=".
 # Anything not set here takes its default (the values below are the defaults).
 
+# ---------------------------------------------------------------- security
+# strict -- the default: a machine without the full protection of its architecture (UEFI
+#           64-bit, Secure Boot, TPM 2.0, an IOMMU, AES in the CPU, 2 GiB) is refused, and
+#           the report says which firmware setting fixes it (docs/uni/principles.md);
+# tiered -- the machine is installed, every missing property is shown with its residual
+#           risk and must be confirmed by typing; vh-audit marks it.
+VH_SECURITY="strict"
+
 # ---------------------------------------------------------------- disk
 # The target disk, WHOLE. Everything on it will be destroyed. Required.
 # Find the name with: lsblk -d -o NAME,SIZE,MODEL   (usually /dev/nvme0n1)
@@ -44,10 +52,14 @@ VH_LIMINE_TIMEOUT="1"
 VH_EXTRA_CMDLINE=""
 
 # ---------------------------------------------------------------- hardware
-# igpu    -- Intel UHD only; the GTX 1650 is powered down (runtime PM), nouveau is denied.
-# nouveau -- the dGPU is available through nouveau/NVK (DRI_PRIME=1). Needed when HDMI
+# The hardware itself is detected: vh-plan decides drivers, firmware, packages and services
+# from it by the rules of hwdb/ (install/plan.sh shows the plan and why). These are choices.
+# auto    -- the GPU that brought the console up drives the desktop; a laptop's NVIDIA dGPU
+#            is powered down (runtime PM) and nouveau is denied, as igpu does.
+# igpu    -- the same, said explicitly.
+# nouveau -- the NVIDIA GPU is available through nouveau/NVK (DRI_PRIME=1). Needed when HDMI
 #            is wired to the NVIDIA GPU (install/00-probe.sh shows this).
-VH_GPU="igpu"
+VH_GPU="auto"
 # Bluetooth: off -- the modules are denied; optional -- bluez is installed but off and
 #            can be switched on temporarily (vh-bluetooth on); on -- always running.
 VH_BLUETOOTH="optional"
@@ -55,8 +67,9 @@ VH_BLUETOOTH="optional"
 VH_CAMERA="no"
 # Card reader (rtsx): no -- the module is denied.
 VH_CARDREADER="no"
-# Firmware: yes -- only the files this laptop needs are extracted (AX201, RTL8111, i915,
-# microcode): 430 MB less on disk. For other hardware (USB Wi-Fi and so on) add a pattern
+# Firmware: yes -- only the files the drivers of this machine name are extracted (the plan
+# lists them, from kernel/pins/modules.firmware and hwdb/), plus the microcode: hundreds of
+# MB less on disk. For hardware attached later (a USB Wi-Fi adapter and so on) add a pattern
 # to VH_FIRMWARE_KEEP, e.g. "mediatek/* rtw88/*" (paths inside /usr/lib/firmware).
 VH_FIRMWARE_TRIM="yes"
 VH_FIRMWARE_KEEP=""
@@ -66,8 +79,9 @@ VH_VIRT="no"
 VH_IPV6="no"
 
 # ---------------------------------------------------------------- network
-# Ethernet: dhcp -- dhcpcd on eth0 only; static -- the address below; off -- not configured.
-VH_ETH="dhcp"
+# Ethernet: auto -- dhcpcd on eth0 when the machine has a wired interface; dhcp -- the same;
+# static -- the address below; off -- not configured.
+VH_ETH="auto"
 VH_ETH_ADDR=""        # for static: 192.168.1.50/24
 VH_ETH_GW=""          # for static: 192.168.1.1
 # unbound DoT upstreams: IP@853#name-in-certificate, space separated.

@@ -1,0 +1,66 @@
+// hwdb/security.zon: the requirements of the security gate (docs/uni/principles.md). With
+// VH_SECURITY=strict (the default) a machine that misses any of them is refused; with tiered
+// it is installed and the user confirms each missing one by typing. A floor is refused in
+// either mode.
+.{
+    .requirements = .{
+        .{
+            .id = "efi64",
+            .why = "Secure Boot, the signed UKI and Limine need a 64-bit UEFI.",
+            .only = .{ .arch = .{"x86_64"} },
+            .when = .{ .has = .{"efi64"} },
+            .floor = true,
+            .fix = "Boot the installer in UEFI mode: disable CSM / Legacy boot in the firmware setup. A 32-bit UEFI (some Atom tablets) is not supported.",
+        },
+        .{
+            .id = "uefi",
+            .why = "On ARM64 the verified boot chain of this system needs UEFI (servers, laptops); a Raspberry Pi boots from its own firmware.",
+            .only = .{ .arch = .{"aarch64"} },
+            .when = .{ .has = .{"efi"} },
+            .risk = "The board's firmware boots the kernel unverified: whoever holds the board for a while can replace it and read what is typed.",
+            .fix = "A UEFI firmware for the board where one exists [VERIFY], or the Raspberry Pi's own secure boot (milestone U5: its key is burnt into OTP, irreversibly).",
+        },
+        .{
+            .id = "secure-boot",
+            .why = "Secure Boot with the system's own keys verifies the bootloader and the UKI before they run.",
+            .when = .{ .has = .{"secure-boot"} },
+            .risk = "The boot chain is not verified: an evil maid can replace the kernel and capture the LUKS passphrase.",
+            .fix = "Enable Secure Boot support (Custom or Standard mode) in the firmware setup; the system enrols its own keys after the first boot (install/20-firstboot.sh).",
+        },
+        .{
+            .id = "tpm2",
+            .why = "A TPM 2.0 measures the boot (tpm2-totp shows that it is unchanged) and its event log lists the Option ROMs whose hashes the key enrolment must keep.",
+            .when = .{ .has = .{"tpm2"} },
+            .risk = "No TPM 2.0: no tpm2-totp against an evil maid, no measured boot, and no Option ROM check before the Secure Boot keys are enrolled (the Microsoft certificates are then kept).",
+            .fix = "Enable the firmware TPM (Intel PTT, AMD fTPM) or the TPM module in the firmware setup.",
+        },
+        .{
+            .id = "iommu",
+            .why = "An IOMMU confines every device's DMA to the memory the kernel gives it.",
+            .when = .{ .has = .{"iommu"} },
+            .risk = "No IOMMU: a malicious or compromised device (Thunderbolt, ExpressCard, a PCIe card) can read and write all memory by DMA.",
+            .fix = "Enable VT-d (Intel) or AMD-Vi / IOMMU (AMD) in the firmware setup; a virtual machine needs an emulated IOMMU (QEMU: -device intel-iommu).",
+        },
+        .{
+            .id = "aes",
+            .why = "AES in the CPU (AES-NI, the ARMv8 Crypto Extensions) for AES-XTS on the disk at full speed, constant time.",
+            .when = .{ .cpu_flags = .{"aes"} },
+            .risk = "No AES in the CPU: the disk is encrypted with Adiantum (XChaCha12 and AES-256 over each sector) instead of AES-XTS: fast and sound without AES hardware, less studied than AES-XTS.",
+            .otherwise = .{.{ .key = "luks_cipher", .value = "xchacha12,aes-adiantum-plain64" }},
+        },
+        .{
+            .id = "memory",
+            .why = "Argon2id with 1 GiB per guess of the LUKS passphrase: cryptsetup uses at most half of the RAM for it, so the machine needs 2 GiB.",
+            .when = .{ .ram_min_mib = 1900 },
+            .risk = "Less than 2 GiB: Argon2id gets a quarter of the memory instead of 1 GiB, so each guess of the passphrase costs an attacker less.",
+            .otherwise = .{.{ .key = "luks_memory", .value = "quarter-of-ram" }},
+        },
+        .{
+            .id = "memory-floor",
+            .why = "Below 1 GiB the system with its desktop does not run.",
+            .when = .{ .ram_min_mib = 900 },
+            .floor = true,
+            .fix = "At least 1 GiB of memory.",
+        },
+    },
+}

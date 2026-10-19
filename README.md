@@ -25,7 +25,7 @@ verify   the stock signed UKI always stays in Limine; vh-audit shows the protect
 | Goal | How it holds on any machine |
 |---|---|
 | performance | a kernel built for the machine (drivers built in, its CPU's `-march`, the exact `NR_CPUS`), the CPU's own frequency driver, a sched_ext scheduler that reads the topology when it loads |
-| security | the full protection of void-hardperf-light wherever the hardware allows it. `VH_SECURITY=strict`, the default, refuses a machine without UEFI 64-bit, Secure Boot, TPM 2.0, an IOMMU or AES in the CPU; `tiered` installs with every missing property named as a residual risk and confirmed by typing |
+| security | the full protection of void-hardperf-light wherever the hardware allows it. `VH_SECURITY=strict`, the default, refuses a machine without UEFI 64-bit, Secure Boot, TPM 2.0, an IOMMU, AES in the CPU or 2 GiB of memory; `tiered` installs with every missing property named as a residual risk and confirmed by typing |
 | lightness | only the packages, firmware files and services the detected hardware needs |
 | speed | built-in drivers, a stage 1 without a shell, no waiting for hardware that is not there |
 | optimisation per machine | every decision is a rule in `hwdb/` with its reason; `vh-plan explain ITEM` says why |

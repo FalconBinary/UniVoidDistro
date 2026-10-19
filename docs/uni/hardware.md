@@ -13,9 +13,9 @@ machine of that class.
 
 | Level | What | State |
 |---|---|---|
-| **full** | x86_64 with UEFI 64-bit, Secure Boot, TPM 2.0, an IOMMU, AES-NI, at least 4 GiB: every protection of void-hardperf-light | installs in `strict` (the default) |
+| **full** | x86_64 with UEFI 64-bit, Secure Boot, TPM 2.0, an IOMMU, AES-NI, at least 2 GiB: every protection of void-hardperf-light | installs in `strict` (the default) |
 | **reduced** | one or more of these properties missing ([the table](principles.md#the-protective-properties-per-architecture)) | installs only with `VH_SECURITY=tiered` and a typed confirmation of every residual risk |
-| **refused** | x86_64 without UEFI 64-bit (legacy BIOS, CSM, 32-bit UEFI), less than 2 GiB, a CPU below x86-64-v1 | never |
+| **refused** | x86_64 without UEFI 64-bit (legacy BIOS, CSM, 32-bit UEFI), less than 1 GiB | never |
 | **ARM64** | UEFI machines (servers, laptops) and the Raspberry Pi 4/5 | probe and plan now; installation in U5 |
 
 ## Machine classes

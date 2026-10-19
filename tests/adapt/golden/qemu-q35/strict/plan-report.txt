@@ -1,0 +1,90 @@
+vh-plan report
+machine: qemu-q35 (QEMU Standard PC (Q35 + ICH9, 2009); QEMU TCG CPU version 2.5+), arch x86_64, 2927 MiB, 4 CPUs
+module tables: the pinned stock kernel's
+security: strict; tier: full
+tags: acpi disk disk-discard disk-nvme disk-on-nvme display efi efi64 iommu iommu-active keyboard keyboard-i8042 mor power-button secure-boot setup-mode tpm tpm2 vm wired x86-64-v2 x86-64-v3
+
+Rules that apply (28):
+  x86.level.v2 [arch.zon]: x86-64-v2: CMPXCHG16B, LAHF/SAHF, POPCNT, SSE3 to SSE4.2 (Nehalem, Bulldozer and later).
+  x86.level.v3 [arch.zon]: x86-64-v3: AVX, AVX2, BMI1/2, F16C, FMA, LZCNT, MOVBE, XSAVE (Haswell, Excavator and later).
+  x86.march.v2 [arch.zon]: A kernel built elsewhere (CI) for a CPU no model rule names: the instruction set it has for sure.
+  x86.march.v3 [arch.zon]: The same at x86-64-v3.
+  x86.efi.early-dma [arch.zon]: efi=disable_early_pci_dma: bus mastering stays off from the EFI stub until the IOMMU is up, closing the window in which a device could write to memory at boot.
+  x86.ia32-off [arch.zon]: ia32_emulation=0: no 32-bit syscall entry; the gaming session's own UKI turns it on (docs/principles.md).
+  x86.aes [arch.zon]: The disk is AES-XTS: the AES-NI driver built into the machine kernel, not loaded on demand.
+  cpu.amd.kvm-off [cpu-amd.zon]: VH_VIRT=no: KVM is refused; disable SVM in the firmware as well.
+  gpu.virtio [gpu.zon]: The virtio GPU of a virtual machine.
+  gpu.renderer.gles2 [gpu.zon]: A GPU with a DRM driver: RefursWM renders with GLES2.
+  gpu.renderer.vm [gpu.zon]: A virtual machine without accelerated 3D: RefursWM renders with pixman (the CPU) [VERIFY with virgl].
+  net.wired.dhcp [net.zon]: A wired interface and VH_ETH auto or dhcp: dhcpcd on eth0 (the kernel names interfaces with net.ifnames=0).
+  class.vm.flag [platform.zon]: The CPU says it runs under a hypervisor.
+  class.vm.dmi [platform.zon]: The firmware of a virtual machine names its maker: QEMU, VMware, VirtualBox, Xen, Parallels.
+  class.desktop [platform.zon]: Every other machine.
+  class.vm [platform.zon]: The virtual machine class: no microcode, no power management.
+  iommu.dmar [platform.zon]: VT-d is described by the DMAR table; intel_iommu=on turns it on (Void's kernel leaves it off by default) so that every device's DMA is translated.
+  acpi.power-button [platform.zon]: An ACPI power button (PNP0C0C, or the fixed LNXPWRBN).
+  acpid.button [platform.zon]: vh-acpid handles the power button (a regular poweroff by default).
+  input.i8042 [platform.zon]: A PS/2 keyboard (most laptops, virtual machines): the i8042 controller and atkbd built into the machine kernel, so the LUKS passphrase can be typed.
+  tpm.tools [platform.zon]: A TPM 2.0: tpm2-tools reads the measurement log (the Option ROM check before key enrolment) and serves tpm2-totp.
+  tpm.crb [platform.zon]: A firmware TPM through the Command Response Buffer interface (Intel PTT, AMD fTPM).
+  usb.common [platform.zon]: What a USB port must handle after the module lock: storage, keyboards and mice, audio.
+  camera.off [platform.zon]: VH_CAMERA=no: the UVC driver is refused (the firmware setup can disable the camera outright, which is stronger).
+  cardreader.off [platform.zon]: VH_CARDREADER=no: the Realtek card reader's drivers are refused.
+  watchdog.softdog [platform.zon]: No hardware watchdog known: softdog, which does not survive a hung kernel (a row in the cost table).
+  storage.nvme [storage.zon]: An NVMe disk: the driver built into the machine kernel (the root disk is behind it before the initrd can load anything).
+  storage.trim [storage.zon]: A fixed disk that accepts discard and VH_TRIM=yes: fstrim once a week (SSD speed and wear levelling; the cost is that the disk shows which blocks are free).
+
+packages (2):
+  dhcpcd  <- net.wired.dhcp
+  tpm2-tools  <- tpm.tools
+
+kernel class fragments (6):
+  cpu-x86-aes  <- x86.aes
+  gpu-virtio  <- gpu.virtio
+  input-i8042  <- input.i8042
+  iommu-vtd  <- iommu.dmar
+  storage-nvme  <- storage.nvme
+  tpm-crb  <- tpm.crb
+
+kernel features (1):
+  usb-common  <- usb.common
+
+firmware kept (0):
+
+command line (3):
+  efi=disable_early_pci_dma  <- x86.efi.early-dma
+  ia32_emulation=0  <- x86.ia32-off
+  intel_iommu=on  <- iommu.dmar
+
+services (3):
+  dhcpcd-eth0  <- net.wired.dhcp
+  vh-acpid  <- acpid.button
+  vh-fstrim  <- storage.trim
+
+udev rules (0):
+
+denied modules (5):
+  kvm  <- cpu.amd.kvm-off
+  kvm_amd  <- cpu.amd.kvm-off
+  rtsx_pci  <- cardreader.off
+  rtsx_pci_sdmmc  <- cardreader.off
+  uvcvideo  <- camera.off
+
+initrd drivers (2):
+  atkbd  <- keyboard i8042
+  i8042  <- keyboard i8042
+
+notes (0):
+
+scalars (4):
+  class = vm  <- class.vm
+  march = x86-64-v3  <- x86.march.v3
+  renderer = pixman  <- gpu.renderer.vm
+  watchdog = softdog  <- watchdog.softdog
+
+LUKS: aes-xts-plain64, 512-bit key, Argon2id 1048576 KiB, 4 threads
+kernel: NR_CPUS 4, -march x86-64-v3
+modules of the devices (19): aesni_intel ahci atkbd button e1000 ghash_clmulni_intel i2c_i801 i8042 intel_agp lpc_ich nvme polyval_clmulni psmouse qemu_fw_cfg rtc_cmos tiny_power_button tpm_crb virtio_gpu virtio_pci
+
+Devices no driver, table or rule knows (1):
+  dmi id dmi:bvnEDKII:bvrunknown:bd02/02/2022:br0.0:svnQEMU:pnStandardPC(Q35+ICH9,2009):pvrpc-q35-11.1:cvnQEMU:ct1:cvrpc-q35-11.1:sku:

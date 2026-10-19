@@ -1,0 +1,143 @@
+vh-plan report
+machine: gf63 (Micro-Star International Co., Ltd. GF63 Thin 10SCXR; Intel(R) Core(TM) i5-10500H CPU @ 2.50GHz), arch x86_64, 7756 MiB, 12 CPUs
+module tables: the pinned stock kernel's
+security: strict; tier: full
+tags: acpi backlight battery bluetooth camera dgpu disk disk-discard disk-nvme disk-on-nvme display displays-2 efi efi64 epp iommu iommu-active keyboard keyboard-i8042 laptop lid mains mor power-button secure-boot secure-boot-on smt sound tpm tpm2 wifi wired x86-64-v2 x86-64-v3
+
+Rules that apply (50):
+  x86.level.v2 [arch.zon]: x86-64-v2: CMPXCHG16B, LAHF/SAHF, POPCNT, SSE3 to SSE4.2 (Nehalem, Bulldozer and later).
+  x86.level.v3 [arch.zon]: x86-64-v3: AVX, AVX2, BMI1/2, F16C, FMA, LZCNT, MOVBE, XSAVE (Haswell, Excavator and later).
+  x86.march.v2 [arch.zon]: A kernel built elsewhere (CI) for a CPU no model rule names: the instruction set it has for sure.
+  x86.march.v3 [arch.zon]: The same at x86-64-v3.
+  x86.efi.early-dma [arch.zon]: efi=disable_early_pci_dma: bus mastering stays off from the EFI stub until the IOMMU is up, closing the window in which a device could write to memory at boot.
+  x86.ia32-off [arch.zon]: ia32_emulation=0: no 32-bit syscall entry; the gaming session's own UKI turns it on (docs/principles.md).
+  x86.aes [arch.zon]: The disk is AES-XTS: the AES-NI driver built into the machine kernel, not loaded on demand.
+  board.msi.secure-boot [board.zon]: MSI firmware: Secure Boot Mode Custom, then delete the variables.
+  board.msi.ec [board.zon]: MSI laptops: msi-ec drives the fan and the power modes when it knows this EC firmware; otherwise they are available in Windows only.
+  cpu.intel.microcode [cpu-intel.zon]: Microcode updates for Intel CPUs, loaded early from the initrd (dracut early_microcode): fixes and mitigations the firmware of the board may lack.
+  cpu.intel.kernel [cpu-intel.zon]: The machine kernel's Intel class: intel_pstate, intel_idle, RAPL and the uncore counters, coretemp, the iTCO watchdog.
+  cpu.intel.me [cpu-intel.zon]: The Management Engine interface: AMT is not used and the firmware TPM works through tpm_crb; the HECI driver is attack surface without a use here.
+  cpu.intel.watchdog [cpu-intel.zon]: The chipset watchdog (iTCO) for optional/deadman; it needs LPC or SMBus to be found.
+  cpu.intel.kvm-off [cpu-intel.zon]: VH_VIRT=no: KVM is refused, so a kernel exploit cannot slip a thin hypervisor under the system; disable VT-x in the firmware as well.
+  cpu.intel.march.skylake [cpu-intel.zon]: Skylake to Comet Lake (models 0x4E, 0x5E, 0x8E, 0x9E, 0xA5, 0xA6): -march=skylake, as upstream's CI builds the GF63 kernel.
+  cpu.intel.pinctrl.cnl [cpu-intel.zon]: The Cannon Lake / Comet Lake-H pin controller (ACPI INT3450, INT34BB): the GPIO interrupt of an I2C-HID touchpad hangs off it.
+  gpu.i915 [gpu.zon]: Intel graphics up to Gen12 (Skylake to Raptor Lake, DG2): the i915 driver, VA-API through intel-media-driver (Broadwell and newer [VERIFY] older parts need libva-intel-driver), its firmware in linux-firmware-intel.
+  gpu.i915.cml [gpu.zon]: Comet Lake graphics (UHD 610-630): the DMC of Kaby Lake and the GuC/HuC of Comet Lake, nothing of other generations.
+  gpu.nvidia.dgpu-off [gpu.zon]: An NVIDIA dGPU that did not bring the console up, in a laptop, not wanted (VH_GPU auto or igpu): no driver, nouveau refused, runtime PM puts it in D3cold through its root port (5-8 W saved, a cooler machine).
+  gpu.nvidia.tu11x [gpu.zon]: Turing TU116 and TU117 (GTX 1650, 1660): their nouveau firmware only.
+  gpu.renderer.gles2 [gpu.zon]: A GPU with a DRM driver: RefursWM renders with GLES2.
+  net.wifi [net.zon]: A wireless interface: iwd, the regulatory database (signed, read by cfg80211 from the initrd of a machine kernel), iw for diagnosis, the firmware package of network chips.
+  net.iwlwifi [net.zon]: Intel Wi-Fi: iwlwifi's firmware, one pattern for every generation it names.
+  net.iwlwifi.qu [net.zon]: Intel Wi-Fi 6 AX201 and Wireless-AC 9560 on the CNVi of Comet/Ice/Tiger Lake (the Qu family): its firmware only.
+  net.wired.dhcp [net.zon]: A wired interface and VH_ETH auto or dhcp: dhcpcd on eth0 (the kernel names interfaces with net.ifnames=0).
+  net.r8169 [net.zon]: Realtek Ethernet (RTL8111/8168, RTL8125): r8169 loads the PHY and MAC patches of rtl_nic.
+  bt.usb [net.zon]: A Bluetooth controller on USB (interface class E0).
+  bt.bluez [net.zon]: Bluetooth present and allowed (VH_BLUETOOTH optional or on): bluez, off until started with vh-bluetooth on (optional) or always running (on).
+  bt.intel [net.zon]: Intel Bluetooth (USB vendor 8087): btintel picks its ibt- firmware at run time.
+  class.laptop.chassis [platform.zon]: DMI chassis 8 (portable), 9 (laptop), 10 (notebook), 14 (sub-notebook), 30 (tablet), 31 (convertible), 32 (detachable).
+  class.laptop.battery [platform.zon]: A battery of the system (not of a peripheral) in a machine that is not virtual.
+  class.desktop [platform.zon]: Every other machine.
+  class.laptop [platform.zon]: The laptop class: power follows AC and battery, the lid and the backlight are handled.
+  iommu.dmar [platform.zon]: VT-d is described by the DMAR table; intel_iommu=on turns it on (Void's kernel leaves it off by default) so that every device's DMA is translated.
+  acpi.lid [platform.zon]: An ACPI lid switch (PNP0C0D).
+  acpi.power-button [platform.zon]: An ACPI power button (PNP0C0C, or the fixed LNXPWRBN).
+  acpid.lid [platform.zon]: vh-acpid handles the lid (lock, then a regular poweroff; suspend is forbidden) and the power button.
+  acpid.button [platform.zon]: vh-acpid handles the power button (a regular poweroff by default).
+  input.i8042 [platform.zon]: A PS/2 keyboard (most laptops, virtual machines): the i8042 controller and atkbd built into the machine kernel, so the LUKS passphrase can be typed.
+  tpm.tools [platform.zon]: A TPM 2.0: tpm2-tools reads the measurement log (the Option ROM check before key enrolment) and serves tpm2-totp.
+  tpm.crb [platform.zon]: A firmware TPM through the Command Response Buffer interface (Intel PTT, AMD fTPM).
+  usb.common [platform.zon]: What a USB port must handle after the module lock: storage, keyboards and mice, audio.
+  camera.usb [platform.zon]: A USB video device (interface class 0E).
+  camera.off [platform.zon]: VH_CAMERA=no: the UVC driver is refused (the firmware setup can disable the camera outright, which is stronger).
+  cardreader.off [platform.zon]: VH_CARDREADER=no: the Realtek card reader's drivers are refused.
+  watchdog.softdog [platform.zon]: No hardware watchdog known: softdog, which does not survive a hung kernel (a row in the cost table).
+  quirk.r8169-eee [quirks.zon]: Realtek RTL8111/8168 drop the link with Energy Efficient Ethernet on: a udev rule (installed on every machine, a no-op elsewhere) turns EEE off.
+  quirk.dgpu-hdmi [quirks.zon]: Laptops wire HDMI to the dGPU: with the dGPU asleep (VH_GPU auto or igpu) that port is dark.
+  storage.nvme [storage.zon]: An NVMe disk: the driver built into the machine kernel (the root disk is behind it before the initrd can load anything).
+  storage.trim [storage.zon]: A fixed disk that accepts discard and VH_TRIM=yes: fstrim once a week (SSD speed and wear levelling; the cost is that the disk shows which blocks are free).
+
+packages (10):
+  bluez  <- bt.bluez
+  dhcpcd  <- net.wired.dhcp
+  intel-media-driver  <- gpu.i915
+  intel-ucode  <- cpu.intel.microcode
+  iw  <- net.wifi
+  iwd  <- net.wifi
+  linux-firmware-intel  <- gpu.i915, bt.intel
+  linux-firmware-network  <- net.wifi, net.r8169
+  tpm2-tools  <- tpm.tools
+  wireless-regdb  <- net.wifi
+
+kernel class fragments (8):
+  cpu-intel  <- cpu.intel.kernel
+  cpu-x86-aes  <- x86.aes
+  gpu-i915  <- gpu.i915
+  input-i8042  <- input.i8042
+  iommu-vtd  <- iommu.dmar
+  pinctrl-intel-cnl  <- cpu.intel.pinctrl.cnl
+  storage-nvme  <- storage.nvme
+  tpm-crb  <- tpm.crb
+
+kernel features (2):
+  bluetooth  <- bt.bluez
+  usb-common  <- usb.common
+
+firmware kept (7):
+  i915/cml_*  <- gpu.i915.cml
+  i915/kbl_*  <- gpu.i915.cml
+  intel-ucode/*  <- cpu.intel.microcode
+  intel/ibt-*  <- bt.intel
+  iwlwifi-Qu*  <- net.iwlwifi.qu
+  regulatory.db*  <- net.wifi
+  rtl_nic/*  <- net.r8169
+
+command line (3):
+  efi=disable_early_pci_dma  <- x86.efi.early-dma
+  ia32_emulation=0  <- x86.ia32-off
+  intel_iommu=on  <- iommu.dmar
+
+services (4):
+  dhcpcd-eth0  <- net.wired.dhcp
+  iwd  <- net.wifi
+  vh-acpid  <- acpid.lid, acpid.button
+  vh-fstrim  <- storage.trim
+
+udev rules (1):
+  99-vh-dgpu-off.rules  <- gpu.nvidia.dgpu-off
+
+denied modules (11):
+  kvm  <- cpu.intel.kvm-off
+  kvm_intel  <- cpu.intel.kvm-off
+  mei  <- cpu.intel.me
+  mei_hdcp  <- cpu.intel.me
+  mei_me  <- cpu.intel.me
+  mei_pxp  <- cpu.intel.me
+  mei_wdt  <- cpu.intel.me
+  nouveau  <- gpu.nvidia.dgpu-off
+  rtsx_pci  <- cardreader.off
+  rtsx_pci_sdmmc  <- cardreader.off
+  uvcvideo  <- camera.off
+
+initrd drivers (2):
+  atkbd  <- keyboard i8042
+  i8042  <- keyboard i8042
+
+notes (4):
+  MSI: Settings, Advanced, Windows OS Configuration, Secure Boot, Secure Boot Mode Custom, Key Management, Delete All Secure Boot Variables.  <- board.msi.secure-boot
+  MSI laptop: msi-ec controls the fan and the power modes if it supports this EC firmware (ls /sys/devices/platform/msi-ec).  <- board.msi.ec
+  Realtek Ethernet: EEE is off (rootfs/etc/udev/rules.d/99-vh-net.rules), the usual cause of link drops.  <- quirk.r8169-eee
+  The dGPU sleeps: an HDMI port wired to it shows nothing. VH_GPU=nouveau wakes it for an external monitor (install/00-probe.sh shows which port is wired where).  <- quirk.dgpu-hdmi
+
+scalars (4):
+  class = laptop  <- class.laptop
+  march = skylake  <- cpu.intel.march.skylake
+  renderer = gles2  <- gpu.renderer.gles2
+  watchdog = iTCO_wdt  <- cpu.intel.watchdog
+
+LUKS: aes-xts-plain64, 512-bit key, Argon2id 1048576 KiB, 4 threads
+kernel: NR_CPUS 12, -march skylake
+modules of the devices (54): ac aesni_intel ahci atkbd battery btusb button coretemp ghash_clmulni_intel hid_generic hid_multitouch i2c_designware_platform i2c_hid_acpi i2c_i801 i8042 i915 iTCO_wdt int3400_thermal intel_cstate intel_hid intel_lpss_pci intel_pch_thermal intel_pmc_core intel_pmc_core_pltdrv intel_powerclamp intel_rapl_common intel_rapl_msr intel_tcc_cooling intel_uncore intel_uncore_frequency iwlwifi lpc_ich msi_ec nvme pcspkr pinctrl_cannonlake polyval_clmulni processor processor_thermal_device_pci_legacy r8169 rapl rtc_cmos shpchp snd_hda_codec_alc269 snd_hda_codec_intelhdmi snd_hda_intel spi_intel_pci tiny_power_button tpm_crb tpm_tis usbcore usbhid x86_pkg_temp_thermal xhci_pci
+
+Devices no driver, table or rule knows (2):
+  pci 0000:00:08.0 pci:v00008086d00001911sv00001462sd000012D5bc08sc80i00
+  pci 0000:00:14.2 pci:v00008086d000006EFsv00001462sd000012D5bc05sc00i00

@@ -1,0 +1,115 @@
+// hwdb/net.zon: Wi-Fi, Ethernet, Bluetooth.
+.{
+    .rules = .{
+        // Wi-Fi
+        .{
+            .id = "net.wifi",
+            .why = "A wireless interface: iwd, the regulatory database (signed, read by cfg80211 from the initrd of a machine kernel), iw for diagnosis, the firmware package of network chips.",
+            .when = .{ .has = .{"wifi"} },
+            .packages = .{ "iwd", "iw", "wireless-regdb", "linux-firmware-network" },
+            .services = .{"iwd"},
+            .firmware = .{"regulatory.db*"},
+        },
+        .{
+            .id = "net.iwlwifi",
+            .why = "Intel Wi-Fi: iwlwifi's firmware, one pattern for every generation it names.",
+            .when = .{ .device = .{ .module = .{"iwlwifi"} } },
+            .firmware_only = .{"iwlwifi-*"},
+        },
+        .{
+            .id = "net.iwlwifi.qu",
+            .why = "Intel Wi-Fi 6 AX201 and Wireless-AC 9560 on the CNVi of Comet/Ice/Tiger Lake (the Qu family): its firmware only.",
+            .when = .{ .device = .{ .pci_vendor = .{"8086"}, .pci_device = .{ "02f0", "06f0", "34f0", "4df0", "a0f0", "43f0" }, .module = .{"iwlwifi"} } },
+            .firmware_only = .{"iwlwifi-Qu*"},
+            .priority = 10,
+        },
+        .{
+            .id = "net.iwlwifi.so-gf",
+            .why = "Intel Wi-Fi 6E AX211 on the CNVi of Alder/Raptor Lake (the So family with the GF radio): its firmware and PNVM [VERIFY on hardware].",
+            .when = .{ .device = .{ .pci_vendor = .{"8086"}, .pci_device = .{ "51f0", "51f1", "54f0", "7a70", "7af0" }, .module = .{"iwlwifi"} } },
+            .firmware_only = .{"iwlwifi-so-a0-gf*"},
+            .priority = 10,
+        },
+        .{
+            .id = "net.brcmfmac",
+            .why = "Broadcom and Cypress FullMAC Wi-Fi: brcmfmac's firmware and NVRAM files [VERIFY the directory Void ships the Cypress files in].",
+            .when = .{ .device = .{ .module = .{"brcmfmac"} } },
+            .firmware_only = .{ "brcm/brcmfmac*", "cypress/cyfmac*" },
+            .packages = .{"linux-firmware-broadcom"},
+        },
+        .{
+            .id = "net.broadcom-wl",
+            .why = "A Broadcom Wi-Fi chip that only the proprietary wl driver supports: a DKMS module cannot load under lockdown.",
+            .when = .{ .device = .{ .pci_vendor = .{"14e4"}, .pci_class = .{"0280"} } },
+            .unless = .{ .device = .{ .module = .{ "brcmfmac", "b43", "b43legacy", "bcma" } } },
+            .note = "This Broadcom Wi-Fi chip needs the proprietary wl driver, which cannot load under lockdown: use a supported card (Intel, MediaTek) or a USB adapter.",
+        },
+        // Ethernet
+        .{
+            .id = "net.wired.dhcp",
+            .why = "A wired interface and VH_ETH auto or dhcp: dhcpcd on eth0 (the kernel names interfaces with net.ifnames=0).",
+            .when = .{ .has = .{"wired"}, .config = .{.{ .key = "VH_ETH", .any = .{ "auto", "dhcp" } }} },
+            .packages = .{"dhcpcd"},
+            .services = .{"dhcpcd-eth0"},
+        },
+        .{
+            .id = "net.r8169",
+            .why = "Realtek Ethernet (RTL8111/8168, RTL8125): r8169 loads the PHY and MAC patches of rtl_nic.",
+            .when = .{ .device = .{ .module = .{"r8169"} } },
+            .packages = .{"linux-firmware-network"},
+            .firmware_only = .{"rtl_nic/*"},
+        },
+        // Bluetooth
+        .{
+            .id = "bt.usb",
+            .why = "A Bluetooth controller on USB (interface class E0).",
+            .when = .{ .device = .{ .usb_class = .{"e0"} } },
+            .sets = .{"bluetooth"},
+        },
+        .{
+            .id = "bt.uart",
+            .why = "A Bluetooth controller on a UART, described by the device tree (the Raspberry Pi's CYW43455).",
+            .when = .{ .device = .{ .dt_compatible = .{"*-bt"} } },
+            .sets = .{"bluetooth"},
+        },
+        .{
+            .id = "bt.bluez",
+            .why = "Bluetooth present and allowed (VH_BLUETOOTH optional or on): bluez, off until started with vh-bluetooth on (optional) or always running (on).",
+            .when = .{ .has = .{"bluetooth"}, .config = .{.{ .key = "VH_BLUETOOTH", .any = .{ "optional", "on" } }} },
+            .packages = .{"bluez"},
+            .features = .{"bluetooth"},
+        },
+        .{
+            .id = "bt.service",
+            .why = "VH_BLUETOOTH=on: bluetoothd runs from boot.",
+            .when = .{ .has = .{"bluetooth"}, .config = .{.{ .key = "VH_BLUETOOTH", .any = .{"on"} }} },
+            .services = .{"bluetoothd"},
+        },
+        .{
+            .id = "bt.off",
+            .why = "VH_BLUETOOTH=off: the Bluetooth stack and its drivers are refused.",
+            .when = .{ .config = .{.{ .key = "VH_BLUETOOTH", .any = .{"off"} }} },
+            .deny = .{ "bluetooth", "btusb", "btintel", "btrtl", "btbcm", "btmtk" },
+        },
+        .{
+            .id = "bt.intel",
+            .why = "Intel Bluetooth (USB vendor 8087): btintel picks its ibt- firmware at run time.",
+            .when = .{ .device = .{ .usb_vendor = .{"8087"}, .usb_class = .{"e0"} } },
+            .packages = .{"linux-firmware-intel"},
+            .firmware = .{"intel/ibt-*"},
+        },
+        .{
+            .id = "bt.realtek",
+            .why = "Realtek Bluetooth (USB vendor 0bda): btrtl's firmware and configuration files.",
+            .when = .{ .device = .{ .usb_vendor = .{"0bda"}, .usb_class = .{"e0"} } },
+            .packages = .{"linux-firmware-network"},
+            .firmware = .{"rtl_bt/*"},
+        },
+        .{
+            .id = "bt.mediatek",
+            .why = "The Bluetooth half of a MediaTek Wi-Fi card (MT7921, MT7922, MT7925): its USB id is the card maker's, so the Wi-Fi module tells; btmtk loads BT_RAM_CODE [VERIFY on hardware].",
+            .when = .{ .has = .{"bluetooth"}, .device = .{ .module = .{ "mt7921e", "mt7925e" } } },
+            .firmware = .{ "mediatek/BT_RAM_CODE_MT79*", "mediatek/mt7925/BT_RAM_CODE*" },
+        },
+    },
+}

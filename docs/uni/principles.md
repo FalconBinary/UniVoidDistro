@@ -62,7 +62,7 @@ This file adds the rules of a distribution that adapts itself to the machine.
 | TPM 2.0 | firmware TPM or a discrete one | where present | refused | no tpm2-totp, no measured boot, no Option ROM check for key enrolment |
 | IOMMU | the DMAR (Intel) or IVRS (AMD) table | IORT (SMMU) | refused, with the advice to enable VT-d / AMD-Vi | DMA from a malicious device is not contained |
 | AES in the CPU | the `aes` flag | `aes` (ARMv8 Crypto Extensions) | refused | the disk is encrypted with Adiantum instead of AES-XTS |
-| memory | at least 4 GiB | at least 4 GiB | refused | from 2 GiB; the Argon2id memory of LUKS is min(1 GiB, RAM/4) |
+| memory | 2 GiB: Argon2id with 1 GiB per guess (cryptsetup uses at most half of the RAM) | the same | refused | from 1 GiB; the Argon2id memory of LUKS is a quarter of the RAM (at least 256 MiB) |
 
 What does not change with the mode: `lockdown=confidentiality`, the module lock (no modules
 on a machine kernel, `modules_disabled=1` on the stock one), `init_on_alloc`/`init_on_free`,

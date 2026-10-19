@@ -1,0 +1,29 @@
+// hwdb/quirks.zon: hardware with a known problem, and what is done about it.
+.{
+    .rules = .{
+        .{
+            .id = "quirk.r8169-eee",
+            .why = "Realtek RTL8111/8168 drop the link with Energy Efficient Ethernet on: a udev rule (installed on every machine, a no-op elsewhere) turns EEE off.",
+            .when = .{ .device = .{ .module = .{"r8169"} } },
+            .note = "Realtek Ethernet: EEE is off (rootfs/etc/udev/rules.d/99-vh-net.rules), the usual cause of link drops.",
+        },
+        .{
+            .id = "quirk.thunderbolt",
+            .why = "Thunderbolt and USB4 controllers: the driver stays refused (it tunnels PCIe, that is DMA from a cable); USB and DisplayPort through these ports work without it.",
+            .when = .{ .device = .{ .module = .{"thunderbolt"} } },
+            .note = "Thunderbolt/USB4: the thunderbolt driver is refused; USB devices and displays on these ports work, docks with PCIe devices (a network card) do not.",
+        },
+        .{
+            .id = "quirk.fingerprint",
+            .why = "A fingerprint reader without a kernel driver: libfprint is not installed, logins use passwords.",
+            .when = .{ .device = .{ .usb_vendor = .{ "27c6", "06cb", "138a", "04f3" }, .usb_class = .{"ff"} } },
+            .note = "The fingerprint reader is not used: there is no libfprint here, and logins use passwords.",
+        },
+        .{
+            .id = "quirk.dgpu-hdmi",
+            .why = "Laptops wire HDMI to the dGPU: with the dGPU asleep (VH_GPU auto or igpu) that port is dark.",
+            .when = .{ .has = .{"dgpu"} },
+            .note = "The dGPU sleeps: an HDMI port wired to it shows nothing. VH_GPU=nouveau wakes it for an external monitor (install/00-probe.sh shows which port is wired where).",
+        },
+    },
+}

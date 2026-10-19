@@ -1,0 +1,135 @@
+// hwdb/gpu.zon: graphics. The primary GPU is the one that brought the console up (boot_vga);
+// a second one without a monitor is a dGPU. The firmware of a GPU module is narrowed to the
+// GPU where a rule knows its generation (priority 10); otherwise every file the module names
+// stays, under one pattern per directory (priority 0).
+.{
+    .rules = .{
+        // Intel
+        .{
+            .id = "gpu.i915",
+            .why = "Intel graphics up to Gen12 (Skylake to Raptor Lake, DG2): the i915 driver, VA-API through intel-media-driver (Broadwell and newer [VERIFY] older parts need libva-intel-driver), its firmware in linux-firmware-intel.",
+            .when = .{ .device = .{ .pci_class = .{"03"}, .module = .{"i915"} } },
+            .kconfig = .{"gpu-i915"},
+            .packages = .{ "intel-media-driver", "linux-firmware-intel" },
+            .firmware_only = .{"i915/*"},
+        },
+        .{
+            .id = "gpu.i915.cml",
+            .why = "Comet Lake graphics (UHD 610-630): the DMC of Kaby Lake and the GuC/HuC of Comet Lake, nothing of other generations.",
+            .when = .{ .device = .{ .pci_vendor = .{"8086"}, .pci_device = .{ "9b21", "9b41", "9ba0", "9ba2", "9ba4", "9ba5", "9ba8", "9baa", "9bac", "9bc0", "9bc2", "9bc4", "9bc5", "9bc6", "9bc8", "9bca", "9bcc", "9be6", "9bf6" } } },
+            .firmware_only = .{ "i915/kbl_*", "i915/cml_*" },
+            .priority = 10,
+        },
+        .{
+            .id = "gpu.i915.adlp",
+            .why = "Alder Lake-P and Raptor Lake-P graphics (Iris Xe): the DMC and GuC of ADL-P, the HuC of Tiger Lake [VERIFY on hardware].",
+            .when = .{ .device = .{ .pci_vendor = .{"8086"}, .pci_device = .{ "46a0", "46a1", "46a2", "46a3", "46a6", "46a8", "46aa", "462a", "4626", "4628", "46b0", "46b1", "46b2", "46b3", "46c0", "46c1", "46c2", "46c3", "a7a0", "a7a1", "a7a8", "a7a9", "a720", "a721" } } },
+            .firmware_only = .{ "i915/adlp_*", "i915/tgl_huc*" },
+            .priority = 10,
+        },
+        .{
+            .id = "gpu.xe",
+            .why = "Intel Xe2 and newer (Lunar Lake, Battlemage): the xe driver and its firmware directory.",
+            .when = .{ .device = .{ .pci_class = .{"03"}, .driver = .{"xe"} } },
+            .kconfig = .{"gpu-xe"},
+            .packages = .{ "intel-media-driver", "linux-firmware-intel" },
+            .firmware_only = .{"xe/*"},
+        },
+        // AMD
+        .{
+            .id = "gpu.amdgpu",
+            .why = "AMD graphics from GCN 1.2 on: amdgpu, VA-API and Vulkan from Mesa (radeonsi, RADV), the firmware in linux-firmware-amd.",
+            .when = .{ .device = .{ .pci_class = .{"03"}, .module = .{"amdgpu"} } },
+            .kconfig = .{"gpu-amdgpu"},
+            .packages = .{ "linux-firmware-amd", "mesa-vaapi", "mesa-vulkan-radeon" },
+            .firmware_only = .{"amdgpu/*"},
+        },
+        .{
+            .id = "gpu.amdgpu.navi33",
+            .why = "Navi 33 (RX 7600, 7600 XT, 7700S): GC 11.0.2, PSP 13.0.7, SMU 13.0.7, DCN 3.2.1, SDMA 6.0.2, VCN 4.0.4 (the IP versions amdgpu's discovery finds) [VERIFY on hardware].",
+            .when = .{ .device = .{ .pci_vendor = .{"1002"}, .pci_device = .{ "7480", "7483", "7489" } } },
+            .firmware_only = .{ "amdgpu/gc_11_0_2_*", "amdgpu/psp_13_0_7_*", "amdgpu/smu_13_0_7*", "amdgpu/dcn_3_2_1_*", "amdgpu/sdma_6_0_2*", "amdgpu/vcn_4_0_4*" },
+            .priority = 10,
+        },
+        .{
+            .id = "gpu.amdgpu.raphael",
+            .why = "Raphael (the iGPU of Ryzen 7000 desktop): GC 10.3.6, PSP 13.0.5, DCN 3.1.5, SDMA 5.2.6, VCN 3.1.2 [VERIFY on hardware].",
+            .when = .{ .device = .{ .pci_vendor = .{"1002"}, .pci_device = .{"164e"} } },
+            .firmware_only = .{ "amdgpu/gc_10_3_6_*", "amdgpu/psp_13_0_5_*", "amdgpu/dcn_3_1_5_*", "amdgpu/sdma_5_2_6*", "amdgpu/vcn_3_1_2*" },
+            .priority = 10,
+        },
+        .{
+            .id = "gpu.radeon",
+            .why = "AMD graphics before GCN 1.2 (TeraScale, GCN 1.0/1.1): the radeon driver and its firmware.",
+            .when = .{ .device = .{ .pci_class = .{"03"}, .module = .{"radeon"} } },
+            .kconfig = .{"gpu-radeon"},
+            .packages = .{"linux-firmware-amd"},
+            .firmware_only = .{"radeon/*"},
+        },
+        // NVIDIA
+        .{
+            .id = "gpu.nvidia.dgpu-off",
+            .why = "An NVIDIA dGPU that did not bring the console up, in a laptop, not wanted (VH_GPU auto or igpu): no driver, nouveau refused, runtime PM puts it in D3cold through its root port (5-8 W saved, a cooler machine).",
+            .when = .{ .has = .{"laptop"}, .device = .{ .pci_vendor = .{"10de"}, .pci_class = .{"03"}, .boot_vga = false }, .config = .{.{ .key = "VH_GPU", .any = .{ "auto", "igpu" } }} },
+            .udev = .{"99-vh-dgpu-off.rules"},
+            .deny = .{"nouveau"},
+            .sets = .{"dgpu"},
+        },
+        .{
+            .id = "gpu.nvidia.nouveau",
+            .why = "VH_GPU=nouveau, or an NVIDIA GPU that drives the console: nouveau with its firmware (GSP on Turing and newer), Vulkan through NVK.",
+            .when = .{ .device = .{ .pci_vendor = .{"10de"}, .pci_class = .{"03"} } },
+            .unless = .{ .config = .{.{ .key = "VH_GPU", .any = .{ "auto", "igpu" } }}, .has = .{"dgpu"} },
+            .kconfig = .{"gpu-nouveau"},
+            .packages = .{ "linux-firmware-nvidia", "mesa-vulkan-nouveau" },
+            .firmware_only = .{"nvidia/*"},
+            .note = "nouveau drives the NVIDIA GPU; the open NVIDIA modules come with the gaming session (track G). NVK is slower than the proprietary driver in games.",
+        },
+        .{
+            .id = "gpu.nvidia.tu11x",
+            .why = "Turing TU116 and TU117 (GTX 1650, 1660): their nouveau firmware only.",
+            .when = .{ .device = .{ .modalias = .{ "pci:v000010DEd00001F[89AB]*", "pci:v000010DEd000021*" } } },
+            .firmware_only = .{"nvidia/tu11*"},
+            .priority = 10,
+        },
+        .{
+            .id = "gpu.nvidia.pre-turing",
+            .why = "NVIDIA before Turing (Maxwell, Pascal, Volta): nouveau cannot reclock it, so it runs at boot clocks; the open NVIDIA modules need Turing or newer.",
+            .when = .{ .device = .{ .pci_vendor = .{"10de"}, .pci_class = .{"03"}, .modalias = .{ "pci:v000010DEd000013*", "pci:v000010DEd000014*", "pci:v000010DEd000015*", "pci:v000010DEd000016*", "pci:v000010DEd000017*", "pci:v000010DEd00001B*", "pci:v000010DEd00001C*", "pci:v000010DEd00001D*" } } },
+            .note = "This NVIDIA GPU is older than Turing: nouveau runs it slowly and the open NVIDIA modules do not support it. For a laptop, keep it asleep (VH_GPU=igpu).",
+        },
+        // virtual machines and boards
+        .{
+            .id = "gpu.virtio",
+            .why = "The virtio GPU of a virtual machine.",
+            .when = .{ .device = .{ .module = .{"virtio_gpu"} } },
+            .kconfig = .{"gpu-virtio"},
+        },
+        .{
+            .id = "gpu.bochs",
+            .why = "QEMU's standard VGA (bochs-display).",
+            .when = .{ .device = .{ .module = .{"bochs"} } },
+            .kconfig = .{"gpu-bochs"},
+        },
+        .{
+            .id = "gpu.vc4",
+            .why = "The Raspberry Pi's VideoCore: v3d renders, vc4 drives the displays.",
+            .when = .{ .device = .{ .dt_compatible = .{ "brcm,*-v3d", "brcm,bcm2712-vc6", "brcm,bcm2711-vc5" } } },
+            .kconfig = .{"gpu-vc4"},
+        },
+        // the renderer of RefursWM
+        .{
+            .id = "gpu.renderer.gles2",
+            .why = "A GPU with a DRM driver: RefursWM renders with GLES2.",
+            .when = .{ .has = .{"display"} },
+            .set = .{.{ .key = "renderer", .value = "gles2" }},
+        },
+        .{
+            .id = "gpu.renderer.vm",
+            .why = "A virtual machine without accelerated 3D: RefursWM renders with pixman (the CPU) [VERIFY with virgl].",
+            .when = .{ .has = .{"vm"} },
+            .set = .{.{ .key = "renderer", .value = "pixman" }},
+            .priority = 20,
+        },
+    },
+}

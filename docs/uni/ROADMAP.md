@@ -79,7 +79,9 @@ present the tier is **full**. With one or more missing it is **reduced**: in `st
 `vh-plan` exits with code 3 and a report that names each missing property, its residual risk
 and the firmware setting that fixes it (`hwdb/board.zon`); in `tiered` mode the plan carries
 the list `acknowledge` that the installer shows and makes the user confirm by typing. A
-machine below the floor (no UEFI 64-bit on x86_64, less than 2 GiB) is refused in both modes.
+machine below the floor (no UEFI 64-bit on x86_64, less than 1 GiB) is refused in both modes.
+The memory requirement follows from the protection it serves: Argon2id with 1 GiB per guess of
+the LUKS passphrase needs 2 GiB, because cryptsetup gives the PBKDF at most half of the RAM.
 `vh-audit` reports the tier and the acknowledged risks of the running system.
 
 ## Components

@@ -1,0 +1,77 @@
+// hwdb/cpu-intel.zon: Intel CPUs and the chipset functions around them.
+.{
+    .rules = .{
+        .{
+            .id = "cpu.intel.microcode",
+            .why = "Microcode updates for Intel CPUs, loaded early from the initrd (dracut early_microcode): fixes and mitigations the firmware of the board may lack.",
+            .when = .{ .cpu_vendor = .{"GenuineIntel"}, .lacks = .{"vm"} },
+            .packages = .{"intel-ucode"},
+            .firmware = .{"intel-ucode/*"},
+        },
+        .{
+            .id = "cpu.intel.kernel",
+            .why = "The machine kernel's Intel class: intel_pstate, intel_idle, RAPL and the uncore counters, coretemp, the iTCO watchdog.",
+            .when = .{ .cpu_vendor = .{"GenuineIntel"}, .lacks = .{"vm"} },
+            .kconfig = .{"cpu-intel"},
+        },
+        .{
+            .id = "cpu.intel.me",
+            .why = "The Management Engine interface: AMT is not used and the firmware TPM works through tpm_crb; the HECI driver is attack surface without a use here.",
+            .when = .{ .cpu_vendor = .{"GenuineIntel"} },
+            .deny = .{ "mei", "mei_me", "mei_hdcp", "mei_pxp", "mei_wdt" },
+        },
+        .{
+            .id = "cpu.intel.watchdog",
+            .why = "The chipset watchdog (iTCO) for optional/deadman; it needs LPC or SMBus to be found.",
+            .when = .{ .cpu_vendor = .{"GenuineIntel"}, .device = .{ .module = .{"iTCO_wdt"} } },
+            .set = .{.{ .key = "watchdog", .value = "iTCO_wdt" }},
+            .priority = 10,
+        },
+        .{
+            .id = "cpu.intel.kvm-off",
+            .why = "VH_VIRT=no: KVM is refused, so a kernel exploit cannot slip a thin hypervisor under the system; disable VT-x in the firmware as well.",
+            .when = .{ .cpu_vendor = .{"GenuineIntel"}, .config = .{.{ .key = "VH_VIRT", .any = .{"no"} }} },
+            .deny = .{ "kvm", "kvm_intel" },
+        },
+        .{
+            .id = "cpu.intel.kvm",
+            .why = "VH_VIRT=yes: KVM for Intel (VT-x) in the machine kernel.",
+            .when = .{ .cpu_vendor = .{"GenuineIntel"}, .config = .{.{ .key = "VH_VIRT", .any = .{"yes"} }} },
+            .kconfig = .{"virt-intel"},
+        },
+        .{
+            .id = "cpu.intel.hybrid",
+            .why = "P and E cores: the scheduler places tasks by core type and cluster (ITMT, SCHED_CLUSTER); vh-sched reads the topology at load (U4).",
+            .when = .{ .cpu_vendor = .{"GenuineIntel"}, .has = .{"hybrid"} },
+            .kconfig = .{"cpu-hybrid"},
+        },
+        // -march of a kernel built elsewhere, by model (family 6); a CPU no rule names gets its x86-64 level
+        .{
+            .id = "cpu.intel.march.skylake",
+            .why = "Skylake to Comet Lake (models 0x4E, 0x5E, 0x8E, 0x9E, 0xA5, 0xA6): -march=skylake, as upstream's CI builds the GF63 kernel.",
+            .when = .{ .cpu_vendor = .{"GenuineIntel"}, .cpu_family = 6, .cpu_model = .{ 78, 94, 142, 158, 165, 166 } },
+            .set = .{.{ .key = "march", .value = "skylake" }},
+            .priority = 10,
+        },
+        .{
+            .id = "cpu.intel.march.tigerlake",
+            .why = "Tiger Lake (models 0x8C, 0x8D): -march=tigerlake.",
+            .when = .{ .cpu_vendor = .{"GenuineIntel"}, .cpu_family = 6, .cpu_model = .{ 140, 141 } },
+            .set = .{.{ .key = "march", .value = "tigerlake" }},
+            .priority = 10,
+        },
+        .{
+            .id = "cpu.intel.march.alderlake",
+            .why = "Alder Lake and Raptor Lake (models 0x97, 0x9A, 0xB7, 0xBA, 0xBF): -march=alderlake.",
+            .when = .{ .cpu_vendor = .{"GenuineIntel"}, .cpu_family = 6, .cpu_model = .{ 151, 154, 183, 186, 191 } },
+            .set = .{.{ .key = "march", .value = "alderlake" }},
+            .priority = 10,
+        },
+        .{
+            .id = "cpu.intel.pinctrl.cnl",
+            .why = "The Cannon Lake / Comet Lake-H pin controller (ACPI INT3450, INT34BB): the GPIO interrupt of an I2C-HID touchpad hangs off it.",
+            .when = .{ .device = .{ .acpi_id = .{ "INT3450", "INT34BB" } } },
+            .kconfig = .{"pinctrl-intel-cnl"},
+        },
+    },
+}

@@ -1,0 +1,45 @@
+// hwdb/storage.zon: the controllers of the disks. A controller's driver goes into the
+// machine kernel's boot path when a disk hangs off it (the tags disk-BUS and disk-on-MODULE come
+// from the probe's disks); the other drivers come from the probe's devices like any driver.
+.{
+    .rules = .{
+        .{
+            .id = "storage.nvme",
+            .why = "An NVMe disk: the driver built into the machine kernel (the root disk is behind it before the initrd can load anything).",
+            .when = .{ .has = .{"disk-nvme"} },
+            .kconfig = .{"storage-nvme"},
+        },
+        .{
+            .id = "storage.ahci",
+            .why = "A disk on SATA through AHCI.",
+            .when = .{ .has = .{"disk-ata"} },
+            .kconfig = .{"storage-ahci"},
+        },
+        .{
+            .id = "storage.vmd",
+            .why = "Intel VMD (the firmware's RAID or RST mode): the NVMe disks sit behind it and are invisible without its driver, so the initrd carries it.",
+            .when = .{ .has = .{"disk-on-vmd"} },
+            .kconfig = .{"storage-vmd"},
+            .dracut = .{"vmd"},
+            .note = "Intel VMD (RAID/RST mode) is on: Linux reaches the NVMe disk through it. Switching the firmware setup to AHCI mode is simpler, but it changes how an installed Windows boots.",
+        },
+        .{
+            .id = "storage.mmc",
+            .why = "eMMC or an SD card through SDHCI.",
+            .when = .{ .has = .{"disk-mmc"} },
+            .kconfig = .{"storage-mmc"},
+        },
+        .{
+            .id = "storage.virtio",
+            .why = "The virtio disks of a virtual machine.",
+            .when = .{ .has = .{"disk-virtio"} },
+            .kconfig = .{"storage-virtio"},
+        },
+        .{
+            .id = "storage.trim",
+            .why = "A fixed disk that accepts discard and VH_TRIM=yes: fstrim once a week (SSD speed and wear levelling; the cost is that the disk shows which blocks are free).",
+            .when = .{ .has = .{"disk-discard"}, .config = .{.{ .key = "VH_TRIM", .any = .{"yes"} }} },
+            .services = .{"vh-fstrim"},
+        },
+    },
+}

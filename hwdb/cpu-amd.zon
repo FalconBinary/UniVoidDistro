@@ -1,0 +1,101 @@
+// hwdb/cpu-amd.zon: AMD CPUs and the chipset functions around them.
+.{
+    .rules = .{
+        .{
+            .id = "cpu.amd.microcode",
+            .why = "Microcode updates for AMD CPUs ship in linux-firmware-amd (amd-ucode/), loaded early from the initrd.",
+            .when = .{ .cpu_vendor = .{"AuthenticAMD"}, .lacks = .{"vm"} },
+            .packages = .{"linux-firmware-amd"},
+            .firmware = .{"amd-ucode/*"},
+        },
+        .{
+            .id = "cpu.amd.kernel",
+            .why = "The machine kernel's AMD class: amd-pstate, k10temp, the power and uncore counters, the sp5100_tco watchdog.",
+            .when = .{ .cpu_vendor = .{"AuthenticAMD"}, .lacks = .{"vm"} },
+            .kconfig = .{"cpu-amd"},
+        },
+        .{
+            .id = "cpu.amd.watchdog",
+            .why = "The watchdog of the AMD FCH (sp5100_tco), found through the SMBus function, for optional/deadman.",
+            .when = .{ .cpu_vendor = .{"AuthenticAMD"}, .device = .{ .module = .{"sp5100_tco"} } },
+            .set = .{.{ .key = "watchdog", .value = "sp5100_tco" }},
+            .priority = 10,
+        },
+        .{
+            .id = "cpu.amd.kvm-off",
+            .why = "VH_VIRT=no: KVM is refused; disable SVM in the firmware as well.",
+            .when = .{ .cpu_vendor = .{"AuthenticAMD"}, .config = .{.{ .key = "VH_VIRT", .any = .{"no"} }} },
+            .deny = .{ "kvm", "kvm_amd" },
+        },
+        .{
+            .id = "cpu.amd.kvm",
+            .why = "VH_VIRT=yes: KVM for AMD (SVM) in the machine kernel.",
+            .when = .{ .cpu_vendor = .{"AuthenticAMD"}, .config = .{.{ .key = "VH_VIRT", .any = .{"yes"} }} },
+            .kconfig = .{"virt-amd"},
+        },
+        .{
+            .id = "cpu.amd.psp.no-sev",
+            .why = "The SEV firmware ccp names serves hosts of memory-encrypted virtual machines (EPYC); a client machine's PSP needs none of it.",
+            .when = .{ .device = .{ .module = .{"ccp"} } },
+            .unless = .{ .has = .{"server"} },
+            .firmware_none = true,
+            .priority = 10,
+        },
+        .{
+            .id = "cpu.amd.psp",
+            .why = "The Platform Security Processor's driver (ccp) serves SEV hosts and its random number generator; the firmware TPM does not need it.",
+            .when = .{ .cpu_vendor = .{"AuthenticAMD"}, .device = .{ .module = .{"ccp"} } },
+            .note = "The AMD PSP driver (ccp) is kept: it also feeds the kernel's random number generator. Refusing it is a decision for VH_EXTRA_CMDLINE ([VERIFY] the fTPM without it).",
+        },
+        .{
+            .id = "cpu.amd.x3d",
+            .why = "Two CCDs with last-level caches of different sizes (an X3D part with 3D V-Cache on one): the kernel's amd_3d_vcache driver chooses which CCD the scheduler prefers; vh-sched reads the caches at load (U4).",
+            .when = .{ .cpu_vendor = .{"AuthenticAMD"}, .has = .{"multi-llc"}, .cpu_flags = .{"topoext"} },
+            .kconfig = .{"cpu-amd-x3d"},
+            .note = "Two CCDs with different L3 sizes: latency-sensitive work (games) runs best on the V-Cache CCD [VERIFY on this machine with bench/].",
+        },
+        // -march of a kernel built elsewhere, by family and model
+        .{
+            .id = "cpu.amd.march.znver4",
+            .why = "Zen 4 (family 0x19, models 0x10-0x1F and 0x60-0xAF): -march=znver4.",
+            .when = .{ .cpu_vendor = .{"AuthenticAMD"}, .cpu_family = 25, .cpu_model_min = 96, .cpu_model_max = 175 },
+            .set = .{.{ .key = "march", .value = "znver4" }},
+            .priority = 10,
+        },
+        .{
+            .id = "cpu.amd.march.znver4-server",
+            .why = "Zen 4 servers (family 0x19, models 0x10-0x1F: Genoa, Bergamo): -march=znver4.",
+            .when = .{ .cpu_vendor = .{"AuthenticAMD"}, .cpu_family = 25, .cpu_model_min = 16, .cpu_model_max = 31 },
+            .set = .{.{ .key = "march", .value = "znver4" }},
+            .priority = 10,
+        },
+        .{
+            .id = "cpu.amd.march.znver3",
+            .why = "Zen 3 (family 0x19, models 0x00-0x0F, 0x20-0x5F): -march=znver3.",
+            .when = .{ .cpu_vendor = .{"AuthenticAMD"}, .cpu_family = 25, .cpu_model_max = 95 },
+            .unless = .{ .cpu_model_min = 16, .cpu_model_max = 31 },
+            .set = .{.{ .key = "march", .value = "znver3" }},
+            .priority = 10,
+        },
+        .{
+            .id = "cpu.amd.march.znver2",
+            .why = "Zen 2 (family 0x17, models 0x30 and later): -march=znver2.",
+            .when = .{ .cpu_vendor = .{"AuthenticAMD"}, .cpu_family = 23, .cpu_model_min = 48 },
+            .set = .{.{ .key = "march", .value = "znver2" }},
+            .priority = 10,
+        },
+        .{
+            .id = "cpu.amd.march.znver5",
+            .why = "Zen 5 (family 0x1A): -march=znver5.",
+            .when = .{ .cpu_vendor = .{"AuthenticAMD"}, .cpu_family = 26 },
+            .set = .{.{ .key = "march", .value = "znver5" }},
+            .priority = 10,
+        },
+        .{
+            .id = "cpu.amd.pinctrl",
+            .why = "The AMD GPIO controller (ACPI AMDI0030): touchpad interrupts and the power button on many AMD machines.",
+            .when = .{ .device = .{ .acpi_id = .{ "AMDI0030", "AMDI0031" } } },
+            .kconfig = .{"pinctrl-amd"},
+        },
+    },
+}

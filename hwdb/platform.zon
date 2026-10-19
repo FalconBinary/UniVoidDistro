@@ -1,0 +1,179 @@
+// hwdb/platform.zon: what kind of machine this is, and what every kind needs.
+.{
+    .rules = .{
+        // the class: vm > sbc > laptop > server > desktop (the priorities)
+        .{
+            .id = "class.vm.flag",
+            .why = "The CPU says it runs under a hypervisor.",
+            .when = .{ .cpu_flags = .{"hypervisor"} },
+            .sets = .{"vm"},
+        },
+        .{
+            .id = "class.vm.dmi",
+            .why = "The firmware of a virtual machine names its maker: QEMU, VMware, VirtualBox, Xen, Parallels.",
+            .when = .{ .dmi = .{.{ .field = "sys_vendor", .any = .{ "QEMU", "VMware*", "innotek GmbH", "Xen", "Parallels*" } }} },
+            .sets = .{"vm"},
+        },
+        .{
+            .id = "class.vm.hyperv",
+            .why = "Hyper-V: Microsoft's firmware with the product name Virtual Machine.",
+            .when = .{ .dmi = .{ .{ .field = "sys_vendor", .any = .{"Microsoft Corporation"} }, .{ .field = "product_name", .any = .{"Virtual Machine"} } } },
+            .sets = .{"vm"},
+        },
+        .{
+            .id = "class.vm.apple",
+            .why = "Apple's Virtualization framework (UTM, colima, Lima on a Mac).",
+            .when = .{ .dmi = .{.{ .field = "product_name", .any = .{"Apple Virtualization*"} }} },
+            .sets = .{"vm"},
+        },
+        .{
+            .id = "class.vm.dt",
+            .why = "QEMU's virt board described by a device tree.",
+            .when = .{ .dt_compatible = .{"linux,dummy-virt"} },
+            .sets = .{"vm"},
+        },
+        .{
+            .id = "class.vm.xen",
+            .why = "/sys/hypervisor names a hypervisor (Xen).",
+            .when = .{ .has = .{"sys-hypervisor"} },
+            .sets = .{"vm"},
+        },
+        .{
+            .id = "class.laptop.chassis",
+            .why = "DMI chassis 8 (portable), 9 (laptop), 10 (notebook), 14 (sub-notebook), 30 (tablet), 31 (convertible), 32 (detachable).",
+            .when = .{ .dmi = .{.{ .field = "chassis_type", .any = .{ "8", "9", "10", "14", "30", "31", "32" } }}, .lacks = .{"vm"} },
+            .sets = .{"laptop"},
+        },
+        .{
+            .id = "class.laptop.battery",
+            .why = "A battery of the system (not of a peripheral) in a machine that is not virtual.",
+            .when = .{ .has = .{"battery"}, .lacks = .{"vm"} },
+            .sets = .{"laptop"},
+        },
+        .{
+            .id = "class.server.chassis",
+            .why = "DMI chassis 17 (main server), 23 (rack mount), 25 (multi-system), 28 (blade), 29 (blade enclosure).",
+            .when = .{ .dmi = .{.{ .field = "chassis_type", .any = .{ "17", "23", "25", "28", "29" } }}, .lacks = .{ "vm", "laptop" } },
+            .sets = .{"server"},
+        },
+        .{
+            .id = "class.sbc",
+            .why = "A board described by a device tree without ACPI: a single-board computer.",
+            .when = .{ .has = .{"devicetree"}, .lacks = .{ "acpi", "vm" } },
+            .sets = .{"sbc"},
+        },
+        .{ .id = "class.desktop", .why = "Every other machine.", .set = .{.{ .key = "class", .value = "desktop" }}, .priority = 10 },
+        .{ .id = "class.server", .why = "The server class.", .when = .{ .has = .{"server"} }, .set = .{.{ .key = "class", .value = "server" }}, .priority = 20 },
+        .{ .id = "class.laptop", .why = "The laptop class: power follows AC and battery, the lid and the backlight are handled.", .when = .{ .has = .{"laptop"} }, .set = .{.{ .key = "class", .value = "laptop" }}, .priority = 30 },
+        .{ .id = "class.sbc.set", .why = "The single-board class.", .when = .{ .has = .{"sbc"} }, .set = .{.{ .key = "class", .value = "sbc" }}, .priority = 35 },
+        .{ .id = "class.vm", .why = "The virtual machine class: no microcode, no power management.", .when = .{ .has = .{"vm"} }, .set = .{.{ .key = "class", .value = "vm" }}, .priority = 40 },
+        // the IOMMU, by the table that describes it
+        .{
+            .id = "iommu.dmar",
+            .why = "VT-d is described by the DMAR table; intel_iommu=on turns it on (Void's kernel leaves it off by default) so that every device's DMA is translated.",
+            .when = .{ .acpi_table = .{"DMAR"} },
+            .cmdline = .{"intel_iommu=on"},
+            .kconfig = .{"iommu-vtd"},
+            .sets = .{"iommu"},
+        },
+        .{
+            .id = "iommu.ivrs",
+            .why = "AMD-Vi is described by the IVRS table; the kernel turns it on by itself, and iommu.strict=1 iommu.passthrough=0 (every machine) keep every device translated.",
+            .when = .{ .acpi_table = .{"IVRS"} },
+            .kconfig = .{"iommu-amd"},
+            .sets = .{"iommu"},
+        },
+        // buttons, the lid, the keyboard controller
+        .{
+            .id = "acpi.lid",
+            .why = "An ACPI lid switch (PNP0C0D).",
+            .when = .{ .device = .{ .acpi_id = .{"PNP0C0D"} } },
+            .sets = .{"lid"},
+        },
+        .{
+            .id = "acpi.power-button",
+            .why = "An ACPI power button (PNP0C0C, or the fixed LNXPWRBN).",
+            .when = .{ .device = .{ .acpi_id = .{ "PNP0C0C", "LNXPWRBN" } } },
+            .sets = .{"power-button"},
+        },
+        .{
+            .id = "acpid.lid",
+            .why = "vh-acpid handles the lid (lock, then a regular poweroff; suspend is forbidden) and the power button.",
+            .when = .{ .has = .{"lid"} },
+            .services = .{"vh-acpid"},
+        },
+        .{
+            .id = "acpid.button",
+            .why = "vh-acpid handles the power button (a regular poweroff by default).",
+            .when = .{ .has = .{"power-button"} },
+            .services = .{"vh-acpid"},
+        },
+        .{
+            .id = "input.i8042",
+            .why = "A PS/2 keyboard (most laptops, virtual machines): the i8042 controller and atkbd built into the machine kernel, so the LUKS passphrase can be typed.",
+            .when = .{ .has = .{"keyboard-i8042"} },
+            .kconfig = .{"input-i8042"},
+        },
+        // the TPM
+        .{
+            .id = "tpm.tools",
+            .why = "A TPM 2.0: tpm2-tools reads the measurement log (the Option ROM check before key enrolment) and serves tpm2-totp.",
+            .when = .{ .has = .{"tpm2"} },
+            .packages = .{"tpm2-tools"},
+        },
+        .{
+            .id = "tpm.crb",
+            .why = "A firmware TPM through the Command Response Buffer interface (Intel PTT, AMD fTPM).",
+            .when = .{ .device = .{ .module = .{"tpm_crb"}, .driver = .{"tpm_crb"} } },
+            .kconfig = .{"tpm-crb"},
+        },
+        .{
+            .id = "tpm.tis",
+            .why = "A discrete TPM through the TIS interface (LPC or SPI).",
+            .when = .{ .device = .{ .driver = .{ "tpm_tis", "tpm_tis_spi" } } },
+            .kconfig = .{"tpm-tis"},
+        },
+        // USB, the camera, the card reader
+        .{
+            .id = "usb.common",
+            .why = "What a USB port must handle after the module lock: storage, keyboards and mice, audio.",
+            .features = .{"usb-common"},
+        },
+        .{
+            .id = "camera.usb",
+            .why = "A USB video device (interface class 0E).",
+            .when = .{ .device = .{ .usb_class = .{"0e"} } },
+            .sets = .{"camera"},
+        },
+        .{
+            .id = "camera.off",
+            .why = "VH_CAMERA=no: the UVC driver is refused (the firmware setup can disable the camera outright, which is stronger).",
+            .when = .{ .config = .{.{ .key = "VH_CAMERA", .any = .{"no"} }} },
+            .deny = .{"uvcvideo"},
+        },
+        .{
+            .id = "camera.on",
+            .why = "VH_CAMERA=yes and a camera: the UVC driver in the machine kernel.",
+            .when = .{ .has = .{"camera"}, .config = .{.{ .key = "VH_CAMERA", .any = .{"yes"} }} },
+            .features = .{"camera"},
+        },
+        .{
+            .id = "cardreader.off",
+            .why = "VH_CARDREADER=no: the Realtek card reader's drivers are refused.",
+            .when = .{ .config = .{.{ .key = "VH_CARDREADER", .any = .{"no"} }} },
+            .deny = .{ "rtsx_pci", "rtsx_pci_sdmmc" },
+        },
+        .{
+            .id = "virt.feature",
+            .why = "VH_VIRT=yes: KVM, tap devices, vhost.",
+            .when = .{ .config = .{.{ .key = "VH_VIRT", .any = .{"yes"} }} },
+            .features = .{"virt"},
+        },
+        // the watchdog of optional/deadman, when no chipset one is known
+        .{
+            .id = "watchdog.softdog",
+            .why = "No hardware watchdog known: softdog, which does not survive a hung kernel (a row in the cost table).",
+            .set = .{.{ .key = "watchdog", .value = "softdog" }},
+        },
+    },
+}

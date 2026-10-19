@@ -1,0 +1,96 @@
+vh-plan report
+machine: aarch64-virt (Apple Inc. Apple Virtualization Generic Platform; ), arch aarch64, 3904 MiB, 4 CPUs
+module tables: none for this architecture: only the drivers the running system bound
+security: tiered; tier: reduced
+tags: acpi disk disk-discard disk-on-virtio_pci disk-virtio efi efi64 keyboard keyboard-usb power-button vm wired
+
+Rules that apply (16):
+  arm.kernel [cpu-arm.zon]: The machine kernel's ARM64 class: the generic timer, PSCI, CPPC or SCMI frequency control, the errata of the cores.
+  arm.mcpu.generic [cpu-arm.zon]: Any other ARMv8 core: -march=armv8-a, the instruction set every ARM64 CPU has.
+  arm.aes [cpu-arm.zon]: The ARMv8 Crypto Extensions: AES-XTS through the ce-blk driver, built into the machine kernel.
+  gpu.renderer.vm [gpu.zon]: A virtual machine without accelerated 3D: RefursWM renders with pixman (the CPU) [VERIFY with virgl].
+  net.wired.dhcp [net.zon]: A wired interface and VH_ETH auto or dhcp: dhcpcd on eth0 (the kernel names interfaces with net.ifnames=0).
+  class.vm.apple [platform.zon]: Apple's Virtualization framework (UTM, colima, Lima on a Mac).
+  class.desktop [platform.zon]: Every other machine.
+  class.vm [platform.zon]: The virtual machine class: no microcode, no power management.
+  acpi.power-button [platform.zon]: An ACPI power button (PNP0C0C, or the fixed LNXPWRBN).
+  acpid.button [platform.zon]: vh-acpid handles the power button (a regular poweroff by default).
+  usb.common [platform.zon]: What a USB port must handle after the module lock: storage, keyboards and mice, audio.
+  camera.off [platform.zon]: VH_CAMERA=no: the UVC driver is refused (the firmware setup can disable the camera outright, which is stronger).
+  cardreader.off [platform.zon]: VH_CARDREADER=no: the Realtek card reader's drivers are refused.
+  watchdog.softdog [platform.zon]: No hardware watchdog known: softdog, which does not survive a hung kernel (a row in the cost table).
+  storage.virtio [storage.zon]: The virtio disks of a virtual machine.
+  storage.trim [storage.zon]: A fixed disk that accepts discard and VH_TRIM=yes: fstrim once a week (SSD speed and wear levelling; the cost is that the disk shows which blocks are free).
+
+Requirements not met (3):
+  secure-boot: Secure Boot with the system's own keys verifies the bootloader and the UKI before they run.
+    residual risk: The boot chain is not verified: an evil maid can replace the kernel and capture the LUKS passphrase.
+    fix: Enable Secure Boot support (Custom or Standard mode) in the firmware setup; the system enrols its own keys after the first boot (install/20-firstboot.sh).
+  tpm2: A TPM 2.0 measures the boot (tpm2-totp shows that it is unchanged) and its event log lists the Option ROMs whose hashes the key enrolment must keep.
+    residual risk: No TPM 2.0: no tpm2-totp against an evil maid, no measured boot, and no Option ROM check before the Secure Boot keys are enrolled (the Microsoft certificates are then kept).
+    fix: Enable the firmware TPM (Intel PTT, AMD fTPM) or the TPM module in the firmware setup.
+  iommu: An IOMMU confines every device's DMA to the memory the kernel gives it.
+    residual risk: No IOMMU: a malicious or compromised device (Thunderbolt, ExpressCard, a PCIe card) can read and write all memory by DMA.
+    fix: Enable VT-d (Intel) or AMD-Vi / IOMMU (AMD) in the firmware setup; a virtual machine needs an emulated IOMMU (QEMU: -device intel-iommu).
+
+packages (1):
+  dhcpcd  <- net.wired.dhcp
+
+kernel class fragments (3):
+  cpu-arm64  <- arm.kernel
+  cpu-arm64-aes  <- arm.aes
+  storage-virtio  <- storage.virtio
+
+kernel features (1):
+  usb-common  <- usb.common
+
+firmware kept (0):
+
+command line (0):
+
+services (3):
+  dhcpcd-eth0  <- net.wired.dhcp
+  vh-acpid  <- acpid.button
+  vh-fstrim  <- storage.trim
+
+udev rules (0):
+
+denied modules (3):
+  rtsx_pci  <- cardreader.off
+  rtsx_pci_sdmmc  <- cardreader.off
+  uvcvideo  <- camera.off
+
+initrd drivers (3):
+  hid_generic  <- keyboard usb
+  usbhid  <- keyboard usb
+  xhci_pci  <- keyboard usb
+
+notes (0):
+
+scalars (4):
+  class = vm  <- class.vm
+  march = armv8-a  <- arm.mcpu.generic
+  renderer = pixman  <- gpu.renderer.vm
+  watchdog = softdog  <- watchdog.softdog
+
+LUKS: aes-xts-plain64, 512-bit key, Argon2id 1048576 KiB, 4 threads
+kernel: NR_CPUS 4, -march armv8-a
+modules of the devices (8): hid_generic usbcore usbhid virtio_pci virtio_rng virtiofs vmw_vsock_virtio_transport xhci_pci
+
+Devices no driver, table or rule knows (16):
+  acpi ACPI0007:00 acpi:ACPI0007:
+  acpi ACPI0007:01 acpi:ACPI0007:
+  acpi ACPI0007:02 acpi:ACPI0007:
+  acpi ACPI0007:03 acpi:ACPI0007:
+  acpi ARMH0061:00 acpi:ARMH0061:
+  acpi LNXSYBUS:00 acpi:LNXSYBUS:
+  acpi LNXSYBUS:01 acpi:LNXSYBUS:
+  acpi LNXSYSTM:00 acpi:LNXSYSTM:
+  acpi PNP0A08:00 acpi:PNP0A08:PNP0A03:
+  acpi PNP0C02:00 acpi:PNP0C02:
+  dmi id dmi:bvnAppleInc.:bvr2075.140.4.0.0:bd07/20/2025:svnAppleInc.:pnAppleVirtualizationGenericPlatform:pvr1:cvnAppleInc.:ct3:cvr1:sku:
+  pci 0000:00:00.0 pci:v0000106Bd00001A05sv00000000sd00000000bc06sc00i00
+  platform Fixed MDIO bus.0 platform:Fixed MDIO bus
+  platform efivars.0 platform:efivars
+  platform psci-cpuidle platform:psci-cpuidle
+  platform regulatory.0 platform:regulatory

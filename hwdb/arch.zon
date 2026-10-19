@@ -1,0 +1,62 @@
+// hwdb/arch.zon: the architecture and what every machine of it gets.
+.{
+    .rules = .{
+        .{
+            .id = "x86.level.v2",
+            .why = "x86-64-v2: CMPXCHG16B, LAHF/SAHF, POPCNT, SSE3 to SSE4.2 (Nehalem, Bulldozer and later).",
+            .when = .{ .arch = .{"x86_64"}, .cpu_flags = .{ "cx16", "lahf_lm", "popcnt", "pni", "ssse3", "sse4_1", "sse4_2" } },
+            .sets = .{"x86-64-v2"},
+        },
+        .{
+            .id = "x86.level.v3",
+            .why = "x86-64-v3: AVX, AVX2, BMI1/2, F16C, FMA, LZCNT, MOVBE, XSAVE (Haswell, Excavator and later).",
+            .when = .{ .has = .{"x86-64-v2"}, .cpu_flags = .{ "avx", "avx2", "bmi1", "bmi2", "f16c", "fma", "abm", "movbe", "xsave" } },
+            .sets = .{"x86-64-v3"},
+        },
+        .{
+            .id = "x86.level.v4",
+            .why = "x86-64-v4: AVX-512 F, BW, CD, DQ, VL (Skylake-SP, Ice Lake, Zen 4 and later).",
+            .when = .{ .has = .{"x86-64-v3"}, .cpu_flags = .{ "avx512f", "avx512bw", "avx512cd", "avx512dq", "avx512vl" } },
+            .sets = .{"x86-64-v4"},
+        },
+        .{
+            .id = "x86.march.v2",
+            .why = "A kernel built elsewhere (CI) for a CPU no model rule names: the instruction set it has for sure.",
+            .when = .{ .has = .{"x86-64-v2"} },
+            .set = .{.{ .key = "march", .value = "x86-64-v2" }},
+            .priority = 1,
+        },
+        .{
+            .id = "x86.march.v3",
+            .why = "The same at x86-64-v3.",
+            .when = .{ .has = .{"x86-64-v3"} },
+            .set = .{.{ .key = "march", .value = "x86-64-v3" }},
+            .priority = 2,
+        },
+        .{
+            .id = "x86.march.v4",
+            .why = "The same at x86-64-v4.",
+            .when = .{ .has = .{"x86-64-v4"} },
+            .set = .{.{ .key = "march", .value = "x86-64-v4" }},
+            .priority = 3,
+        },
+        .{
+            .id = "x86.efi.early-dma",
+            .why = "efi=disable_early_pci_dma: bus mastering stays off from the EFI stub until the IOMMU is up, closing the window in which a device could write to memory at boot.",
+            .when = .{ .arch = .{"x86_64"}, .has = .{"efi"} },
+            .cmdline = .{"efi=disable_early_pci_dma"},
+        },
+        .{
+            .id = "x86.ia32-off",
+            .why = "ia32_emulation=0: no 32-bit syscall entry; the gaming session's own UKI turns it on (docs/principles.md).",
+            .when = .{ .arch = .{"x86_64"} },
+            .cmdline = .{"ia32_emulation=0"},
+        },
+        .{
+            .id = "x86.aes",
+            .why = "The disk is AES-XTS: the AES-NI driver built into the machine kernel, not loaded on demand.",
+            .when = .{ .arch = .{"x86_64"}, .cpu_flags = .{"aes"} },
+            .kconfig = .{"cpu-x86-aes"},
+        },
+    },
+}

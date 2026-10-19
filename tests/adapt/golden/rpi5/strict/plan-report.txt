@@ -1,0 +1,103 @@
+vh-plan report
+machine: rpi5 ( ; ), arch aarch64, 8051 MiB, 4 CPUs
+module tables: none for this architecture: only the drivers the running system bound
+security: strict; tier: reduced
+tags: bluetooth devicetree disk disk-discard disk-mmc disk-on-mmc_block disk-on-sdhci_brcmstb display keyboard keyboard-usb sbc sound wifi wired
+
+Rules that apply (21):
+  arm.kernel [cpu-arm.zon]: The machine kernel's ARM64 class: the generic timer, PSCI, CPPC or SCMI frequency control, the errata of the cores.
+  arm.mcpu.cortex-a76 [cpu-arm.zon]: Cortex-A76 (implementer 0x41, part 0xd0b), the cores of the Raspberry Pi 5: -mcpu=cortex-a76.
+  arm.mcpu.generic [cpu-arm.zon]: Any other ARMv8 core: -march=armv8-a, the instruction set every ARM64 CPU has.
+  arm.watchdog.bcm2835 [cpu-arm.zon]: The Raspberry Pi's power-management watchdog, for optional/deadman.
+  arm.aes [cpu-arm.zon]: The ARMv8 Crypto Extensions: AES-XTS through the ce-blk driver, built into the machine kernel.
+  gpu.vc4 [gpu.zon]: The Raspberry Pi's VideoCore: v3d renders, vc4 drives the displays.
+  gpu.renderer.gles2 [gpu.zon]: A GPU with a DRM driver: RefursWM renders with GLES2.
+  net.wifi [net.zon]: A wireless interface: iwd, the regulatory database (signed, read by cfg80211 from the initrd of a machine kernel), iw for diagnosis, the firmware package of network chips.
+  net.brcmfmac [net.zon]: Broadcom and Cypress FullMAC Wi-Fi: brcmfmac's firmware and NVRAM files [VERIFY the directory Void ships the Cypress files in].
+  net.wired.dhcp [net.zon]: A wired interface and VH_ETH auto or dhcp: dhcpcd on eth0 (the kernel names interfaces with net.ifnames=0).
+  bt.uart [net.zon]: A Bluetooth controller on a UART, described by the device tree (the Raspberry Pi's CYW43455).
+  bt.bluez [net.zon]: Bluetooth present and allowed (VH_BLUETOOTH optional or on): bluez, off until started with vh-bluetooth on (optional) or always running (on).
+  class.sbc [platform.zon]: A board described by a device tree without ACPI: a single-board computer.
+  class.desktop [platform.zon]: Every other machine.
+  class.sbc.set [platform.zon]: The single-board class.
+  usb.common [platform.zon]: What a USB port must handle after the module lock: storage, keyboards and mice, audio.
+  camera.off [platform.zon]: VH_CAMERA=no: the UVC driver is refused (the firmware setup can disable the camera outright, which is stronger).
+  cardreader.off [platform.zon]: VH_CARDREADER=no: the Realtek card reader's drivers are refused.
+  watchdog.softdog [platform.zon]: No hardware watchdog known: softdog, which does not survive a hung kernel (a row in the cost table).
+  storage.mmc [storage.zon]: eMMC or an SD card through SDHCI.
+  storage.trim [storage.zon]: A fixed disk that accepts discard and VH_TRIM=yes: fstrim once a week (SSD speed and wear levelling; the cost is that the disk shows which blocks are free).
+
+Requirements not met (4):
+  uefi: On ARM64 the verified boot chain of this system needs UEFI (servers, laptops); a Raspberry Pi boots from its own firmware.
+    residual risk: The board's firmware boots the kernel unverified: whoever holds the board for a while can replace it and read what is typed.
+    fix: A UEFI firmware for the board where one exists [VERIFY], or the Raspberry Pi's own secure boot (milestone U5: its key is burnt into OTP, irreversibly).
+  secure-boot: Secure Boot with the system's own keys verifies the bootloader and the UKI before they run.
+    residual risk: The boot chain is not verified: an evil maid can replace the kernel and capture the LUKS passphrase.
+    fix: Enable Secure Boot support (Custom or Standard mode) in the firmware setup; the system enrols its own keys after the first boot (install/20-firstboot.sh).
+  tpm2: A TPM 2.0 measures the boot (tpm2-totp shows that it is unchanged) and its event log lists the Option ROMs whose hashes the key enrolment must keep.
+    residual risk: No TPM 2.0: no tpm2-totp against an evil maid, no measured boot, and no Option ROM check before the Secure Boot keys are enrolled (the Microsoft certificates are then kept).
+    fix: Enable the firmware TPM (Intel PTT, AMD fTPM) or the TPM module in the firmware setup.
+  iommu: An IOMMU confines every device's DMA to the memory the kernel gives it.
+    residual risk: No IOMMU: a malicious or compromised device (Thunderbolt, ExpressCard, a PCIe card) can read and write all memory by DMA.
+    fix: Enable VT-d (Intel) or AMD-Vi / IOMMU (AMD) in the firmware setup; a virtual machine needs an emulated IOMMU (QEMU: -device intel-iommu).
+
+packages (7):
+  bluez  <- bt.bluez
+  dhcpcd  <- net.wired.dhcp
+  iw  <- net.wifi
+  iwd  <- net.wifi
+  linux-firmware-broadcom  <- net.brcmfmac
+  linux-firmware-network  <- net.wifi
+  wireless-regdb  <- net.wifi
+
+kernel class fragments (4):
+  cpu-arm64  <- arm.kernel
+  cpu-arm64-aes  <- arm.aes
+  gpu-vc4  <- gpu.vc4
+  storage-mmc  <- storage.mmc
+
+kernel features (2):
+  bluetooth  <- bt.bluez
+  usb-common  <- usb.common
+
+firmware kept (3):
+  brcm/brcmfmac*  <- net.brcmfmac
+  cypress/cyfmac*  <- net.brcmfmac
+  regulatory.db*  <- net.wifi
+
+command line (0):
+
+services (3):
+  dhcpcd-eth0  <- net.wired.dhcp
+  iwd  <- net.wifi
+  vh-fstrim  <- storage.trim
+
+udev rules (0):
+
+denied modules (3):
+  rtsx_pci  <- cardreader.off
+  rtsx_pci_sdmmc  <- cardreader.off
+  uvcvideo  <- camera.off
+
+initrd drivers (7):
+  dwc3  <- keyboard usb
+  hid_generic  <- keyboard usb
+  pcie_brcmstb  <- keyboard usb
+  rp1  <- keyboard usb
+  usbcore  <- keyboard usb
+  usbhid  <- keyboard usb
+  xhci_plat_hcd  <- keyboard usb
+
+notes (0):
+
+scalars (4):
+  class = sbc  <- class.sbc.set
+  march = cortex-a76  <- arm.mcpu.cortex-a76
+  renderer = gles2  <- gpu.renderer.gles2
+  watchdog = bcm2835_wdt  <- arm.watchdog.bcm2835
+
+LUKS: aes-xts-plain64, 512-bit key, Argon2id 1048576 KiB, 4 threads
+kernel: NR_CPUS 4, -march cortex-a76
+modules of the devices (16): bcm2835_wdt brcmfmac dwc3 hci_uart hid_generic macb mmc_block pcie_brcmstb rp1 rtc_rpi sdhci_brcmstb usbcore usbhid v3d vc4 xhci_plat_hcd
+
+Devices no driver, table or rule knows (0):

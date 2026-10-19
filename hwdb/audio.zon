@@ -1,0 +1,21 @@
+// hwdb/audio.zon: sound. PipeWire runs on every machine, and the HD Audio drivers come from the
+// probe's devices like any driver; these rules add what a sound device needs beyond its driver.
+.{
+    .rules = .{
+        .{
+            .id = "audio.sof.intel",
+            .why = "The audio DSP of Intel laptops (SOF): its firmware and topology files are named at run time; UCM tells PipeWire how to use the digital microphones.",
+            .when = .{ .device = .{ .driver = .{"sof-audio-pci-intel-*"} } },
+            .kconfig = .{"audio-sof-intel"},
+            .packages = .{ "sof-firmware", "alsa-ucm-conf" },
+            .firmware = .{"intel/sof*"},
+        },
+        .{
+            .id = "audio.sof.amd",
+            .why = "The audio coprocessor of AMD laptops (ACP), where it runs SOF firmware [VERIFY on hardware].",
+            .when = .{ .device = .{ .module = .{ "snd_sof_amd_*", "snd_pci_acp*" } } },
+            .packages = .{ "sof-firmware", "alsa-ucm-conf" },
+            .firmware = .{"amd/sof*"},
+        },
+    },
+}
