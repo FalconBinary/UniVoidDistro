@@ -8,8 +8,10 @@
 # it: no emulation, the tests are quick even on a Mac with 8 GB.
 #  1. unit tests of zig/lib and of the programs (zig build tests);
 #  2. vh-seccomp self-test, the device-mapper constants (dm_check.c), vh-hashpw against libcrypt;
-#  3. vh-deep-clean and vh-pkg on a real xbps (clean_test.sh);
-#  4. with VH_REF_BIN: the *_diff scripts compare the two builds byte for byte (protocols,
+#  3. vh-limine-update's boot assessment of a machine UKI on a tmpfs ESP and a tmpfs in place
+#     of efivarfs (assess_test.py, docs/uni/kernel.md);
+#  4. vh-deep-clean and vh-pkg on a real xbps (clean_test.sh);
+#  5. with VH_REF_BIN: the *_diff scripts compare the two builds byte for byte (protocols,
 #     outputs, exit codes). In the predecessor project the reference was the C version
 #     (Void-Hardened-Refurs @ 39cf905); the scripts are implementation-agnostic.
 set -eu
@@ -66,6 +68,10 @@ docker run --rm --privileged -v "$repo:/src:ro" -v "$out:/t:ro" $ref_mount -e "F
 		sh /src/tests/zig/usb_diff.sh /ref/vh-usb-udev $Z/vh-usb-udev
 		sh /src/tests/zig/open_diff.sh /ref/vh-open $Z/vh-open /ref/vh-seccomp
 	fi
+	echo "== vh-limine-update: the boot assessment of a machine UKI (a tmpfs ESP, a tmpfs for efivarfs)"
+	python3 -I /src/tests/zig/assess_test.py $Z/vh-limine-update > /tmp/assess.log 2>&1 \
+		|| { grep -v "^ok " /tmp/assess.log | tail -40; exit 1; }
+	echo "ok $(grep -c "^ok " /tmp/assess.log) checks; $(tail -1 /tmp/assess.log)"
 	echo "== vh-deep-clean, vh-pkg rm (last: removes packages, creates users)"
 	sh /src/tests/zig/clean_test.sh $Z
 '

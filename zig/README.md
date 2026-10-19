@@ -15,6 +15,7 @@ between releases, so building with another version is not supported.
 | `lib/hash.zig` | SHA-256 and BLAKE2b-512 (`std.crypto`) |
 | `lib/seccomp.zig` | classic BPF assembler, the sandbox filters and an interpreter for the self-test |
 | `lib/input.zig` | the input devices built into the machine: vh-acpid's idle watchdog and vh-deadman's alarm combination listen to these only |
+| `lib/assess.zig` | the boot assessment of a machine UKI for vh-limine-update: Limine's Boot Loader Interface variables in efivarfs, its entry identifiers, the verdict of vh-kconf check, the state and the decisions ([docs/uni/kernel.md](../docs/uni/kernel.md#the-boot-assessment)) |
 
 Code rules (the full list, with the reasons, is in `docs/principles.md`):
 
