@@ -17,7 +17,7 @@ CONFIG_PREEMPT_DYNAMIC=y
 # Thin LTO with clang (LLVM=1 in CI): cross-module inlining; kCFI from hardening works with it.
 CONFIG_LTO_CLANG_THIN=y
 # CONFIG_X86_NATIVE_CPU only when building on the machine itself (clang's -march=native);
-# in CI the workflow passes KCFLAGS=-march=skylake instead (Comet Lake is Skylake-class).
+# in CI the workflow passes the plan's -march as KCFLAGS (resolve writes it to kcflags).
 # CONFIG_X86_NATIVE_CPU is not set
 
 # The CPU: schedutil as the default governor (sched_ext's cpuperf hooks act only with

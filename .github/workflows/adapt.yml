@@ -1,0 +1,43 @@
+# Track A: the plan of any machine. The hardware-constant lint (tests/adapt/lint.sh), vh-plan's
+# unit tests and the golden plans of every machine in kernel/hw (tests/adapt/run.sh), vh-kconf's
+# tests with the probe of every fixture and resolve on the GF63's plan (tests/kernel/run.sh),
+# the GF63 oracle (tests/kernel/oracle.sh), and the installer's lists per plan, the GF63's
+# against upstream's (tests/install/run.sh).
+name: adapt
+on:
+  push:
+    branches: [main]
+    paths: ["adapt/**", "hwdb/**", "kernel/**", "install/**", "rootfs/**", "optional/**", "tests/adapt/**", "tests/kernel/**", "tests/install/**", "tests/docker/**", "vh.conf.example", "zig/lib/**", ".github/workflows/adapt.yml"]
+  pull_request:
+    paths: ["adapt/**", "hwdb/**", "kernel/**", "install/**", "rootfs/**", "optional/**", "tests/adapt/**", "tests/kernel/**", "tests/install/**", "tests/docker/**", "vh.conf.example", "zig/lib/**", ".github/workflows/adapt.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: hardware constants only in hwdb/, class fragments, fixtures, pins (docs/uni/principles.md, rule 1)
+        run: sh tests/adapt/lint.sh
+  plans:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-zig
+      - name: vh-plan, unit tests and the golden plan of every machine (twice each)
+        run: sh tests/adapt/run.sh
+      - name: vh-kconf, unit tests and the probe of every fixture
+        run: sh tests/kernel/run.sh
+      - name: the GF63 oracle (the kernel configuration of upstream)
+        run: sh tests/kernel/oracle.sh
+      - name: the installer's lists per plan (the GF63's are upstream's)
+        run: sh tests/install/run.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: plans
+          path: build/at/plans
+          if-no-files-found: ignore

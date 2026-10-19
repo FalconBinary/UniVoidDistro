@@ -8,7 +8,7 @@ done
 cat <<EOT
 Compare: the ports you physically plug devices into from outside must be "hotplug" or
 "unknown", not "hardwired", otherwise the kernel trusts them (an ACPI mistake).
-The internal keyboard of the MSI GF63 is i8042 (not USB) and is unaffected; an external USB
+An internal PS/2 keyboard (i8042, as in most laptops; /etc/vh/hw.zon says) is unaffected; an external USB
 keyboard and mouse will stop working (only a listed FIDO key and USB sticks through vh-usb).
 The LUKS passphrase is typed on the internal keyboard: an external USB one does not work in the initramfs either.
 EOT

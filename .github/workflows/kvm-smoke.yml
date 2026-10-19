@@ -1,4 +1,5 @@
-# A full installation on the QEMU rig under KVM (tests/vm/vhvm.py install), then check.py base.
+# A full installation on the QEMU rig under KVM (tests/vm/vhvm.py install), then check.py base,
+# then the installed rig's own hw.zon and plan (the real qemu-q35 fixture).
 # Hours long, so it runs on demand and weekly, not on every push. The live ISO is verified
 # against Void's signed sha256sum.txt (minisign key and ISO name pinned in tests/vm/void-live.pins).
 name: kvm-smoke
@@ -51,9 +52,18 @@ jobs:
         env:
           VH_ACCEL: kvm
         run: python3 tests/vm/check.py "${{ github.event.inputs.step || 'base' }}" --repo
+      - name: the rig's real hw.zon and plan (they replace the synthesised qemu-q35 fixture)
+        env:
+          VH_ACCEL: kvm
+        run: |
+          python3 tests/vm/vhvm.py boot --timeout 1800 \
+            --run "doas /usr/local/sbin/vh-kconf probe --stdout" \
+            --run "cat /etc/vh/plan-report.txt" | tee build-vm-probe.log
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: kvm-smoke-serial-log
-          path: tests/vm/work/serial.log
+          path: |
+            tests/vm/work/serial.log
+            build-vm-probe.log
           if-no-files-found: ignore
