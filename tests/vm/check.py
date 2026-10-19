@@ -9,6 +9,9 @@
   check.py strictnet  -- optional/strict-net: people's network, temporary allowances
   check.py deadman    -- optional/deadman: RAM dump after poweroff, without the module and with it
   check.py totp       -- optional/tpm2-totp on swtpm: generation, the code before the passphrase, PCR 14
+  check.py assess     -- the boot assessment of a machine UKI (a copy of the stock UKI), docs/uni/kernel.md
+  check.py machine    -- vh-kconf install of a kernel-custom run's qemu-q35 kernel (build/kernel-custom)
+                         through the boot assessment
   check.py all        -- the installation path in order (vmlib.ALL)
   check.py --list     -- every step the registry knows
 

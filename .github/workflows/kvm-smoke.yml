@@ -1,5 +1,7 @@
 # A full installation on the QEMU rig under KVM (tests/vm/vhvm.py install), then check.py base,
-# then the installed rig's own hw.zon and plan (the real qemu-q35 fixture).
+# then the installed rig's own hw.zon and plan (the real qemu-q35 fixture). With kernel_run, the
+# qemu-q35 kernel of that kernel-custom run is downloaded into build/kernel-custom, for the step
+# machine: vh-kconf install and the boot assessment of a real machine kernel (docs/uni/kernel.md).
 # Hours long, so it runs on demand and weekly, not on every push. The live ISO is verified
 # against Void's signed sha256sum.txt (minisign key and ISO name pinned in tests/vm/void-live.pins).
 name: kvm-smoke
@@ -7,12 +9,20 @@ on:
   workflow_dispatch:
     inputs:
       step:
-        description: "check.py step after the installation (base; assess: the boot assessment of a machine UKI, docs/uni/kernel.md)"
+        description: "check.py step after the installation (base; assess: the boot assessment of a machine UKI; machine: vh-kconf install of kernel_run's kernel, docs/uni/kernel.md)"
         default: base
+      kernel_run:
+        description: "the id of a kernel-custom run that built qemu-q35 (hw=all or hw=kernel/hw/qemu-q35.zon), for the step machine"
+        default: ""
+      kver:
+        description: the kernel version of that run
+        default: "6.18.57"
   schedule:
     - cron: "17 4 * * 1"
 permissions:
   contents: read
+  # the artifact of another run (download-artifact with run-id)
+  actions: read
 env:
   # the VM's RAM in MiB: 4 GiB for now, since the RefursWM build ran out of memory in vhvm.py's
   # default 3 GiB (run 39297735098); back to 3072 once the installer fits (it prints its RAM at
@@ -24,6 +34,14 @@ jobs:
     timeout-minutes: 300
     steps:
       - uses: actions/checkout@v4
+      - name: the qemu-q35 machine kernel of kernel-custom run ${{ github.event.inputs.kernel_run }}
+        if: github.event.inputs.kernel_run != ''
+        uses: actions/download-artifact@v4
+        with:
+          name: kernel-custom-qemu-q35-${{ github.event.inputs.kver || '6.18.57' }}
+          run-id: ${{ github.event.inputs.kernel_run }}
+          github-token: ${{ github.token }}
+          path: build/kernel-custom
       - name: /dev/kvm for the runner user
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules

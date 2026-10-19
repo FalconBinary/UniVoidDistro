@@ -114,7 +114,7 @@ def root_shell(ser):
 
 # from build/ the VM needs only the finished programs and build/thor-repo (tests/zig/build.sh)
 VM_SKIP_BUILD = ["docker-ctx", "zig-dl", "xbps-dl", "devimg", "zig-test", "zt", "zt2", "zx", "zig-bin",
-                 "thor-work", "thor-dest", "*.log"]
+                 "thor-work", "thor-dest", "kx", "kd", "*.log"]
 
 
 def boot(a, extra=None, on_prompt=None):

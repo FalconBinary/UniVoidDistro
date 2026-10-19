@@ -1,6 +1,6 @@
 #!/bin/sh
 # Build for the VM bench (x86_64, glibc Void) into build/, with no compiler on the host except Zig.
-#   sh tests/zig/build.sh   -> build/ (the tools) and build/thor-repo (the thor package);
+#   sh tests/zig/build.sh   -> build/ (the tools, vh-kconf) and build/thor-repo (the thor package);
 #                              then python3 tests/vm/check.py STEP --repo
 #  * the static tools are cross-compiled by Zig right on the host;
 #  * pin-fetch, vh-hashpw (OpenSSL, libxcrypt) and thor (libxbps, libarchive) are
@@ -16,6 +16,10 @@ echo "== static tools (x86_64-linux, cross-compiled)"
 rm -rf "$b/zx"
 (cd "$repo/zig" && zig build -Dtarget=x86_64-linux -Dcpu=baseline --prefix "$b/zx")
 cp "$b"/zx/bin/* "$b/"
+# vh-kconf of the working copy: the machine step installs a kernel-custom run's kernel with it
+rm -rf "$b/kx"
+(cd "$repo/kernel" && zig build -Dtarget=x86_64-linux -Dcpu=baseline --prefix "$b/kx")
+cp "$b/kx/bin/vh-kconf" "$b/"
 
 # pin-fetch, vh-hashpw and thor are cross-compiled in a native container: Zig under amd64
 # emulation in docker on Apple Silicon crashes (SIGSEGV), while cross-building is its strength.
