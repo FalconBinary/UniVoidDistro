@@ -1,0 +1,8 @@
+# Modules of the stock kernel that features/camera stands for (see usb-common.modules).
+uvcvideo
+videobuf2_vmalloc
+videobuf2_memops
+videobuf2_v4l2
+videobuf2_common
+videodev
+mc

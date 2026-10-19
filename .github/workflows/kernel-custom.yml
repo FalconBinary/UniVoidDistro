@@ -1,0 +1,172 @@
+# kernel-custom: this machine's kernel from a committed hw.zon (track K, docs/ROADMAP.md).
+# vh-kconf resolve turns kernel/hw/NAME.zon, the pinned Void config and the profile fragments
+# into an LSMOD list and a .config; the kernel's own localyesconfig and olddefconfig decide;
+# vh-kconf diff reports what survived. The build is clang/lld, -march=skylake, no modules,
+# fixed KBUILD_BUILD_* for reproducibility; the tarball is PGP-verified as in kernel-fat.yml.
+# Results: an artifact, and a release "kernel-custom-NAME-KVER-rRUN" so they can be fetched
+# without GitHub credentials (docs/runbook-gf63.md). Kernels from CI contain no firmware.
+name: kernel-custom
+on:
+  workflow_dispatch:
+    inputs:
+      hw:
+        description: hw.zon committed under kernel/hw/
+        default: kernel/hw/gf63.zon
+      kver:
+        description: kernel version (6.18.y)
+        default: "6.18.57"
+      features:
+        description: "features, comma-separated: usb-common bluetooth camera virt game; auto; none"
+        default: usb-common,bluetooth
+      release:
+        description: publish the result as a release (tag kernel-custom-NAME-KVER-rRUN)
+        type: boolean
+        default: true
+permissions:
+  contents: read
+env:
+  KVER: ${{ github.event.inputs.kver || '6.18.57' }}
+  HW: ${{ github.event.inputs.hw || 'kernel/hw/gf63.zon' }}
+  FEATURES: ${{ github.event.inputs.features || 'usb-common,bluetooth' }}
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    outputs:
+      name: ${{ steps.name.outputs.name }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: the hardware file
+        id: name
+        run: |
+          set -euo pipefail
+          case "$HW" in kernel/hw/*.zon) ;; *) echo "hw must be kernel/hw/NAME.zon, got $HW"; exit 1;; esac
+          test -f "$HW"
+          name=$(basename "$HW" .zon)
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+          echo "NAME=$name" >> "$GITHUB_ENV"
+          head -12 "$HW"
+      - uses: ./.github/actions/setup-zig
+      - name: vh-kconf (static PIE, ReleaseSafe)
+        run: |
+          set -euo pipefail
+          (cd kernel && zig build -Dtarget=x86_64-linux -Dcpu=baseline --prefix "$GITHUB_WORKSPACE/build/kt")
+          build/kt/bin/vh-kconf version
+      - name: toolchain
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q clang lld llvm make flex bison bc libssl-dev libelf-dev dwarves zstd xz-utils gnupg python3
+          clang --version | head -1
+          ld.lld --version | head -1
+          pahole --version
+      - name: fetch and verify linux-${{ env.KVER }}
+        run: |
+          set -euo pipefail
+          mkdir -p dl && cd dl
+          curl -fsSL -o "linux-$KVER.tar.xz" "https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-$KVER.tar.xz"
+          curl -fsSL -o "linux-$KVER.tar.sign" "https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-$KVER.tar.sign"
+          export GNUPGHOME=$(mktemp -d)
+          # the keys by fingerprint only: whatever the keyserver returns must match the pins
+          while read -r fpr _; do
+            case $fpr in ''|'#'*) continue;; esac
+            gpg --batch --keyserver hkps://keys.openpgp.org --recv-keys "$fpr" || gpg --batch --keyserver hkps://keyserver.ubuntu.com --recv-keys "$fpr"
+          done < ../kernel/pins/kernel-org.fingerprints
+          unxz -k "linux-$KVER.tar.xz"
+          gpg --batch --status-fd 1 --verify "linux-$KVER.tar.sign" "linux-$KVER.tar" | tee verify.log
+          sig=$(sed -n 's/^\[GNUPG:\] VALIDSIG \([0-9A-F]*\) .*/\1/p' verify.log)
+          test -n "$sig"
+          grep -q "^$sig" ../kernel/pins/kernel-org.fingerprints || { echo "signed by an unpinned key $sig"; exit 1; }
+          tar -xf "linux-$KVER.tar"
+          rm -f "linux-$KVER.tar"
+      - name: resolve (hw.zon + pins + profiles -> LSMOD, fragment, .config)
+        run: |
+          set -euo pipefail
+          build/kt/bin/vh-kconf resolve --hw "$HW" --repo "$GITHUB_WORKSPACE" --features "$FEATURES" --out dl/resolve
+          sed -n '1,6p' dl/resolve/resolve-report.txt
+          grep -A40 '^Refused' dl/resolve/resolve-report.txt | head -60
+          cp dl/resolve/.config "dl/linux-$KVER/.config"
+      - name: localyesconfig and olddefconfig (the kernel decides)
+        run: |
+          set -euo pipefail
+          cd "dl/linux-$KVER"
+          # the LSMOD list is in lsmod format; new prompts take their default (yes ""), and
+          # yes dies of SIGPIPE when make is done, so the pipeline's status is make's alone
+          set +o pipefail
+          yes "" | make LLVM=1 localyesconfig LSMOD="$GITHUB_WORKSPACE/dl/resolve/lsmod"
+          rc=$?
+          set -o pipefail
+          test "$rc" = 0
+          make LLVM=1 olddefconfig
+          grep -E '^(CONFIG_MODULES|# CONFIG_MODULES|CONFIG_LOCALVERSION|CONFIG_SCHED_CLASS_EXT|CONFIG_DEBUG_INFO_BTF|CONFIG_LTO_CLANG_THIN|CONFIG_CFI|CONFIG_PREEMPT|CONFIG_NR_CPUS|CONFIG_IWLWIFI|CONFIG_R8169|CONFIG_XFS_FS|CONFIG_DM_CRYPT|CONFIG_NF_TABLES)[= ]' .config
+          echo "symbols =y: $(grep -c '=y$' .config), =m: $(grep -c '=m$' .config || true), not set: $(grep -c 'is not set$' .config)"
+      - name: diff (what survived, and why not)
+        run: |
+          set -euo pipefail
+          mkdir -p dl/out
+          build/kt/bin/vh-kconf diff --oracle localyesconfig --config "dl/linux-$KVER/.config" --requested dl/resolve/fragment.config --lsmod dl/resolve/lsmod --kernel "dl/linux-$KVER" | tee dl/out/diff-report.txt
+      - name: the invariants of this kernel
+        run: |
+          set -euo pipefail
+          cd "dl/linux-$KVER"
+          case ",$FEATURES," in
+            *,game,*) grep -q '^CONFIG_MODULES=y' .config && grep -q '^CONFIG_MODULE_SIG_FORCE=y' .config ;;
+            *) grep -q '^# CONFIG_MODULES is not set' .config ;;
+          esac
+          grep -q '^CONFIG_SCHED_CLASS_EXT=y' .config
+          grep -q '^CONFIG_DEBUG_INFO_BTF=y' .config
+          grep -q '^CONFIG_LOCALVERSION="-vh"' .config
+          grep -q '^CONFIG_LOCK_DOWN_KERNEL_FORCE_CONFIDENTIALITY=y' .config
+          grep -q '^# CONFIG_IO_URING is not set' .config
+          echo "ok"
+      - name: build (clang, lld, -march=skylake, reproducible)
+        run: |
+          set -euo pipefail
+          cd "dl/linux-$KVER"
+          export KBUILD_BUILD_USER=vh KBUILD_BUILD_HOST=ci KBUILD_BUILD_VERSION=1
+          export KBUILD_BUILD_TIMESTAMP="$(git -C "$GITHUB_WORKSPACE" log -1 --format=%cd --date=iso-strict)"
+          # KCFLAGS come last on the compiler line: -march=skylake selects the ISA and tuning of
+          # Comet Lake; the kernel's own -mno-sse/-mno-avx stay in force (clang applies explicit
+          # feature flags on top of the CPU's). On the laptop itself CONFIG_X86_NATIVE_CPU would do.
+          make LLVM=1 KCFLAGS="-march=skylake" -j"$(nproc)" bzImage
+          out=../out
+          cp arch/x86/boot/bzImage "$out/bzImage-vh-$KVER"
+          cp .config "$out/config-vh-$KVER"
+          cp System.map "$out/System.map-vh-$KVER"
+          llvm-objcopy --dump-section .BTF="$out/vmlinux-vh-$KVER.btf" vmlinux
+          cp "$GITHUB_WORKSPACE/dl/resolve/resolve-report.txt" "$GITHUB_WORKSPACE/dl/resolve/fragment.config" "$GITHUB_WORKSPACE/dl/resolve/lsmod" "$out/"
+          cp "$GITHUB_WORKSPACE/$HW" "$out/"
+          {
+            echo "kernel-custom $NAME: linux-$KVER, features $FEATURES, commit $GITHUB_SHA, run $GITHUB_RUN_NUMBER"
+            echo "KBUILD_BUILD_TIMESTAMP=$KBUILD_BUILD_TIMESTAMP KCFLAGS=-march=skylake LLVM=1 $(clang --version | head -1)"
+            strings arch/x86/boot/bzImage | grep -m1 -E '^Linux version ' || true
+          } > "$out/BUILD"
+          (cd "$out" && sha256sum * > SHA256SUMS)
+          ls -l "$out"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kernel-custom-${{ steps.name.outputs.name }}-${{ env.KVER }}
+          path: dl/out
+          if-no-files-found: error
+  release:
+    if: github.event.inputs.release == 'true'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: kernel-custom-${{ needs.build.outputs.name }}-${{ env.KVER }}
+          path: out
+      - name: publish as a release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          NAME: ${{ needs.build.outputs.name }}
+        run: |
+          set -euo pipefail
+          tag="kernel-custom-$NAME-$KVER-r$GITHUB_RUN_NUMBER"
+          gh release create "$tag" --target "$GITHUB_SHA" --title "$tag" \
+            --notes "Custom kernel for $NAME from $HW: linux-$KVER, features $FEATURES, built by run $GITHUB_RUN_NUMBER at commit $GITHUB_SHA. See BUILD, diff-report.txt and resolve-report.txt; verify with sha256sum -c SHA256SUMS. No firmware inside: the initrd carries it (docs/runbook-gf63.md)."
+          gh release upload "$tag" out/* --clobber
+          echo "release: https://github.com/$GH_REPO/releases/tag/$tag"

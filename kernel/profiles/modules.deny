@@ -1,0 +1,61 @@
+# kernel/profiles/modules.deny: modules that never enter the LSMOD list, even if a modalias
+# of this machine matches them. One name per line; "-" and "_" are the same.
+#
+# Mirrors the unconditional part of vh_module_blacklist in install/lib.sh (keep the two in
+# step). The conditional part (bluetooth, camera, virt) is handled by the features: the
+# modules of a feature that is not selected are refused (features/*.modules).
+
+# the dGPU is either powered off (VH_GPU=igpu) or driven by the NVIDIA open modules
+nouveau
+# rare network protocols reachable without privileges through socket()
+sctp
+sctp_diag
+rds
+rds_tcp
+rds_rdma
+tipc
+can
+atm
+ax25
+netrom
+rose
+x25
+appletalk
+ieee802154
+nfc
+# DMA-capable ports and exotic hardware
+firewire_core
+firewire_ohci
+firewire_sbp2
+thunderbolt
+usbip_host
+vhci_hcd
+# file systems that are never mounted here
+cramfs
+hfs
+hfsplus
+udf
+cifs
+nfs
+nfsv4
+ksmbd
+9p
+jffs2
+freevxfs
+# unprivileged mounts inside a user namespace (the CVE-2023-0386 class)
+fuse
+overlay
+# miscellaneous
+binfmt_misc
+uhid
+vivid
+pcspkr
+# the ACPI power button driver that bypasses vh-acpid (tiny_power_button sends init a
+# Ctrl+Alt+Del instead of an input event)
+tiny_power_button
+# the Intel ME interface (AMT is off; the fTPM works through tpm_crb)
+mei
+mei_me
+mei_hdcp
+mei_pxp
+mei_wdt

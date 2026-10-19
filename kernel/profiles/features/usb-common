@@ -1,0 +1,17 @@
+# kernel/profiles/features/usb-common: what a USB port must handle after the module lock.
+#
+# A USB stick, an external keyboard or mouse, a headset. The stock system preloads these
+# (install/30-lock.sh "extra") because they are rarely loaded at probe time; with no modules
+# they must be built in. Selected by default in the kernel-custom workflow.
+
+# Mass storage: the classic driver and UAS, FAT and exFAT with the NLS tables (base).
+CONFIG_USB_STORAGE=y
+CONFIG_USB_UAS=y
+CONFIG_VFAT_FS=y
+CONFIG_EXFAT_FS=y
+# HID: keyboards, mice, multitouch panels over USB.
+CONFIG_USB_HID=y
+CONFIG_HID_GENERIC=y
+CONFIG_HID_MULTITOUCH=y
+# USB audio class (headsets, DACs).
+CONFIG_SND_USB_AUDIO=y

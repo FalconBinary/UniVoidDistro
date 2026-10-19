@@ -1,0 +1,48 @@
+# kernel/profiles/features/game: the isolated gaming session on tty3 (vh-game, track G).
+#
+# Selected only when vh-game is installed. It widens the kernel in three ways, each held in
+# check elsewhere: 32-bit emulation for Steam (vh-init's seccomp filter "not the x86_64 ABI
+# -> kill" covers every process tree except the gaming one), loadable modules for the NVIDIA
+# open modules (signed with a one-time key, preloaded, then modules_disabled=1), and
+# controller input drivers.
+
+# ia32 for Steam and the 32-bit Proton runtime. Off at boot unless the game UKI's cmdline
+# says ia32_emulation=1: the same kernel boots hardened without it.
+CONFIG_IA32_EMULATION=y
+CONFIG_IA32_EMULATION_DEFAULT_DISABLED=y
+# Wine/Proton: NT synchronisation primitives, 16-bit segments [VERIFY for Wine 10 without
+# them], System V IPC for the X server inside the gaming root.
+CONFIG_NTSYNC=y
+CONFIG_MODIFY_LDT_SYSCALL=y
+CONFIG_SYSVIPC=y
+# Steam Input: raw HID access and user-space HID devices.
+CONFIG_HIDRAW=y
+CONFIG_UHID=y
+# Controllers.
+CONFIG_INPUT_JOYSTICK=y
+CONFIG_INPUT_JOYDEV=y
+CONFIG_JOYSTICK_XPAD=y
+CONFIG_HID_PLAYSTATION=y
+CONFIG_HID_SONY=y
+CONFIG_HID_NINTENDO=y
+CONFIG_HID_STEAM=y
+CONFIG_HID_MICROSOFT=y
+CONFIG_HID_LOGITECH=y
+CONFIG_HID_LOGITECH_DJ=y
+CONFIG_HID_LOGITECH_HIDPP=y
+
+# The NVIDIA open kernel modules are loadable only (Turing+): modules come back, every one
+# must carry a valid signature, nothing can be unloaded, no compression (they are preloaded
+# from the initrd, then modules_disabled=1).
+CONFIG_MODULES=y
+CONFIG_MODULE_SIG=y
+CONFIG_MODULE_SIG_FORCE=y
+CONFIG_MODULE_SIG_ALL=y
+CONFIG_MODULE_SIG_SHA512=y
+# CONFIG_MODULE_UNLOAD is not set
+# CONFIG_MODULE_COMPRESS is not set
+# CONFIG_MODULE_FORCE_LOAD is not set
+# BTF of the NVIDIA modules is of no use to vh-sched and pahole would choke on them.
+# CONFIG_DEBUG_INFO_BTF_MODULES is not set
+# nouveau never drives the dGPU here: the open NVIDIA modules do.
+# CONFIG_DRM_NOUVEAU is not set

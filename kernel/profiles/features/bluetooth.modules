@@ -1,0 +1,9 @@
+# Modules of the stock kernel that features/bluetooth stands for (see usb-common.modules).
+bluetooth
+btusb
+btintel
+btrtl
+btbcm
+btmtk
+rfcomm
+hidp

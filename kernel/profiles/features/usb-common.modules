@@ -1,0 +1,15 @@
+# Modules of the stock kernel that features/usb-common stands for. vh-kconf resolve adds
+# them to the LSMOD list when the feature is selected (the same names install/30-lock.sh
+# preloads), and refuses them when it is not.
+usb_storage
+uas
+vfat
+fat
+exfat
+nls_cp437
+nls_iso8859_1
+nls_utf8
+usbhid
+hid_generic
+hid_multitouch
+snd_usb_audio
