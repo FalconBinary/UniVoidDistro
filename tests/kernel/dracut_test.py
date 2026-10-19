@@ -149,6 +149,20 @@ def main():
         ok(f"the command line keeps {kept}", kept in cmd, cmd)
     for added in ("iwlwifi.power_save=0", "iwlwifi.uapsd_disable=3", "iwlmvm.power_scheme=1", "iTCO_wdt.nowayout=1"):
         ok(f"the command line carries the modprobe.d option {added}", f" {added}" in f" {cmd}", cmd)
+    # the .linux section has the bzImage's exact size (its VirtualSize): the SHA-256 vh-uki-verify
+    # shows of it for a machine UKI is the release's of bzImage-vh-KVER
+    data = open(uki, "rb").read()
+    pe_off = struct.unpack_from("<I", data, 0x3C)[0]
+    nsec, = struct.unpack_from("<H", data, pe_off + 6)
+    opt, = struct.unpack_from("<H", data, pe_off + 20)
+    linux = None
+    for i in range(nsec):
+        name, vsize, _, rsize, rptr = struct.unpack_from("<8sIIII", data, pe_off + 24 + opt + 40 * i)
+        if name.rstrip(b"\0") == b".linux":
+            linux = data[rptr:rptr + (min(vsize, rsize) if vsize else rsize)]
+    ok("the UKI's .linux is the bzImage byte for byte: its SHA-256 is the release's",
+       linux is not None and hashlib.sha256(linux).digest() == hashlib.sha256(files["bzImage-vh-6.18.57"]).digest(),
+       f"{len(linux) if linux else None} bytes, the bzImage {len(files['bzImage-vh-6.18.57'])}")
     lst = subprocess.run(["lsinitrd", uki], capture_output=True, text=True).stdout
     # cpio -tv lines: mode, links, owner, group, size, month, day, time, then the name (" -> target")
     entries = {}
