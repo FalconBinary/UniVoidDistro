@@ -57,10 +57,10 @@
         },
         .{
             .id = "memory-floor",
-            .why = "Below 1 GiB the system with its desktop does not run.",
-            .when = .{ .ram_min_mib = 900 },
+            .why = "The installer builds its programs in the live system's RAM and needs 2.1 GiB at its peak (the RefursWM build, measured on the VM rig), so 3 GiB in either mode, until a live image brings the programs built (U6).",
+            .when = .{ .ram_min_mib = 2750 },
             .floor = true,
-            .fix = "At least 1 GiB of memory.",
+            .fix = "At least 3 GiB of memory.",
         },
     },
 }

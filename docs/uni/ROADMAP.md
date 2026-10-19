@@ -81,9 +81,12 @@ present the tier is **full**. With one or more missing it is **reduced**: in `st
 `vh-plan` exits with code 3 and a report that names each missing property, its residual risk
 and the firmware setting that fixes it (`hwdb/board.zon`); in `tiered` mode the plan carries
 the list `acknowledge` that the installer shows and makes the user confirm by typing. A
-machine below the floor (no UEFI 64-bit on x86_64, less than 1 GiB) is refused in both modes.
-The memory requirement follows from the protection it serves: Argon2id with 1 GiB per guess of
-the LUKS passphrase needs 2 GiB, because cryptsetup gives the PBKDF at most half of the RAM.
+machine below the floor (no UEFI 64-bit on x86_64, less than 3 GiB of memory) is refused in
+both modes. The memory floor is the installer's: it builds its programs in the live system's RAM
+and peaks at 2.1 GiB (the RefursWM build; measured on the VM rig, kvm-smoke run 39310221609,
+with the RAM the installer prints at every step). U6, a live image with the programs built, is
+to lower it. The protection alone would ask for 2 GiB: Argon2id with 1 GiB per guess of the
+LUKS passphrase, because cryptsetup gives the PBKDF at most half of the RAM.
 `vh-audit` reports the tier and the acknowledged risks of the running system.
 
 ## Components
@@ -183,7 +186,9 @@ BPF object serves every machine with no compile-time constants. Tests on QEMU to
 
 void-mklive images for x86_64 and aarch64 with a current stock kernel, the Zig tools and the
 installer. The official Void image (20250202) does not know new hardware (Wi-Fi 7, new GPUs
-and NICs), and the installer needs the network to fetch packages.
+and NICs), and the installer needs the network to fetch packages. With the programs built into
+the image, the installer no longer compiles in RAM: that lowers the 3 GiB memory floor of the
+gate, which is the installer's, not the system's.
 
 ### Shared tracks from upstream
 
