@@ -133,6 +133,18 @@
             .when = .{ .device = .{ .driver = .{ "tpm_tis", "tpm_tis_spi" } } },
             .kconfig = .{"tpm-tis"},
         },
+        .{
+            .id = "tpm.ftpm.intel",
+            .why = "A TPM through CRB on an Intel machine is Intel PTT, the firmware TPM of the Management Engine [VERIFY: tpm2_getcap properties-fixed names the manufacturer INTC].",
+            .when = .{ .cpu_vendor = .{"GenuineIntel"}, .device = .{ .driver = .{"tpm_crb"} }, .lacks = .{"vm"} },
+            .note = "The TPM is Intel PTT, a firmware TPM inside the Management Engine: trusting tpm2-totp and the measured boot means trusting the ME (docs/03).",
+        },
+        .{
+            .id = "tpm.ftpm.amd",
+            .why = "A TPM through CRB on an AMD machine is the AMD fTPM, the firmware TPM of the Platform Security Processor [VERIFY: tpm2_getcap properties-fixed names the manufacturer AMD].",
+            .when = .{ .cpu_vendor = .{"AuthenticAMD"}, .device = .{ .driver = .{"tpm_crb"} }, .lacks = .{"vm"} },
+            .note = "The TPM is the AMD fTPM, a firmware TPM inside the Platform Security Processor: trusting tpm2-totp and the measured boot means trusting the PSP (docs/03).",
+        },
         // USB, the camera, the card reader
         .{
             .id = "usb.common",

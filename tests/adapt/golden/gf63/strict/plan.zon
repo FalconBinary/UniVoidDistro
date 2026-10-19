@@ -387,6 +387,7 @@
     .notes = .{
         .{ .value = "MSI: Settings, Advanced, Windows OS Configuration, Secure Boot, Secure Boot Mode Custom, Key Management, Delete All Secure Boot Variables.", .rules = .{"board.msi.secure-boot"} },
         .{ .value = "MSI laptop: msi-ec controls the fan and the power modes if it supports this EC firmware (ls /sys/devices/platform/msi-ec).", .rules = .{"board.msi.ec"} },
+        .{ .value = "The TPM is Intel PTT, a firmware TPM inside the Management Engine: trusting tpm2-totp and the measured boot means trusting the ME (docs/03).", .rules = .{"tpm.ftpm.intel"} },
         .{ .value = "Realtek Ethernet: EEE is off (rootfs/etc/udev/rules.d/99-vh-net.rules), the usual cause of link drops.", .rules = .{"quirk.r8169-eee"} },
         .{ .value = "The dGPU sleeps: an HDMI port wired to it shows nothing. VH_GPU=nouveau wakes it for an external monitor (install/00-probe.sh shows which port is wired where).", .rules = .{"quirk.dgpu-hdmi"} },
     },

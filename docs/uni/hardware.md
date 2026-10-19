@@ -127,7 +127,7 @@ USB device built in (`fixed`): a built-in keyboard on USB or SPI becomes the phy
 | watchdog for `optional/deadman` | Intel: iTCO (via LPC/SMBus); AMD: sp5100_tco (via SMBus); ARM servers: sbsa_gwdt; Raspberry Pi: bcm2835_wdt | the plan's `watchdog`, which `optional/deadman` loads with `nowayout`; softdog is the weaker fallback ([the cost table](runtime.md#the-watchdog-of-optionaldeadman)) |
 | Super I/O sensors (Nuvoton, ITE) | not visible to a probe (ISA ports); DMI board vendor and name | the hwmon driver of `hwdb/board.zon` where the board is known [VERIFY] |
 | WMI and EC platform drivers (ASUS, MSI, Lenovo, Dell, HP, Gigabyte) | the WMI GUID and DMI aliases | the vendor's driver (fan and power modes) |
-| TPM | `/sys/class/tpm/tpm0`: firmware TPM through CRB, discrete through TIS/SPI | class `tpm-crb` or `tpm-tis` |
+| TPM | `/sys/class/tpm/tpm0`: firmware TPM through CRB, discrete through TIS/SPI | class `tpm-crb` or `tpm-tis`; a firmware TPM gets a note naming the firmware it trusts (Intel PTT in the ME, the AMD fTPM in the PSP) |
 | IOMMU | the ACPI tables DMAR (Intel) and IVRS (AMD); IORT on ARM | `intel_iommu=on`, `iommu.strict=1`, `iommu.passthrough=0` everywhere |
 | Thunderbolt / USB4 | the thunderbolt alias | the driver stays denied (DMA); USB and DisplayPort over these ports work without it |
 | Option ROMs (a discrete GPU, a network card) | the TPM event log (`EV_EFI_BOOT_SERVICES_DRIVER`) | Secure Boot key enrolment keeps their hashes (`sbctl enroll-keys --tpm-eventlog`, `install/20-firstboot.sh`) so the display and the disks still initialise |

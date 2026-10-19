@@ -4,7 +4,7 @@ module tables: the pinned stock kernel's
 security: strict; tier: full
 tags: acpi backlight battery bluetooth camera dgpu disk disk-discard disk-nvme disk-on-nvme display displays-2 efi efi64 epp iommu iommu-active keyboard keyboard-i8042 laptop lid mains mor power-button secure-boot secure-boot-on smt sound tpm tpm2 wifi wired x86-64-v2 x86-64-v3
 
-Rules that apply (51):
+Rules that apply (52):
   x86.level.v2 [arch.zon]: x86-64-v2: CMPXCHG16B, LAHF/SAHF, POPCNT, SSE3 to SSE4.2 (Nehalem, Bulldozer and later).
   x86.level.v3 [arch.zon]: x86-64-v3: AVX, AVX2, BMI1/2, F16C, FMA, LZCNT, MOVBE, XSAVE (Haswell, Excavator and later).
   x86.march.v2 [arch.zon]: A kernel built elsewhere (CI) for a CPU no model rule names: the instruction set it has for sure.
@@ -47,6 +47,7 @@ Rules that apply (51):
   input.i8042 [platform.zon]: A PS/2 keyboard (most laptops, virtual machines): the i8042 controller and atkbd built into the machine kernel, so the LUKS passphrase can be typed.
   tpm.tools [platform.zon]: A TPM 2.0: tpm2-tools reads the measurement log (the Option ROM check before key enrolment) and serves tpm2-totp.
   tpm.crb [platform.zon]: A firmware TPM through the Command Response Buffer interface (Intel PTT, AMD fTPM).
+  tpm.ftpm.intel [platform.zon]: A TPM through CRB on an Intel machine is Intel PTT, the firmware TPM of the Management Engine [VERIFY: tpm2_getcap properties-fixed names the manufacturer INTC].
   usb.common [platform.zon]: What a USB port must handle after the module lock: storage, keyboards and mice, audio.
   camera.usb [platform.zon]: A USB video device (interface class 0E).
   camera.off [platform.zon]: VH_CAMERA=no: the UVC driver is refused (the firmware setup can disable the camera outright, which is stronger).
@@ -126,9 +127,10 @@ initrd drivers (2):
 
 internal input (vh-acpid) (0):
 
-notes (4):
+notes (5):
   MSI: Settings, Advanced, Windows OS Configuration, Secure Boot, Secure Boot Mode Custom, Key Management, Delete All Secure Boot Variables.  <- board.msi.secure-boot
   MSI laptop: msi-ec controls the fan and the power modes if it supports this EC firmware (ls /sys/devices/platform/msi-ec).  <- board.msi.ec
+  The TPM is Intel PTT, a firmware TPM inside the Management Engine: trusting tpm2-totp and the measured boot means trusting the ME (docs/03).  <- tpm.ftpm.intel
   Realtek Ethernet: EEE is off (rootfs/etc/udev/rules.d/99-vh-net.rules), the usual cause of link drops.  <- quirk.r8169-eee
   The dGPU sleeps: an HDMI port wired to it shows nothing. VH_GPU=nouveau wakes it for an external monitor (install/00-probe.sh shows which port is wired where).  <- quirk.dgpu-hdmi
 

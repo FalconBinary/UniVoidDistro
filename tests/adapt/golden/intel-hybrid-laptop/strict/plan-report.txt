@@ -4,7 +4,7 @@ module tables: the pinned stock kernel's
 security: strict; tier: full
 tags: acpi backlight battery bluetooth camera disk disk-discard disk-nvme disk-on-nvme disk-on-vmd display efi efi64 epp hybrid iommu iommu-active keyboard keyboard-i8042 laptop lid mains mor platform-profile power-button secure-boot secure-boot-on smt sound tpm tpm2 usb-power wifi x86-64-v2 x86-64-v3
 
-Rules that apply (48):
+Rules that apply (49):
   x86.level.v2 [arch.zon]: x86-64-v2: CMPXCHG16B, LAHF/SAHF, POPCNT, SSE3 to SSE4.2 (Nehalem, Bulldozer and later).
   x86.level.v3 [arch.zon]: x86-64-v3: AVX, AVX2, BMI1/2, F16C, FMA, LZCNT, MOVBE, XSAVE (Haswell, Excavator and later).
   x86.march.v2 [arch.zon]: A kernel built elsewhere (CI) for a CPU no model rule names: the instruction set it has for sure.
@@ -43,6 +43,7 @@ Rules that apply (48):
   input.i8042 [platform.zon]: A PS/2 keyboard (most laptops, virtual machines): the i8042 controller and atkbd built into the machine kernel, so the LUKS passphrase can be typed.
   tpm.tools [platform.zon]: A TPM 2.0: tpm2-tools reads the measurement log (the Option ROM check before key enrolment) and serves tpm2-totp.
   tpm.crb [platform.zon]: A firmware TPM through the Command Response Buffer interface (Intel PTT, AMD fTPM).
+  tpm.ftpm.intel [platform.zon]: A TPM through CRB on an Intel machine is Intel PTT, the firmware TPM of the Management Engine [VERIFY: tpm2_getcap properties-fixed names the manufacturer INTC].
   usb.common [platform.zon]: What a USB port must handle after the module lock: storage, keyboards and mice, audio.
   camera.usb [platform.zon]: A USB video device (interface class 0E).
   camera.off [platform.zon]: VH_CAMERA=no: the UVC driver is refused (the firmware setup can disable the camera outright, which is stronger).
@@ -126,8 +127,9 @@ initrd drivers (3):
 
 internal input (vh-acpid) (0):
 
-notes (4):
+notes (5):
   Dell: Secure Boot, Expert Key Management, Enable Custom Mode, then Delete All Keys.  <- board.dell.secure-boot
+  The TPM is Intel PTT, a firmware TPM inside the Management Engine: trusting tpm2-totp and the measured boot means trusting the ME (docs/03).  <- tpm.ftpm.intel
   Thunderbolt/USB4: the thunderbolt driver is refused; USB devices and displays on these ports work, docks with PCIe devices (a network card) do not.  <- quirk.thunderbolt
   The fingerprint reader is not used: there is no libfprint here, and logins use passwords.  <- quirk.fingerprint
   Intel VMD (RAID/RST mode) is on: Linux reaches the NVMe disk through it. Switching the firmware setup to AHCI mode is simpler, but it changes how an installed Windows boots.  <- storage.vmd

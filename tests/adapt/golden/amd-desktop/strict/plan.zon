@@ -426,6 +426,7 @@
         .{ .value = "The board's sensors (Super I/O) are not probed: on most ASUS, MSI and ASRock boards it is a Nuvoton chip (nct6775) [VERIFY with sensors-detect from a live image].", .rules = .{"board.superio"} },
         .{ .value = "The AMD PSP driver (ccp) is kept: it also feeds the kernel's random number generator. Refusing it is a decision for VH_EXTRA_CMDLINE ([VERIFY] the fTPM without it).", .rules = .{"cpu.amd.psp"} },
         .{ .value = "Two CCDs with different L3 sizes: latency-sensitive work (games) runs best on the V-Cache CCD [VERIFY on this machine with bench/].", .rules = .{"cpu.amd.x3d"} },
+        .{ .value = "The TPM is the AMD fTPM, a firmware TPM inside the Platform Security Processor: trusting tpm2-totp and the measured boot means trusting the PSP (docs/03).", .rules = .{"tpm.ftpm.amd"} },
         .{ .value = "Realtek Ethernet: EEE is off (rootfs/etc/udev/rules.d/99-vh-net.rules), the usual cause of link drops.", .rules = .{"quirk.r8169-eee"} },
     },
     .luks = .{

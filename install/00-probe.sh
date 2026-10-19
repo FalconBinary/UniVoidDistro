@@ -1,7 +1,9 @@
 #!/bin/bash
 # Stage 0: hardware probe. Runs in the live environment as root and writes nothing to disk.
 # Gathers everything that must be known before installing (module 0 of the guide) and
-# prints recommendations for vh.conf.
+# prints recommendations for vh.conf. The report states facts any machine has, named by
+# what they are; what a vendor or a model means (fan control, firmware menus, quirks) is in
+# hwdb/ and shows as the notes of the plan (--plan, docs/uni/principles.md, rule 1).
 #
 #   ./install/00-probe.sh                 -- only what the live image already has
 #   ./install/00-probe.sh --install-tools -- first install pciutils, usbutils, tpm2-tools,
@@ -44,7 +46,7 @@ if have dmidecode; then
 	dmidecode -t memory 2>/dev/null | awk -F: '/^\tSize:/ {sz=$2} /^\tLocator:/ {loc=$2} /^\tConfigured Memory Speed:/ {printf "  %-12s %-12s %s\n", loc, sz, $2}'
 	n=$(dmidecode -t memory 2>/dev/null | grep -cE '^\s+Size: [0-9]+ (GB|MB)')
 	echo "modules installed: $n"
-	[ "$n" = 1 ] && rec "One memory module is installed: the integrated graphics run in single-channel mode. A second identical module is the biggest graphics and zram speedup available on this laptop (docs/15)."
+	[ "$n" = 1 ] && rec "One memory module is installed: the memory runs in single-channel mode. A second identical module doubles the bandwidth that integrated graphics and zram use (docs/15)."
 else
 	echo "no dmidecode (run with --install-tools)"
 fi
@@ -54,11 +56,12 @@ grep -m1 'model name' /proc/cpuinfo
 echo "cores/threads:   $(grep -c ^processor /proc/cpuinfo)"
 echo "microcode:       $(grep -m1 microcode /proc/cpuinfo | awk '{print $3}')"
 flags=$(grep -m1 '^flags' /proc/cpuinfo)
-for fl in vmx smx tme ibt user_shstk sgx rdrand rdseed aes avx2 avx512f; do
+# the flags of both x86 vendors where they differ: virtualization vmx/svm, memory encryption tme/sme
+for fl in vmx svm smx tme sme sgx ibt user_shstk rdrand rdseed aes avx2 avx512f; do
 	if [[ " $flags " == *" $fl "* ]]; then echo "  flag $fl: yes"; else echo "  flag $fl: no"; fi
 done
-[[ " $flags " == *" tme "* ]] || rec "No TME: plaintext in DRAM is not encrypted in hardware; cold-boot protection is software only (docs/05)."
-[[ " $flags " == *" vmx "* ]] && rec "VT-x is enabled in the BIOS. If KVM is not needed, disable it (docs/00), VH_VIRT=no."
+[[ " $flags " == *" tme "* || " $flags " == *" sme "* ]] || rec "No memory encryption in the CPU (the flags tme, sme): plaintext in DRAM is not encrypted in hardware; cold-boot protection is software only (docs/05)."
+[[ " $flags " == *" vmx "* || " $flags " == *" svm "* ]] && rec "Hardware virtualization (vmx or svm) is enabled in the firmware. If KVM is not needed, disable it there (docs/00), VH_VIRT=no."
 echo "vulnerabilities and mitigations:"
 for f in /sys/devices/system/cpu/vulnerabilities/*; do
 	printf '  %-28s %s\n' "$(basename "$f")" "$(cat "$f")"
@@ -90,9 +93,8 @@ if [ -e /sys/class/tpm/tpm0 ]; then
 	echo "driver:      $(basename "$(readlink -f /sys/class/tpm/tpm0/device/driver 2>/dev/null)")"
 	ls -l /dev/tpm0 /dev/tpmrm0 2>/dev/null
 	if have tpm2_getcap; then
+		# the manufacturer: a firmware TPM (inside the CPU's management engine) is named in the plan's notes
 		tpm2_getcap properties-fixed 2>/dev/null | grep -A2 -E 'TPM2_PT_MANUFACTURER|TPM2_PT_FIRMWARE_VERSION_1' | sed 's/^/  /'
-		tpm2_getcap properties-fixed 2>/dev/null | grep -A1 TPM2_PT_MANUFACTURER | grep -q '"INTC"' \
-			&& rec "The TPM is an Intel PTT fTPM (inside the ME): trusting tpm2-totp means trusting the ME (docs/03)."
 		echo "  lockoutAuthSet: $(tpm2_getcap properties-variable 2>/dev/null | grep -i lockoutAuthSet | awk '{print $2}')"
 	fi
 	EVLOG=/sys/kernel/security/tpm0/binary_bios_measurements
@@ -108,8 +110,8 @@ if [ -e /sys/class/tpm/tpm0 ]; then
 		echo "measurement log: no tpm2_eventlog (run with --install-tools)"
 	fi
 else
-	echo "No TPM found. Enable Intel PTT / fTPM in the BIOS."
-	rec "No TPM found: enable PTT in the BIOS (needed for tpm2-totp)."
+	echo "No TPM found. Enable the firmware TPM (fTPM) or the TPM module in the firmware setup."
+	rec "No TPM found: enable the firmware TPM or the TPM module in the firmware setup (needed for tpm2-totp and VH_SECURITY=strict)."
 fi
 
 sec "PCI devices"
@@ -123,31 +125,47 @@ if have lspci; then
 		echo "ATS: no device uses it"
 		rec "ATS is not used: pci=noats can be added to the cmdline (docs/03, optional)."
 	fi
-	lspci -nn | grep -qi '10de:' && echo "NVIDIA dGPU: $(lspci -nn | grep -i '10de:' | head -1)"
 else
 	echo "no lspci (run with --install-tools)"
 fi
+# the display controllers: the one that brought the console up (boot_vga), and a dGPU
+for d in /sys/bus/pci/devices/*; do
+	case $(cat "$d/class") in 0x03*) ;; *) continue ;; esac
+	bv=$(cat "$d/boot_vga" 2>/dev/null)
+	drv=$(basename "$(readlink -f "$d/driver" 2>/dev/null)" 2>/dev/null)
+	printf 'display controller %s: %s, driver %s\n' "${d##*/}" "$([ "$bv" = 1 ] && echo "brought the console up" || echo "did not bring the console up (a dGPU if another one did)")" "${drv:-none}"
+done
 
 sec "Display outputs (DRM)"
 for c in /sys/class/drm/card*-*; do
 	[ -e "$c/status" ] || continue
 	card=${c##*/}; card=${card%%-*}
-	drv=$(basename "$(readlink -f /sys/class/drm/$card/device/driver 2>/dev/null)")
+	dev=$(readlink -f "/sys/class/drm/$card/device")
+	drv=$(basename "$(readlink -f "$dev/driver" 2>/dev/null)")
 	printf '  %-24s %-10s driver=%s\n' "${c##*/}" "$(cat "$c/status")" "$drv"
-	case ${c##*/}:$drv in
-		*HDMI*:nouveau|*DP*:nouveau|*HDMI*:nvidia*|*DP*:nvidia*)
-			rec "Port ${c##*/} is wired to the NVIDIA GPU: it will not work with VH_GPU=igpu. If you need an external monitor, set VH_GPU=nouveau (docs/04)." ;;
+	# a port of the GPU that did not bring the console up: dark while that GPU sleeps
+	case $(cat "$dev/class" 2>/dev/null):$(cat "$dev/boot_vga" 2>/dev/null):${c##*/} in
+		0x03*:1:*|*:*eDP*|*:*LVDS*|*:*DSI*) ;;
+		0x03*) rec "Port ${c##*/} is wired to ${dev##*/}, the GPU that did not bring the console up: where the plan lets that dGPU sleep (VH_GPU auto or igpu on a laptop) the port stays dark; the plan's notes say what wakes it (docs/04)." ;;
 	esac
 done
-lsmod | grep -q '^nouveau' || echo "  (nouveau is not loaded: dGPU ports may be invisible; modprobe nouveau and run the probe again)"
+for d in /sys/bus/pci/devices/*; do
+	case $(cat "$d/class") in 0x03*) ;; *) continue ;; esac
+	[ -e "$d/driver" ] || echo "  (${d##*/} has no driver: its ports are not listed; load its driver and run the probe again to see them)"
+done
 
 sec "USB"
 if have lsusb; then
 	lsusb | sed 's/^/  /'
 	echo "tree:"
 	lsusb -t | sed 's/^/  /'
-	lsusb | grep -qi '8087:0026' && echo "  AX201 Bluetooth: 8087:0026 (internal USB device)"
 fi
+# Bluetooth controllers: USB interfaces of class e0, and whether the kernel calls the device built in
+for i in /sys/bus/usb/devices/*:*; do
+	[ "$(cat "$i/bInterfaceClass" 2>/dev/null)" = e0 ] || continue
+	u=${i%:*}
+	echo "  Bluetooth controller ${u##*/}: $(cat "$u/idVendor"):$(cat "$u/idProduct") ($(cat "$u/removable" 2>/dev/null || echo unknown))"
+done 2>/dev/null | sort -u
 echo "port connection type (connect_type):"
 for p in /sys/bus/usb/devices/*/port/connect_type /sys/bus/usb/devices/*/*/connect_type; do
 	[ -r "$p" ] && printf '  %-55s %s\n' "$p" "$(cat "$p")"
@@ -159,8 +177,12 @@ awk 'BEGIN{RS=""} /Name=/ {print}' /proc/bus/input/devices | grep -E '^(N|P|S|H)
 if grep -A3 -i 'keyboard' /proc/bus/input/devices | grep -q 'isa0060'; then
 	echo "internal keyboard: i8042 (PS/2)"
 elif grep -B1 -A3 -i 'keyboard' /proc/bus/input/devices | grep -q 'usb-'; then
-	echo "internal keyboard: possibly internal USB"
-	rec "The keyboard may be on internal USB: with USB authorisation (optional/usb-auth) name its port explicitly (docs/05)."
+	echo "internal keyboard: possibly internal USB (the kernel's word for each USB device: fixed = built in)"
+	for u in /sys/bus/usb/devices/[0-9]*-*; do
+		case ${u##*/} in *:*) continue ;; esac
+		[ -r "$u/removable" ] && printf '  %-10s %s %s\n' "${u##*/}" "$(cat "$u/removable")" "$(cat "$u/product" 2>/dev/null)"
+	done
+	rec "The keyboard may be on internal USB: the plan names its place for vh-acpid when the kernel calls it fixed; with USB authorisation (optional/usb-auth) name its port explicitly (docs/05)."
 fi
 
 sec "Network"
@@ -171,31 +193,24 @@ for n in /sys/class/net/*; do
 done
 have iw && { echo "regulatory domain:"; iw reg get 2>/dev/null | sed 's/^/  /' | head -20; }
 have rfkill && rfkill list 2>/dev/null | sed 's/^/  /'
-dmesg 2>/dev/null | grep -iE 'iwlwifi.*loaded firmware|iwlwifi.*firmware: direct-loading|rtl_nic|r8169.*firmware' | head -4 | sed 's/^/  firmware: /'
-grep -q 'iwlwifi' /proc/modules && have modinfo && {
-	echo "iwlwifi/iwlmvm parameters:"
-	modinfo -p iwlwifi 2>/dev/null | grep -E 'power_save|uapsd|bt_coex' | sed 's/^/  /'
-	modinfo -p iwlmvm 2>/dev/null | grep -E 'power_scheme' | sed 's/^/  /'
-}
+# the firmware messages and the power-saving parameters of the network drivers bound here
+for n in /sys/class/net/*; do
+	drv=$(basename "$(readlink -f "$n/device/driver" 2>/dev/null)" 2>/dev/null)
+	[ -n "$drv" ] && [ "$drv" != . ] || continue
+	dmesg 2>/dev/null | grep -i "^.*$drv.*firmware" | tail -2 | sed "s/^/  firmware ($drv): /"
+	have modinfo && modinfo -p "$drv" 2>/dev/null | grep -iE 'power|uapsd' | sed "s/^/  $drv parameter: /"
+done
 
-sec "MSI: msi-ec driver (fan, power modes)"
-if [ "$(rd /sys/class/dmi/id/sys_vendor)" = "Micro-Star International Co., Ltd." ]; then
-	modprobe msi-ec 2>/dev/null
-	if [ -d /sys/devices/platform/msi-ec ]; then
-		echo "msi-ec supports this EC firmware: $(ls /sys/devices/platform/msi-ec | paste -sd' ' -)"
-	else
-		dmesg 2>/dev/null | grep -i 'msi_ec\|msi-ec' | tail -3 | sed 's/^/  /'
-		echo "msi-ec does not support this EC firmware: fan modes are available only in Windows (docs/15)"
-	fi
-else
-	echo "not MSI: skipped"
-fi
-
-sec "Hardware watchdog (iTCO)"
-dmesg 2>/dev/null | grep -i tco | sed 's/^/  /'
-ls /sys/class/watchdog/ 2>/dev/null | sed 's/^/  /'
-lsmod | grep -E 'iTCO|lpc_ich|i2c_i801' | sed 's/^/  /'
-dmesg 2>/dev/null | grep -qi 'unable to reset NO_REBOOT' && rec "The firmware locked NO_REBOOT on the iTCO: the hardware watchdog is unavailable (docs/05)."
+sec "Hardware watchdog"
+# the plan names the board's watchdog (VH_PLAN_WATCHDOG, optional/deadman); a firmware that
+# disabled it leaves its driver without a device, so nothing is listed here
+n=0
+for w in /sys/class/watchdog/watchdog*; do
+	[ -e "$w" ] || continue
+	n=$((n + 1))
+	echo "  ${w##*/}: $(cat "$w/identity" 2>/dev/null), driver $(basename "$(readlink -f "$w/device/driver" 2>/dev/null)" 2>/dev/null)"
+done
+[ "$n" = 0 ] && rec "No watchdog device: either the board has no hardware watchdog the kernel knows, or the firmware disabled it; optional/deadman then uses softdog, the weaker one (docs/uni/runtime.md)."
 
 sec "Storage"
 lsblk -d -o NAME,SIZE,MODEL,TRAN,ROTA,PHY-SEC,LOG-SEC 2>/dev/null | sed 's/^/  /'
@@ -224,8 +239,13 @@ for r in "${REC[@]}"; do printf ' * %s\n' "$r"; done
 echo
 echo "Report saved: $OUT"
 if [ "$WANT_PLAN" = 1 ]; then
-	sec "The plan of this machine (hwdb/)"
+	sec "The plan of this machine (hwdb/): its notes and the security gate"
 	bash "$VH_ROOT/install/plan.sh"
 	echo "plan.env, plan-report.txt and the probe's snapshot: /tmp/vh"
+elif [ -r /tmp/vh/plan-report.txt ]; then
+	sec "The notes of the plan made earlier (/tmp/vh/plan-report.txt)"
+	sed -n '/^notes/,/^$/p' /tmp/vh/plan-report.txt
+else
+	echo "What hwdb/ knows about this machine's vendor and model (fan and power control, the firmware's Secure Boot menus, quirks) is in the plan's notes: run with --plan."
 fi
 echo "Copy it to a USB stick or over the network before rebooting: /tmp lives in RAM."

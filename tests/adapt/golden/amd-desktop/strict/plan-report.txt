@@ -4,7 +4,7 @@ module tables: the pinned stock kernel's
 security: strict; tier: full
 tags: acpi bluetooth disk disk-ata disk-discard disk-nvme disk-on-ahci disk-on-nvme disk-on-sd_mod disk-rotational display displays-2 efi efi64 epp iommu iommu-active keyboard keyboard-usb mor multi-llc power-button secure-boot secure-boot-on smt sound tpm tpm2 wifi wired x86-64-v2 x86-64-v3 x86-64-v4
 
-Rules that apply (46):
+Rules that apply (47):
   x86.level.v2 [arch.zon]: x86-64-v2: CMPXCHG16B, LAHF/SAHF, POPCNT, SSE3 to SSE4.2 (Nehalem, Bulldozer and later).
   x86.level.v3 [arch.zon]: x86-64-v3: AVX, AVX2, BMI1/2, F16C, FMA, LZCNT, MOVBE, XSAVE (Haswell, Excavator and later).
   x86.level.v4 [arch.zon]: x86-64-v4: AVX-512 F, BW, CD, DQ, VL (Skylake-SP, Ice Lake, Zen 4 and later).
@@ -43,6 +43,7 @@ Rules that apply (46):
   acpid.button [platform.zon]: vh-acpid handles the power button (a regular poweroff by default).
   tpm.tools [platform.zon]: A TPM 2.0: tpm2-tools reads the measurement log (the Option ROM check before key enrolment) and serves tpm2-totp.
   tpm.crb [platform.zon]: A firmware TPM through the Command Response Buffer interface (Intel PTT, AMD fTPM).
+  tpm.ftpm.amd [platform.zon]: A TPM through CRB on an AMD machine is the AMD fTPM, the firmware TPM of the Platform Security Processor [VERIFY: tpm2_getcap properties-fixed names the manufacturer AMD].
   usb.common [platform.zon]: What a USB port must handle after the module lock: storage, keyboards and mice, audio.
   camera.off [platform.zon]: VH_CAMERA=no: the UVC driver is refused (the firmware setup can disable the camera outright, which is stronger).
   cardreader.off [platform.zon]: VH_CARDREADER=no: the Realtek card reader's drivers are refused.
@@ -132,11 +133,12 @@ initrd drivers (4):
 
 internal input (vh-acpid) (0):
 
-notes (5):
+notes (6):
   ASUS: Advanced Mode, Boot, Secure Boot, Key Management, Clear Secure Boot Keys puts the firmware in Setup Mode for vh-firstboot.  <- board.asus.secure-boot
   The board's sensors (Super I/O) are not probed: on most ASUS, MSI and ASRock boards it is a Nuvoton chip (nct6775) [VERIFY with sensors-detect from a live image].  <- board.superio
   The AMD PSP driver (ccp) is kept: it also feeds the kernel's random number generator. Refusing it is a decision for VH_EXTRA_CMDLINE ([VERIFY] the fTPM without it).  <- cpu.amd.psp
   Two CCDs with different L3 sizes: latency-sensitive work (games) runs best on the V-Cache CCD [VERIFY on this machine with bench/].  <- cpu.amd.x3d
+  The TPM is the AMD fTPM, a firmware TPM inside the Platform Security Processor: trusting tpm2-totp and the measured boot means trusting the PSP (docs/03).  <- tpm.ftpm.amd
   Realtek Ethernet: EEE is off (rootfs/etc/udev/rules.d/99-vh-net.rules), the usual cause of link drops.  <- quirk.r8169-eee
 
 scalars (4):
