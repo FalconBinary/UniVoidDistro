@@ -208,8 +208,9 @@ hardware enters: N shows the plan and the tier and runs the gate; G is GPU-vendo
 ### State (2026-10-19)
 
 M0, U1 and U2 are done. U3 is done but for what waits: the local build in the kbuild root
-(upstream v0.3; designed in [kernel.md](kernel.md#the-local-build-later)) and `vh-kconf install`,
-the UKI from a CI kernel (the next piece of track K, kernel/README.md "install").
+(upstream v0.3; designed in [kernel.md](kernel.md#the-local-build-later)). `vh-kconf install`,
+the signed UKI from a CI kernel, exists ([kernel.md](kernel.md#the-machine-uki-vh-kconf-install)),
+with its follow-ups in vh-uki-verify and vh-audit; no machine UKI has booted yet.
 
 U3 verified, in containers on the Mac: `tests/kernel/matrix.sh` plans every x86_64 machine of
 `kernel/hw` (gf63, amd-desktop, intel-hybrid-laptop, qemu-q35) in tiered mode and resolves it,
@@ -227,6 +228,13 @@ default with limine.conf unchanged, a lost driver, a hang, another entry chosen,
 does not erase, an unknown identifier, `--demote`, the rotation, a rebuilt trial, no stock UKI);
 stock-only ESPs exactly as upstream's `vh-limine-update` (`limine_diff.sh` against a build of
 `upstream/main`: no difference in 24 cases); `vh-audit`'s new lines by hand on a mock ESP.
+`vh-kconf install`: unit tests of every step and an install end to end under `--root`; the
+install with Void's dracut 112 in a container (`tests/kernel/dracut_test.sh`, aarch64:
+`--no-kernel` with `--kernel-image` and `--uefi`, the firmware in the initrd, `.linux` the
+bzImage byte for byte); the kernel-side assumptions read in the 6.18 source (the firmware loader
+waits for the initramfs, an unknown dotted parameter is dropped and one without a dot reaches
+PID 1, `modules.builtin*` are written with every vmlinux); vh-audit's plan area without
+`/proc/modules` in `audit_test.sh`, its boot area by hand.
 
 U3 not verified: no GitHub run (gh is not logged in here): the adapt workflow with the matrix,
 `kernel-custom` with `hw=all` (no kernel has been built yet for amd-desktop,
@@ -234,8 +242,11 @@ intel-hybrid-laptop or qemu-q35, so whether their class symbols survive olddefco
 and whether the runner's clang knows every `-march`; the workflows were parsed and their shell
 checked, not linted with actionlint (not installed). The tests/vm step `assess` is written but
 not run (the rig needs an installation: hours under TCG on the Mac; kvm-smoke runs it with
-`step=assess`). No machine kernel has booted anywhere: a kvm-smoke run that boots the q35
-machine kernel of the matrix needs `vh-kconf install`, so it was not written. Nothing on real
+`step=assess`). No machine kernel has booted anywhere: the step `machine` (kvm-smoke with
+`step=machine` and `kernel_run`, the id of a kernel-custom run that built qemu-q35) installs one
+with `vh-kconf install` and boots it through the assessment; it is written, not run, and so is
+the first kernel-custom run that writes BUILD's hw.zon line and `modules.builtin*`. vh-uki-verify's
+machine references have unit tests only (the first install asks on /dev/tty). Nothing on real
 hardware. [VERIFY]: Limine erasing the one-shot entry on each firmware (the `assess` step checks
 OVMF), `sbctl sign` leaving a signed file unchanged, clang 19 for `znver5`, the speed of each
 `-march` by class.

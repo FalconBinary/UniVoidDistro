@@ -97,8 +97,7 @@ would be wrong: `native` would be the runner's CPU, not the machine's.
 
 `vh-limine-update` knows two series of UKIs on the ESP: the stock one, `linux-A.B.C_D.efi`
 (Void's signed kernel package through dracut-uefi), and the machine one, `linux-A.B.C-vh_N.efi`
-(`vh-kconf install`, [kernel/README.md](../../kernel/README.md) "install"; `uname -r` is
-`A.B.C-vh`). A new machine UKI becomes Limine's default only after it has booted successfully
+([`vh-kconf install`](#the-machine-uki-vh-kconf-install); `uname -r` is `A.B.C-vh`). A new machine UKI becomes Limine's default only after it has booted successfully
 `MACHINE_BOOTS` times (3 by default, `/etc/vh/boot.conf`). Until then the default stays what it
 was: the newest stock UKI, or a machine UKI that has passed. A trial that hangs or fails never
 becomes the only way to boot: the boot after it reaches that default with no choice in the menu.
@@ -243,14 +242,48 @@ a panic reboots by itself; a failure in the initramfs powers the machine off.
 - systemd-boot's boot counting: another boot loader; the project chose Limine
   ([upstream docs/ru/03-boot.md](../ru/03-boot.md)).
 
+## The machine UKI: vh-kconf install
+
+`doas vh-kconf install DIR` ([kernel/README.md](../../kernel/README.md#install)) turns the kernel
+of a `kernel-custom` run into `linux-A.B.C-vh_N.efi` on trial: its files checked against the
+run's SHA256SUMS and the machine's `/etc/vh/hw.zon`, the final `.config` against what a UKI
+needs, dracut `--no-kernel` with the plan's firmware in the initrd and the stock UKI's command
+line without the parameters of modules the kernel does not have, then `vh-limine-update --new`
+and the boot assessment above. The procedure on the laptop is
+[docs/runbook-gf63.md](../runbook-gf63.md), 1.6.
+
+| Protects | Residual risk | Speed cost | Convenience cost |
+|---|---|---|---|
+| a kernel built for another machine, or from another probe of this one, is not installed, nor a damaged download; no UKI is built whose initrd its kernel could not unpack, whose firmware it could not load (the compression of either) or whose command line names modules it lacks; the stock UKI, its command line and its dracut configuration stay the reference of the machine one | SHA256SUMS is not a signature: a release replaced on GitHub, or the download replaced on the machine, passes as long as the two agree (with offline keys the kernel's SHA-256 is confirmed against the release page on another device); firmware a driver picks at run time that no hwdb rule names is not in the initrd (reported when the pins name it); a later change of modprobe.d or of the stock command line reaches the machine UKI only with the next install | none at boot; an install takes one dracut run | a probe that changed since the build needs a new build; with offline keys, three confirmations at the first install |
+
+### Offline keys and vh-audit
+
+The two follow-ups the machine series needed:
+
+- **vh-uki-verify** (`optional/sb-offline-keys`) keeps references of the machine series beside
+  the stock ones on the key media, `cmdline-machine` and `initrd-machine.sha256`. The first
+  machine UKI shows its command line against the stock reference (the parameters removed and
+  added) and records it once confirmed; the next ones must match it byte for byte. Its kernel
+  is no package's file, so the SHA-256 of `.linux` is shown, to be compared with
+  `bzImage-vh-KVER` in the release's SHA256SUMS on another device (dracut keeps the bzImage's
+  exact size, so the two are equal: `tests/kernel/dracut_test.sh`). `/usr/local/sbin/vh-kconf`
+  is one of the build inputs now. `vh-uki-verify --init` with a machine UKI records the machine
+  references; `optional/sb-offline-keys/enable` records the newest stock UKI's and, when there
+  is one, the newest machine UKI's.
+- **vh-audit** on a kernel without loadable modules (no `/proc/modules`): the boot area says that
+  `module.sig_enforce` has nothing to check and that no module lock is needed (there is no
+  `kernel.modules_disabled`), and looks for fuse and overlay in `/proc/filesystems`; the plan
+  area says the refused modules cannot be loaded instead of asking for `module_blacklist=`.
+  `99-zz-vh-modlock.sh` skips the preload and the lock there. A machine kernel with modules (the
+  game feature) keeps every check of the stock kernel.
+
 ### Not yet
 
-`vh-kconf install` (the UKI from a CI bzImage: dracut `--no-kernel`, the firmware and the
-microcode in the initrd, the cmdline without module parameters) is still the next piece of
-track K: until it exists a machine UKI reaches the ESP only by hand. With it come two
-follow-ups: `vh-uki-verify` (offline keys) compares `.cmdline` with the stock UKI's reference,
-so the machine series needs a reference of its own; and `vh-audit`'s boot area expects
-`module.sig_enforce=1` and the module lock, which a kernel without modules has no use for.
+- A real run: no `kernel-custom` run of this fork has built a kernel with the `BUILD` line and
+  the `modules.builtin*` files install reads (scripts/Makefile.vmlinux of 6.18 writes both with
+  every vmlinux, `CONFIG_MODULES=n` included); no machine UKI has booted, on the GF63 (runbook
+  1.6) or on the VM rig (the step `machine`, kvm-smoke with `kernel_run`). [VERIFY]
+- The local build ([below](#the-local-build-later)) will install its kernel the same way.
 
 ## The local build, later
 
@@ -275,7 +308,7 @@ directory; `vh-sched` built against the new kernel's BTF in the same step):
    the cores and the memory, ThinLTO only with enough memory [VERIFY the memory per job on the
    smallest machine of the corpus], and never at boot.
 4. **The result goes the way of a CI kernel**: `vh-kconf install` (the UKI, signed;
-   [kernel/README.md](../../kernel/README.md), "install"), then `vh-limine-update --new`, and
+   [kernel/README.md](../../kernel/README.md#install)), then `vh-limine-update --new`, and
    it becomes the default only after its [boot assessment](#the-boot-assessment), as a kernel
    from CI does.
 5. **When**: on request, and after an update of the stock kernel, whose version the machine

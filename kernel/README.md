@@ -9,8 +9,9 @@ does with it is [docs/runbook-gf63.md](../docs/runbook-gf63.md).
 ```
 kernel/
   build.zig            vh-kconf (static PIE, ReleaseSafe; shares ../zig/lib/vh.zig in place)
-  src/                 main (the commands), probe, resolve, diff, hw (hw.zon), alias
-                       (modules.alias, fnmatch), kconfig (.config, the Kconfig tree, Kbuild)
+  src/                 main (the commands), probe, resolve, diff, check, install (the machine
+                       UKI), hw (hw.zon), alias (modules.alias, fnmatch), kconfig (.config, the
+                       Kconfig tree, Kbuild), uki (a bzImage's header, PE sections, cpio names)
   profiles/            Kconfig fragments, every option with its reason: base, mandatory,
                        hardening, perf (what every machine gets), class/ (what a hardware
                        class needs: cpu-intel, gpu-amdgpu, storage-nvme, ...; the machine's plan
@@ -21,7 +22,8 @@ kernel/
                        PGP fingerprints
   hw/                  hw.zon files of the known machines, which CI builds from (gf63,
                        amd-desktop, intel-hybrid-laptop, qemu-q35, aarch64-virt, rpi5)
-tests/kernel/          the GF63 sysfs/procfs fixture (mkfixture.py writes it), run.sh
+tests/kernel/          the fixtures (mkfixture.py writes them), run.sh, matrix.sh, oracle.sh,
+                       dracut_test.sh (install against Void's dracut)
 .github/workflows/kernel-custom.yml   the build
 ```
 
@@ -32,6 +34,7 @@ vh-kconf probe [--from DIR] [--save DIR] [-o FILE|--stdout]
 vh-kconf resolve --hw FILE --plan FILE --out DIR --repo DIR [--features LIST|auto|none] [--alias F ...]
 vh-kconf diff --config .config --requested fragment.config [--lsmod FILE] [--kernel DIR]
 vh-kconf check [--hw FILE] [--out DIR] [--repo DIR] [--vh-plan PATH|none] [--kmsg FILE] [--from DIR] [--root DIR]
+vh-kconf install DIR [--dry-run] [--hw FILE] [--plan FILE] [--repo DIR] [--root DIR]
 ```
 
 - **probe** reads sysfs and procfs (nothing else) and writes `/etc/vh/hw.zon`: the modalias
@@ -67,13 +70,16 @@ vh-kconf check [--hw FILE] [--out DIR] [--repo DIR] [--vh-plan PATH|none] [--kms
   `vh-audit plan` and the boot assessment ([docs/uni/runtime.md](../docs/uni/runtime.md#vh-kconf-check)).
   On a machine kernel the modules its build left out (`resolve`'s deny list of the plan) count
   as refused, as `module_blacklist=` does on the stock kernel.
+- **install** (U3) turns the kernel of a `kernel-custom` run into a signed machine UKI on trial:
+  [below](#install).
 
 The workflow does the rest in this order: PGP-verify the tarball, `vh-plan plan`, resolve,
 copy `.config`, `yes "" | make LLVM=1 localyesconfig LSMOD=lsmod`, `make LLVM=1 olddefconfig`,
 diff, check the invariants, `make LLVM=1 KCFLAGS=<the plan's -march> bzImage` with fixed
-`KBUILD_BUILD_*`, upload. The GF63 oracle (`sh tests/kernel/oracle.sh`) holds the result to
-upstream's for that laptop: the classes reassemble exactly the symbols the universal profiles
-had for it.
+`KBUILD_BUILD_*`, upload (with `BUILD`, which names the commit and the hw.zon, and the
+kernel's `modules.builtin` and `modules.builtin.modinfo`, which `install` reads). The GF63
+oracle (`sh tests/kernel/oracle.sh`) holds the result to upstream's for that laptop: the
+classes reassemble exactly the symbols the universal profiles had for it.
 
 Tests: `sh tests/kernel/run.sh` builds the unit tests for Linux and runs them in a container
 (Zig cannot run Linux binaries on the Mac); `zig build test` does the same on a Linux host.
@@ -81,45 +87,104 @@ The tests read `tests/kernel/fixtures/gf63` and `kernel/pins`. The fixture is sy
 the hardware list of README.md and the pinned alias tables; `vh-kconf probe --save` on the
 laptop produces the real one [VERIFY].
 
-## install: the design (the next piece)
+## install
 
-`vh-kconf install bzImage SHA256SUMS` on the laptop, after the runbook's download step.
+`doas vh-kconf install DIR` on the machine, after the runbook's download step
+([docs/runbook-gf63.md](../docs/runbook-gf63.md), 1.6). DIR holds the files of one machine of a
+`kernel-custom` run (its release or its artifact). `--dry-run` goes as far as dracut and prints
+the command it would run; nothing is written. What happens to the result at boot is
+[docs/uni/kernel.md](../docs/uni/kernel.md#the-boot-assessment).
 
-1. **Verify.** `sha256sum -c` against the release's `SHA256SUMS`; the `BUILD` file names the
-   commit and the `hw.zon`; refuse an image whose `hw.zon` is not the laptop's current
-   `/etc/vh/hw.zon` (a different machine, or hardware exercised since the probe).
-2. **Firmware list.** The modules of the LSMOD list (and the built-in drivers the resolve
-   report names) are looked up in the stock kernel's module files on the laptop:
-   `modinfo -F firmware MODULE` for the kernel of `hw.zon`'s `probe.kernel`. The custom kernel
-   has the same drivers built in, so it needs the same files. Plus `regulatory.db` and
-   `regulatory.db.p7s` (a built-in cfg80211 without them is stuck in the world domain), plus
-   the microcode as dracut's early cpio. The files are the zstd-compressed ones Void ships
-   (`FW_LOADER_COMPRESS_ZSTD`). [VERIFY: the firmware loader of 6.18 waits for the initramfs
-   for built-in drivers probed before the initrd is unpacked; if not, `i915` and `iwlwifi`
-   must be deferred or the files go into `EXTRA_FIRMWARE` after all.]
-3. **The UKI.** dracut with `--no-kernel --kver 6.18.57-vh --kernel-image bzImage --uefi`, the
-   existing `rootfs/etc/dracut.conf.d/10-vh.conf.in` (crypt, early microcode, reproducible),
-   `install_items+=` the firmware list, and the cmdline of the stock UKI with these changes:
-   `module_blacklist=` and `module.sig_enforce=1` removed (nothing to load), the `modprobe.d`
-   options moved onto the cmdline because there are no modules to carry them
-   (`iwlwifi.power_save=0 iwlwifi.uapsd_disable=3 iwlmvm.power_scheme=1`, the iTCO
-   `nowayout`/`heartbeat`), everything else identical, so that the sysctl loader and
-   `vh-audit` see one system. Parameters of modules that do not exist would reach PID 1 as
-   environment: the cmdline is checked against the final `.config` before dracut runs.
-   Output: `/boot/efi/EFI/void/linux-6.18.57-vh_1.efi` (the `_N` counts installs of the same
-   version).
-4. **Signing and Limine.** `sbctl sign` as today (the key media must be attached in the
-   offline-keys module), then `vh-limine-update --new 6.18.57-vh_1`. It knows the two UKI
-   series (U3): `linux-A.B.C_D.efi` (the stock one: never deleted, never demoted, always at
-   the head of the menu) and `linux-A.B.C-vh_N.efi` (the machine one, `KEEP_MACHINE=2`), and
-   `vh-audit` counts them apart. The new UKI is on trial: Limine's one-shot entry boots it,
-   the `vh-boot-assess` service judges each boot by `vh-kconf check`, and after
-   `MACHINE_BOOTS` good boots it becomes Limine's default; a boot that fails leaves the next
-   one to the old default by itself, and `vh-limine-update --demote` is the way back
-   ([docs/uni/kernel.md](../docs/uni/kernel.md#the-boot-assessment)).
-5. **check** (a service at start, done in U2: see above): a modalias without a driver in
-   sysfs -> a message at the admin login on tty2, with the `vh-kconf probe` + CI steps of the
-   runbook as the answer.
+1. **Verify.** Every file used (`BUILD`, `bzImage-vh-KVER`, `config-vh-KVER`,
+   `modules.builtin-vh-KVER`, `modules.builtin.modinfo-vh-KVER`, `lsmod`, `resolve-report.txt`,
+   `plan.zon`, the hw.zon) must be in `DIR/SHA256SUMS` and match it. `BUILD` names the machine,
+   the version, the commit and, on the line `hw.zon: kernel/hw/NAME.zon sha256 HEX`, the hw.zon
+   the kernel was resolved from, which must be this machine's `/etc/vh/hw.zon` byte for byte.
+   Another machine is refused with what differs (the CPU model, the board: `vh-kconf check`'s
+   comparison); another probe of this machine with the advice to commit it and build again.
+   `--hw FILE` names another probe as this machine's (the VM rig does, see below). The bzImage's
+   setup header must report `KVER-vh` (`CONFIG_LOCALVERSION="-vh"`). SHA256SUMS is not a
+   signature: it catches a damaged or incomplete download; the release itself is trusted as
+   GitHub serves it.
+2. **The final `.config`.** With `--no-kernel` dracut skips its own kernel checks
+   (`check_kernel_config` returns true), so install checks `config-vh-KVER` itself: `EFI_STUB`,
+   `BLK_DEV_INITRD`, the `RD_*` of dracut's compressor (`compress=` of the dracut configuration,
+   or a compression option in the hook's `DRACUT_OPTIONS`), `FW_LOADER` and
+   `FW_LOADER_COMPRESS_ZSTD`/`_XZ` for the firmware's compression. A missing one stops the
+   install before dracut runs; `MICROCODE` unset is a note (the early cpio would be ignored).
+3. **The firmware of the initrd.** Every file under `/usr/lib/firmware` that a firmware pattern
+   of the image's plan or of the installation's (`/etc/vh/plan.zon`) keeps. vh-plan made those
+   patterns from the same `kernel/pins/modules.firmware` (what each module names, narrowed to
+   the device where a hwdb rule knows it) and added the files drivers pick at run time (Intel
+   Bluetooth's `intel/ibt-*`), so on a trimmed system (`VH_FIRMWARE_TRIM=yes`) they are the files
+   on disk. Plus `regulatory.db` and `regulatory.db.p7s` when cfg80211 is built in (without them
+   it stays in the world domain). The patterns of the `*.microcode` rules are left out
+   ([hwdb/README.md](../hwdb/README.md)): dracut's `early_microcode` puts this CPU's file into
+   the early cpio, as for the stock UKI. The drivers of the LSMOD list and the stock built-ins
+   whose firmware (`/root/vh/kernel/pins/modules.firmware`) gets no file in the initrd are
+   reported. The files go in as Void ships them (zstd). A built-in driver probed at boot finds
+   them: the firmware loader waits for the initramfs (`fw_get_filesystem_firmware()` calls
+   `wait_for_initramfs()`, `drivers/base/firmware_loader/main.c` of 6.18), and after
+   `switch_root` it reads the root's `/lib/firmware`, for a device plugged in later.
+   [VERIFY on the GF63: i915's DMC and iwlwifi load from the initrd at the first trial boot,
+   `dmesg | grep -i firmware`.]
+4. **The command line.** The `.cmdline` of the newest stock UKI (`linux-A.B.C_D.efi` on the ESP),
+   so that the sysctl loader, `vh-kconf check` and `vh-audit` see one system, with three changes:
+   - without loadable modules (`# CONFIG_MODULES is not set`), `module_blacklist=` and
+     `module.*` (`module.sig_enforce=1`) are removed; with the game feature's modules they stay;
+   - `MOD.param` is removed when MOD is a module of the stock kernel (`modules.dep` and
+     `modules.builtin` in `/usr/lib/modules`) that the machine kernel lacks (its own
+     `modules.builtin*`, which the build writes from the final `.config`): for example
+     `efi_pstore.pstore_disable=1`, since `hardening` turns `EFI_VARS_PSTORE` off. Dotted
+     parameters of the core and the initrd (`rd.*`, `iommu.*`, `page_alloc.*`) name no module
+     and stay. Linux 6.18 drops an unknown dotted parameter, but hands an unknown one without a
+     dot to PID 1 as an environment variable (`init/main.c`, `unknown_bootoption()`), as
+     `module_blacklist=` would be on a kernel without modules: the machine UKI's command line
+     holds only what its kernel takes;
+   - the `options` lines of modprobe.d (`/etc`, `/usr/local/lib`, `/usr/lib`, `/lib`: kmod's
+     order and precedence) for modules that are built in become `MOD.param=value` after the
+     stock parameters, as kmod applies them after the command line's: today
+     `iwlwifi.power_save=0 iwlwifi.uapsd_disable=3 iwlmvm.power_scheme=1`
+     (`rootfs/etc/modprobe.d/vh-iwlwifi.conf`) and, with `optional/deadman`, the watchdog's
+     `nowayout=1`. The options of a module the kernel does not have stay in modprobe.d (reported).
+
+   The result must be printable ASCII within the kernel's 2047 bytes.
+5. **The UKI.** `dracut --force [DRACUT_OPTIONS] --no-kernel --kver KVER-vh --kernel-image
+   bzImage --uefi --kernel-cmdline=LINE --include FILE FILE ...` (one `--include` per firmware
+   file, so that names with spaces stay whole), with the system's dracut configuration, the
+   stock UKI's (`rootfs/etc/dracut.conf.d/10-vh.conf.in`: crypt, early microcode, reproducible;
+   the optional modules' `20-vh-totp.conf`, `21-vh-deadman.conf`), into `/var/tmp`. Then
+   checked: `.linux` is the verified bzImage byte for byte, `.cmdline` the line of step 4 (a
+   `kernel_cmdline=` in dracut's configuration would add to it), and an early cpio holds the
+   microcode where there is one. Written to `/boot/efi/EFI/void/linux-KVER-vh_N.efi` beside its
+   name, synced and renamed into place: N counts the installs of `KVER-vh` and never comes back
+   for another kernel (the ESP, the records and the boot assessment's state are counted).
+   Verified with Void's dracut 112 in a container (`sh tests/kernel/dracut_test.sh`):
+   `--no-kernel` with `--kernel-image` and `--uefi` works, the firmware lands in
+   `usr/lib/firmware` of the initrd, its `lib` is a link to `usr/lib`, no module is in it, and
+   `.linux` keeps the bzImage's exact size.
+6. **Signing and Limine.** `vh-limine-update --new KVER-vh_N` signs it as it signs every UKI of
+   the menu (`sbctl sign`, after `vh-uki-verify` with offline keys; the machine series has its
+   own references: [docs/uni/kernel.md](../docs/uni/kernel.md#offline-keys-and-vh-audit)), adds
+   it after the stock entries and puts it on trial: Limine's one-shot entry, then its default
+   after `MACHINE_BOOTS` good boots. What `sign()` would refuse (offline keys not attached,
+   Secure Boot on without the db key) is refused before dracut runs; a failure of `--new` before
+   `limine.conf` names the UKI removes it again. `/var/lib/vh/kernels/KVER-vh_N/` keeps the
+   record: the report, the command line, the firmware list, `BUILD` and `SHA256SUMS`.
+
+The ESP is mounted for the run when it is not (`noauto`, as the `kernel.d` hooks do) and
+unmounted after; one install runs at a time (`/var/lib/vh/kconf-install.lock`). Tests: the unit
+tests of `install.zig` and `uki.zig`, with an install end to end under `--root` (stand-ins for
+dracut and vh-limine-update) and what is refused; `tests/kernel/dracut_test.sh` with Void's
+dracut; the VM rig's step `machine` (`python3 tests/vm/check.py machine --repo` with a run's
+qemu-q35 files in `build/kernel-custom`, the kvm-smoke input `kernel_run`). That kernel is
+built from the synthesised `kernel/hw/qemu-q35.zon`, not from the rig's probe, so the step
+passes `--hw` that file, and the boot assessment judges the kernel against the rig's own probe.
+
+What install does not do: build the kernel (CI does it, from a committed hw.zon); carry a later
+change of modprobe.d or of the stock command line into a machine UKI already installed (install
+again); follow an update of the stock kernel (the machine kernel keeps its version until the
+next run).
 
 Not in v0.1: `fetch` and `build` on the laptop (the kbuild root arrives in v0.3 with the thor
 policy for separate roots); `resolve` v2 (`allnoconfig` + fragments, v1 as the oracle).

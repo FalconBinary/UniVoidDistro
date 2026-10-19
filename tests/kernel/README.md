@@ -4,6 +4,7 @@
 sh tests/kernel/run.sh              # the unit tests of kernel/ in an Alpine container, plus a smoke run
 sh tests/kernel/oracle.sh           # the GF63 oracle: resolve gives what void-hardperf-light gives
 sh tests/kernel/matrix.sh           # every x86_64 machine: plan (tiered) and resolve, the checks without a kernel tree
+sh tests/kernel/dracut_test.sh      # vh-kconf install with Void's dracut, in a container (network: Void's mirror)
 python3 tests/kernel/mkfixture.py   # rewrites the synthesised fixtures from tests/kernel/machines/
 ```
 
@@ -56,6 +57,21 @@ Bluetooth, touchpad, audio and TPM to the right stock modules against the pinned
 `modules.alias`, keeps the loaded modules, leaves out the built-in drivers, refuses nouveau,
 mei, the tiny power button and the modules of unselected features, and reports the conflicts
 between hardening and the game feature.
+
+install (`install.zig`, `uki.zig`): SHA256SUMS and BUILD, the release a bzImage's header reports,
+PE sections and the names of an early cpio (untrusted data: cut or lying files stay in bounds),
+the machine command line (module_blacklist= and module.* without modules, the parameters of
+modules the kernel lacks, modprobe.d's options of built-in modules, init's arguments last), dracut's
+compressor against the final `.config`, the plan's firmware without the microcode, the number of
+an install, and an install end to end under `--root` with stand-ins for dracut and
+vh-limine-update: the arguments dracut gets, the UKI on the ESP, `--new`, the record, the second
+install as `_2`, a failed `--new` that removes the UKI; refused: another machine, another probe,
+a damaged file, a run without `modules.builtin`, an initrd the kernel cannot unpack, no stock UKI.
+`dracut_test.sh` runs the same install with Void's dracut (dracut, dracut-uefi,
+systemd-boot-efistub, binutils, cryptsetup from the mirror) and lists the UKI's initrd with
+lsinitrd: the firmware at `usr/lib/firmware`, `lib` a link to `usr/lib`, no module, the crypt
+module, `.linux` the bzImage byte for byte. On Apple Silicon the UKI is an aarch64 one (dracut
+takes `linuxaa64.efi.stub` when the configured x64 stub is missing, and there is no microcode).
 
 `oracle.sh` holds the GF63 to void-hardperf-light: `tests/kernel/golden/gf63` is the LSMOD list,
 the fragment's symbols and the sorted `.config` that upstream's resolve and profiles give for

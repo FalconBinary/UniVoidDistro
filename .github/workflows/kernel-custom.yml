@@ -185,8 +185,8 @@ jobs:
           cp .config "$out/config-vh-$KVER"
           cp System.map "$out/System.map-vh-$KVER"
           # the built-in modules and their parameters, as the build wrote them from the final
-          # .config (scripts/Makefile.vmlinux_o, with CONFIG_MODULES=n too [VERIFY with the first
-          # run]): vh-kconf install keeps only the command-line parameters of modules this kernel has
+          # .config (scripts/Makefile.vmlinux of 6.18 makes both with every vmlinux, CONFIG_MODULES=n
+          # too): vh-kconf install keeps only the command-line parameters of modules this kernel has
           for f in modules.builtin modules.builtin.modinfo; do
             test -s "$f" || { echo "::error::$f was not built: vh-kconf install needs it"; exit 1; }
             cp "$f" "$out/$f-vh-$KVER"

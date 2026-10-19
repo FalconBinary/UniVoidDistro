@@ -7,9 +7,10 @@ changes, how to check it and how to go back. Recovery from a live USB stick is i
 [ru/09-updates.md](ru/09-updates.md) and [ru/10-audit.md](ru/10-audit.md) hold the procedures
 of the predecessor, which still apply).
 
-## 1. The custom kernel: probe, build in CI, download (track K, v0.1)
+## 1. The custom kernel: probe, build in CI, download, install (track K)
 
-**What changes on the laptop:** one file, `/etc/vh/hw.zon`. Nothing boots differently.
+**What changes on the laptop:** in 1.1 to 1.5 one file, `/etc/vh/hw.zon`, and nothing boots
+differently; 1.6 adds the machine UKI, on trial beside the stock UKI, which always stays.
 
 ### 1.1 Get `vh-kconf`
 
@@ -137,14 +138,96 @@ Read `diff-report.txt` first. Its last line is `Result: ok`, `ok with difference
   stock kernel either) and "Refused" (nouveau, mei, the tiny power button, the modules of
   features you did not select).
 
-### 1.6 What not to do yet
+### 1.6 Install it: `vh-kconf install` (UniVoidDistro)
 
-The image is not installed by hand. `limine.conf` is hash-enrolled into `BOOTX64.EFI`
-(docs/03): editing it, or copying a UKI onto the ESP, leaves the laptop unable to boot that
-entry. `vh-kconf install` (kernel/README.md, "install") is the next piece: it builds the
-UKI with dracut `--no-kernel`, puts the firmware and the microcode into the initrd, signs it
-and adds it to Limine as a second series next to the stock UKI, which always stays. Until
-it exists, this runbook ends here: the laptop has gained `/etc/vh/hw.zon` and nothing else.
+**What changes on the laptop:** one file on the ESP, `linux-6.18.57-vh_N.efi` (the machine
+UKI), its entry in `limine.conf` after the stock entries and the new config hash in
+`BOOTX64.EFI`, as every kernel update changes them; the state of the boot assessment
+(`/var/lib/vh/boot-assess`, the EFI variables of Limine's Boot Loader Interface) and the record
+`/var/lib/vh/kernels/6.18.57-vh_N/`. The stock UKI stays at the head of the menu and stays the
+default until the machine UKI has booted well three times
+([docs/uni/kernel.md](uni/kernel.md#the-boot-assessment)).
+
+`vh-kconf install` exists in UniVoidDistro only, and it needs a run of UniVoidDistro's
+`kernel-custom` workflow: its `BUILD` names the hw.zon, and it uploads the kernel's
+`modules.builtin` and `modules.builtin.modinfo`. Take `vh-kconf` from a build of this fork
+(`~/Documents/systems/UniVoidDistro/kernel`, as in 1.1), run the workflow there
+(`gh workflow run kernel-custom -R FalconBinary/UniVoidDistro -f hw=kernel/hw/gf63.zon`), and
+make sure `/etc/vh/hw.zon` is still the file committed in 1.3: after another probe, commit and
+build again (install refuses an image of another probe and says so).
+
+Download every file install reads, and check them:
+
+```sh
+mkdir -p ~/vh-kernel && cd ~/vh-kernel
+tag=kernel-custom-gf63-6.18.57-r1   # the run you want
+for f in BUILD SHA256SUMS bzImage-vh-6.18.57 config-vh-6.18.57 modules.builtin-vh-6.18.57 \
+         modules.builtin.modinfo-vh-6.18.57 lsmod resolve-report.txt plan.zon gf63.zon diff-report.txt; do
+  curl -fsSLO "https://github.com/FalconBinary/UniVoidDistro/releases/download/$tag/$f"
+done
+sha256sum -c --ignore-missing SHA256SUMS
+```
+
+A dry run first: it verifies, chooses the firmware and the command line, and changes nothing.
+
+```sh
+doas vh-kconf install --dry-run ~/vh-kernel
+```
+
+Read its report:
+
+- `verified:` the files and "gf63.zon is this machine's /etc/vh/hw.zon";
+- `kernel:` `6.18.57-vh`, `CONFIG_MODULES=n`, the initrd's compression;
+- `firmware for the initrd:` the plan's patterns (`i915/cml_* i915/kbl_* intel/ibt-* iwlwifi-Qu*
+  regulatory.db* rtl_nic/*`), the microcode left out (dracut's early cpio carries the CPU's
+  own), and a `warning:` for a driver whose firmware none of the files serves;
+- `command line:` `- module.sig_enforce=1`, `- module_blacklist=...` (no loadable modules),
+  `- efi_pstore.pstore_disable=1` (not in this kernel), `+ iwlwifi.power_save=0`,
+  `+ iwlwifi.uapsd_disable=3`, `+ iwlmvm.power_scheme=1` (and the watchdog's `nowayout=1` with
+  optional/deadman), then the whole line;
+- no `problem:` line (a problem stops the install before dracut runs).
+
+With offline keys (optional/sb-offline-keys), attach the media first (`doas vh-keys mount`):
+vh-limine-update signs the UKI after `vh-uki-verify`, which asks three things the first time:
+the machine command line against the stock reference (the `-` and `+` of the report), the
+SHA-256 of the kernel (compare it with `bzImage-vh-6.18.57` in the release's SHA256SUMS on the
+release page, read on another device), and the initramfs content. Then:
+
+```sh
+doas vh-kconf install ~/vh-kernel
+```
+
+It ends with "the machine kernel 6.18.57-vh_1 is on trial: the next boot tries it once" and
+"vh-kconf install: linux-6.18.57-vh_1.efi installed". Reboot. With optional/tpm2-totp the
+first trial boot asks for one reseal (`RESEAL`), as after any kernel update. Then, as the admin
+on tty2:
+
+```sh
+uname -r                          # 6.18.57-vh
+cat /run/vh/check.done            # VH_CHECK machine=same devices=0 firmware=N lost=0
+doas vh-limine-update --status    # on trial: 1 of 3 good boots, set for the next boot
+doas dmesg | grep -i firmware     # i915 DMC, iwlwifi, Bluetooth: loaded from the initrd
+doas vh-audit boot plan           # "no loadable modules in this kernel", no FAIL about modules
+```
+
+Two more boots make it Limine's default (`--status`: "the default: the machine kernel
+6.18.57-vh_1"). Every boot keeps the stock entry first in the menu.
+
+**How to go back:**
+
+- a trial boot that hangs, panics or fails in the initramfs is not repeated: the boot after it
+  is the default (the stock UKI) by itself, and `doas vh-limine-update --status` says why the
+  trial failed; `doas vh-limine-update --retry` tries it again;
+- the machine kernel is the default and misbehaves: choose the stock entry in Limine's menu,
+  then `doas vh-limine-update --demote` (no key needed: only an EFI variable changes);
+- remove it: `doas mount /boot/efi`, `doas rm /boot/efi/EFI/void/linux-6.18.57-vh_1.efi`,
+  `doas vh-limine-update` (it signs; with offline keys the media must be attached),
+  `doas umount /boot/efi`.
+
+**Later:** a change of `/etc/modprobe.d` or of the stock command line (an optional module, a
+stock kernel update with another `KERNEL_CMDLINE`) reaches the machine UKI with the next
+`vh-kconf install`; a new stock kernel version (6.18.58) means a new `kernel-custom` run with
+`kver=6.18.58`, then install again (its UKI is `linux-6.18.58-vh_1.efi`, on trial in turn).
 
 ## 2. vh-stage1, stage 1 of the boot without a shell (track I, v0.1)
 
