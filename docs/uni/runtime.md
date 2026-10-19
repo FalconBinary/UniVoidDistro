@@ -125,7 +125,12 @@ On another machine the devices are not compared (they all differ). With a findin
 (`/etc/profile.d/zz-vh.sh`), and `/run/vh/plan` a fresh plan of the running system
 (`hw.zon`, `plan.zon`, `plan.env`, `plan-report.txt`; `vh-plan` with `/root/vh/hwdb`,
 `/root/vh/kernel/pins` and the installation's `vh.conf`). `/run/vh/check.done` always holds
-`VH_CHECK machine=same|different devices=N firmware=N`, which `vh-audit plan` reads.
+`VH_CHECK machine=same|different devices=N firmware=N lost=N`, which `vh-audit plan` reads;
+`lost` counts the devices that had a driver at installation and have none now, the verdict the
+boot assessment of a machine kernel reads ([kernel.md](kernel.md#what-a-good-boot-is)). On a
+machine kernel (release `*-vh`) the modules its build left out on purpose count as refused:
+`kernel/profiles/modules.deny`, the plan's deny list, the modules of the features the plan does
+not select.
 
 What to do: another machine means the plan (packages, firmware, the kernel's classes, the
 command line) was made for the other one: compare `/run/vh/plan/plan-report.txt` with

@@ -9,14 +9,19 @@
 //!   - firmware that failed to load this boot (the kernel log), and whether the plan's firmware
 //!     trim (/etc/xbps.d/40-vh-firmware.conf) left it out.
 //! OUT/check.done always gets the summary line "VH_CHECK machine=same|different devices=N
-//! firmware=N"; with a finding, OUT/check gets the message the admin sees at login on tty2, and
-//! OUT/plan a fresh plan of the running system (vh-plan, run by argv). Nothing found: OUT/check
-//! is removed.
+//! firmware=N lost=N" (lost: the devices that had a driver at installation and have none now,
+//! the verdict the boot assessment of a machine kernel reads, docs/uni/kernel.md); with a
+//! finding, OUT/check gets the message the admin sees at login on tty2, and OUT/plan a fresh
+//! plan of the running system (vh-plan, run by argv). Nothing found: OUT/check is removed.
+//! On a machine kernel (release *-vh) the modules its build left out on purpose count as
+//! refused, as module_blacklist= does on the stock kernel: modules.deny, the plan's deny list,
+//! the modules of the features the plan does not select (resolve.denyList).
 const std = @import("std");
 const vh = @import("vh");
 const hw = @import("hw.zig");
 const probe = @import("probe.zig");
 const alias = @import("alias.zig");
+const resolve = @import("resolve.zig");
 const linux = std.os.linux;
 const mem = std.mem;
 
@@ -34,6 +39,8 @@ pub const Opts = struct {
     repo: ?[]const u8 = null,
     /// the planner; "none" makes no fresh plan
     vh_plan: ?[]const u8 = null,
+    /// the plan of the installation: its deny list and features, on a machine kernel
+    plan: ?[]const u8 = null,
     /// the running kernel's modules.alias and modules.builtin.modinfo
     alias: ?[]const u8 = null,
     builtin: ?[]const u8 = null,
@@ -91,6 +98,27 @@ pub fn refusedModules(cmdline: []const u8) []const []const u8 {
     return out.slice();
 }
 
+/// a kernel built by vh-kconf resolve: CONFIG_LOCALVERSION="-vh" of kernel/profiles/base
+pub fn isMachineKernel(release: []const u8) bool {
+    return vh.endsWith(release, "-vh");
+}
+
+/// the refused modules of a machine kernel: those of the command line and those its build left
+/// out (resolve.denyList of the installation's plan, the plan's features); the command line's
+/// alone when there is no plan
+pub fn machineRefused(cmdline_refused: []const []const u8, plan_path: []const u8, profiles: []const u8) []const []const u8 {
+    var out: vh.Strv = .{};
+    for (cmdline_refused) |m| if (!out.has(m)) out.add(m);
+    if (!vh.pathExists(plan_path)) {
+        vh.warn("{s}: no plan: the modules this machine kernel was built without are not known", .{plan_path});
+        return out.slice();
+    }
+    const plan = resolve.loadPlan(plan_path);
+    const d = resolve.denyList(plan, resolve.features(plan, "auto"), profiles);
+    for (d.list.slice()) |m| if (!out.has(m)) out.add(m);
+    return out.slice();
+}
+
 fn has(list: []const []const u8, s: []const u8) bool {
     for (list) |x| if (vh.eql(x, s)) return true;
     return false;
@@ -101,11 +129,19 @@ fn findDevice(h: hw.Hw, bus: []const u8, name: []const u8) ?hw.Device {
     return null;
 }
 
+pub const Driverless = struct {
+    /// one line per device, in the order of the probe
+    lines: []const []const u8,
+    /// how many of them had a driver at installation
+    lost: usize,
+};
+
 /// The devices without a driver that are news: one that had a driver at installation and has
-/// none now, a new one on a bus hardware is plugged into, a new one elsewhere that a module of
-/// this kernel would drive. A module the kernel refuses explains its device: not listed.
-pub fn driverless(was: hw.Hw, now: hw.Hw, refused: []const []const u8, table: ?*const alias.Table) []const []const u8 {
+/// none now (lost), a new one on a bus hardware is plugged into, a new one elsewhere that a
+/// module of this kernel would drive. A module the kernel refuses explains its device: not listed.
+pub fn driverless(was: hw.Hw, now: hw.Hw, refused: []const []const u8, table: ?*const alias.Table) Driverless {
     var out: vh.Strv = .{};
+    var lost: usize = 0;
     for (now.devices) |d| {
         if (d.driver.len > 0 or vh.eql(d.bus, "dmi")) continue;
         const what = printable(vh.fmt("{s} {s} ({s})", .{ d.bus, d.name, d.modalias }));
@@ -114,6 +150,7 @@ pub fn driverless(was: hw.Hw, now: hw.Hw, refused: []const []const u8, table: ?*
             const m = alias.normalize(if (w.module.len > 0) w.module else w.driver);
             if (has(refused, m)) continue;
             out.add(vh.fmt("{s}: had the driver {s} at installation, has none now", .{ what, printable(w.driver) }));
+            lost += 1;
             continue;
         }
         var mods: vh.Strv = .{};
@@ -130,7 +167,7 @@ pub fn driverless(was: hw.Hw, now: hw.Hw, refused: []const []const u8, table: ?*
             out.add(vh.fmt("{s}: new; {s}", .{ what, if (table != null) "no driver of this kernel matches it" else "no driver is bound (this kernel has no module tables to ask)" }));
         }
     }
-    return out.slice();
+    return .{ .lines = out.slice(), .lost = lost };
 }
 
 pub const FwFail = struct {
@@ -239,13 +276,15 @@ pub const Result = struct {
     machine: []const []const u8,
     devices: []const []const u8,
     firmware: []const []const u8,
+    /// of the devices, those that had a driver at installation
+    lost: usize = 0,
 
     pub fn any(self: Result) bool {
         return self.machine.len > 0 or self.devices.len > 0 or self.firmware.len > 0;
     }
 
     pub fn summary(self: Result) []const u8 {
-        return vh.fmt("VH_CHECK machine={s} devices={d} firmware={d}\n", .{ if (self.machine.len > 0) "different" else "same", self.devices.len, self.firmware.len });
+        return vh.fmt("VH_CHECK machine={s} devices={d} firmware={d} lost={d}\n", .{ if (self.machine.len > 0) "different" else "same", self.devices.len, self.firmware.len, self.lost });
     }
 };
 
@@ -285,11 +324,13 @@ pub fn compare(was: hw.Hw, now: hw.Hw, refused: []const []const u8, table: ?*con
     const machine = machineDiff(was, now);
     var fw: vh.Strv = .{};
     for (firmwareFailures(log)) |f| fw.add(firmwareLine(f, keep, fwdir));
+    // another machine has other devices: listing them all would hide the point
+    const dl: Driverless = if (machine.len > 0) .{ .lines = &.{}, .lost = 0 } else driverless(was, now, refused, table);
     return .{
         .machine = machine,
-        // another machine has other devices: listing them all would hide the point
-        .devices = if (machine.len > 0) &.{} else driverless(was, now, refused, table),
+        .devices = dl.lines,
         .firmware = fw.slice(),
+        .lost = dl.lost,
     };
 }
 
@@ -327,7 +368,11 @@ pub fn run(o: Opts) u8 {
     const was = hw.load(hw_path);
     const src: probe.Src = .{ .root = mem.trimEnd(u8, o.from, "/") };
     const now = probe.run(&src);
-    const refused = refusedModules(src.read("/proc/cmdline") orelse "");
+    const cmdline_refused = refusedModules(src.read("/proc/cmdline") orelse "");
+    const refused = if (isMachineKernel(now.probe.kernel))
+        machineRefused(cmdline_refused, o.plan orelse vh.fmt("{s}/etc/vh/plan.zon", .{root}), vh.fmt("{s}/kernel/profiles", .{o.repo orelse vh.fmt("{s}/root/vh", .{root})}))
+    else
+        cmdline_refused;
     // the running kernel's tables: which module would drive a device that has none
     var table: alias.Table = .{};
     var have_table = false;
@@ -435,7 +480,7 @@ test "check: devices without a driver" {
     var table: alias.Table = .{};
     table.loadAliases(vh.readFile(at) catch return error.SkipZigTest);
     // the installed system's view of the same machine: nothing new
-    try testing.expectEqual(@as(usize, 0), driverless(gf63, gf63, &.{}, &table).len);
+    try testing.expectEqual(@as(usize, 0), driverless(gf63, gf63, &.{}, &table).lines.len);
     var devs: std.ArrayList(hw.Device) = .empty;
     for (gf63.devices) |d| {
         var x = d;
@@ -456,11 +501,49 @@ test "check: devices without a driver" {
     }) catch vh.oom();
     var now = gf63;
     now.devices = devs.items;
-    const r = driverless(gf63, now, &.{ "mei_me", "thunderbolt" }, &table);
+    const dl = driverless(gf63, now, &.{ "mei_me", "thunderbolt" }, &table);
+    const r = dl.lines;
     try testing.expectEqual(@as(usize, 3), r.len);
     try testing.expect(mem.indexOf(u8, r[0], "0000:00:14.3") != null and mem.indexOf(u8, r[0], "had the driver iwlwifi") != null);
     try testing.expect(mem.indexOf(u8, r[1], "2-1:1.0") != null and mem.indexOf(u8, r[1], "ax88179_178a would drive it") != null);
     try testing.expect(mem.indexOf(u8, r[2], "0000:05:00.0") != null and mem.indexOf(u8, r[2], "no driver of this kernel") != null);
+    // of the three only the Wi-Fi had a driver at installation: the verdict of a boot assessment
+    try testing.expectEqual(@as(usize, 1), dl.lost);
+}
+
+test "check: a machine kernel refuses what its build left out" {
+    const gf63 = fixtureHw("gf63") orelse return error.SkipZigTest;
+    const plan = probe.repoPath("tests/adapt/golden/gf63/strict/plan.zon") orelse return error.SkipZigTest;
+    const profiles = probe.repoPath("kernel/profiles") orelse return error.SkipZigTest;
+    try testing.expect(isMachineKernel("6.18.57-vh") and !isMachineKernel("6.18.57_1"));
+    // the installer probed in the live system, where the camera and the card reader had their
+    // drivers; the plan refuses both (VH_CAMERA=no, VH_CARDREADER=no), so the machine kernel
+    // is built without them and the command line names no module
+    var devs: std.ArrayList(hw.Device) = .empty;
+    for (gf63.devices) |d| {
+        var x = d;
+        if (vh.eql(x.driver, "uvcvideo") or vh.eql(x.driver, "rtsx_pci")) {
+            x.driver = "";
+            x.module = "";
+        }
+        devs.append(vh.gpa, x) catch vh.oom();
+    }
+    var now = gf63;
+    now.devices = devs.items;
+    now.probe.kernel = "6.18.57-vh";
+    // read as the stock kernel would read it: three devices lost their drivers
+    try testing.expectEqual(@as(usize, 3), driverless(gf63, now, &.{}, null).lost);
+    // the machine kernel's refused modules: modules.deny, the plan's, the unselected features'
+    const refused = machineRefused(&.{"sctp"}, plan, profiles);
+    for ([_][]const u8{ "sctp", "tiny_power_button", "uvcvideo", "rtsx_pci", "nouveau", "mei_me", "videobuf2_common" }) |m|
+        try testing.expect(has(refused, m));
+    try testing.expect(!has(refused, "iwlwifi") and !has(refused, "btusb"));
+    const dl = driverless(gf63, now, refused, null);
+    try testing.expectEqual(@as(usize, 0), dl.lost);
+    try testing.expectEqual(@as(usize, 0), dl.lines.len);
+    // without the plan only the command line's refusals are known
+    const bare = machineRefused(&.{"sctp"}, "/nonexistent/plan.zon", profiles);
+    try testing.expectEqual(@as(usize, 1), bare.len);
 }
 
 test "check: the whole run on a fixture, the message and the summary" {
@@ -477,16 +560,16 @@ test "check: the whole run on a fixture, the message and the summary" {
     vh.writeAtomic(fw, "6,1,1,-;bluetooth hci0: Direct firmware load for bt/chip-1.sfi failed with error -2\n", 0o644);
     // the same machine, a quiet log: nothing to say
     try testing.expectEqual(@as(u8, 0), run(.{ .from = from, .root = dir, .hw = gf63, .kmsg = quiet, .vh_plan = "none" }));
-    try testing.expectEqualStrings("VH_CHECK machine=same devices=0 firmware=0", vh.rd(vh.fmt("{s}/run/vh/check.done", .{dir})));
+    try testing.expectEqualStrings("VH_CHECK machine=same devices=0 firmware=0 lost=0", vh.rd(vh.fmt("{s}/run/vh/check.done", .{dir})));
     try testing.expect(!vh.pathExists(vh.fmt("{s}/run/vh/check", .{dir})));
     // a firmware file the trim left out
     try testing.expectEqual(@as(u8, 1), run(.{ .from = from, .root = dir, .hw = gf63, .kmsg = fw, .vh_plan = "none" }));
     const msg = vh.readFile(vh.fmt("{s}/run/vh/check", .{dir})) catch return error.TestUnexpectedResult;
     try testing.expect(mem.indexOf(u8, msg, "bt/chip-1.sfi for bluetooth hci0: the firmware trim leaves it out") != null);
-    try testing.expect(mem.indexOf(u8, msg, "VH_CHECK machine=same devices=0 firmware=1") != null);
+    try testing.expect(mem.indexOf(u8, msg, "VH_CHECK machine=same devices=0 firmware=1 lost=0") != null);
     // the disk moved to another machine
     try testing.expectEqual(@as(u8, 1), run(.{ .from = from, .root = dir, .hw = amd, .kmsg = quiet, .vh_plan = "none" }));
-    try testing.expectEqualStrings("VH_CHECK machine=different devices=0 firmware=0", vh.rd(vh.fmt("{s}/run/vh/check.done", .{dir})));
+    try testing.expectEqualStrings("VH_CHECK machine=different devices=0 firmware=0 lost=0", vh.rd(vh.fmt("{s}/run/vh/check.done", .{dir})));
     // then the same machine again: the message goes away
     try testing.expectEqual(@as(u8, 0), run(.{ .from = from, .root = dir, .hw = gf63, .kmsg = quiet, .vh_plan = "none" }));
     try testing.expect(!vh.pathExists(vh.fmt("{s}/run/vh/check", .{dir})));

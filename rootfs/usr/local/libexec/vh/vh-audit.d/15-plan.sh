@@ -85,7 +85,9 @@ fi
 # vh-kconf check at this boot: the machine of /etc/vh/hw.zon, the drivers, the firmware
 if [ -r /run/vh/check.done ]; then
 	case $(cat /run/vh/check.done) in
-		"VH_CHECK machine=same devices=0 firmware=0") ok "vh-kconf check: the machine of /etc/vh/hw.zon, every device with its driver, no firmware failure" ;;
+		# lost=N: since U3; the line of an older vh-kconf ends at firmware=N
+		"VH_CHECK machine=same devices=0 firmware=0"|"VH_CHECK machine=same devices=0 firmware=0 lost=0")
+			ok "vh-kconf check: the machine of /etc/vh/hw.zon, every device with its driver, no firmware failure" ;;
 		*machine=different*) bad "vh-kconf check: another machine than the one of the plan (/run/vh/check; a fresh plan: /run/vh/plan)" ;;
 		*) unk "vh-kconf check: $(sed 's/^VH_CHECK //' /run/vh/check.done) (/run/vh/check)" ;;
 	esac

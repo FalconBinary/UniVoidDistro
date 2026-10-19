@@ -63,8 +63,10 @@ vh-kconf check [--hw FILE] [--out DIR] [--repo DIR] [--vh-plan PATH|none] [--kms
   kernel log says failed to load, and whether the plan's firmware trim left it out. A finding
   goes to `/run/vh/check`, which the admin sees at login on tty2, with a fresh plan of the
   running system in `/run/vh/plan` (`vh-plan` run by argv); `/run/vh/check.done` always
-  holds the summary line `VH_CHECK machine=same|different devices=N firmware=N` for
-  `vh-audit plan` ([docs/uni/runtime.md](../docs/uni/runtime.md#vh-kconf-check)).
+  holds the summary line `VH_CHECK machine=same|different devices=N firmware=N lost=N` for
+  `vh-audit plan` and the boot assessment ([docs/uni/runtime.md](../docs/uni/runtime.md#vh-kconf-check)).
+  On a machine kernel the modules its build left out (`resolve`'s deny list of the plan) count
+  as refused, as `module_blacklist=` does on the stock kernel.
 
 The workflow does the rest in this order: PGP-verify the tarball, `vh-plan plan`, resolve,
 copy `.config`, `yes "" | make LLVM=1 localyesconfig LSMOD=lsmod`, `make LLVM=1 olddefconfig`,

@@ -28,14 +28,14 @@ pub const Opts = struct {
 
 /// what resolve reads of plan.zon (vh-plan writes more; the rest is ignored)
 const PlanItem = struct { value: []const u8 };
-const PlanView = struct {
+pub const PlanView = struct {
     kconfig: []const PlanItem = &.{},
     features: []const PlanItem = &.{},
     deny: []const PlanItem = &.{},
     kernel: struct { nr_cpus: u32 = 0, march: []const u8 = "" } = .{},
 };
 
-fn loadPlan(path: []const u8) PlanView {
+pub fn loadPlan(path: []const u8) PlanView {
     const text = readOrDie(path);
     var diag: std.zon.parse.Diagnostics = undefined;
     return std.zon.parse.fromSlice(PlanView, .{
@@ -120,26 +120,10 @@ pub fn resolve(h: hw.Hw, o: Opts) Result {
         if (!known) vh.die("unknown feature {s} (known: {s})", .{ f, mem.join(vh.gpa, " ", &all_features) catch vh.oom() });
     }
 
-    // the deny list: modules.deny plus the modules of every feature not selected
-    var deny: vh.Strv = .{};
-    var deny_why: std.StringHashMapUnmanaged([]const u8) = .empty;
-    loadNames(&deny, vh.fmt("{s}/modules.deny", .{profiles}), true);
-    for (deny.slice()) |m| deny_why.put(vh.gpa, m, "modules.deny") catch vh.oom();
-    for (plan.deny) |x| {
-        const m = alias.normalize(x.value);
-        if (deny.has(m)) continue;
-        deny.add(m);
-        deny_why.put(vh.gpa, m, "the plan") catch vh.oom();
-    }
-    for (all_features) |f| {
-        if (r.features.has(f)) continue;
-        var list: vh.Strv = .{};
-        loadNames(&list, vh.fmt("{s}/features/{s}.modules", .{ profiles, f }), false);
-        for (list.slice()) |m| if (!deny.has(m)) {
-            deny.add(m);
-            deny_why.put(vh.gpa, m, vh.fmt("feature {s} not selected", .{f})) catch vh.oom();
-        };
-    }
+    // the deny list: modules.deny, the plan's, the modules of every feature not selected
+    const refused = denyList(plan, r.features, profiles);
+    const deny = refused.list;
+    const deny_why = refused.why;
 
     rep.print(vh.gpa, "vh-kconf resolve report\n", .{}) catch vh.oom();
     rep.print(vh.gpa, "hw: {s} (probe source {s}, kernel {s}; {s} {s}, {s}, {d} devices, {d} loaded modules)\n", .{ o.hw, h.probe.source, h.probe.kernel, h.machine.sys_vendor, h.machine.product_name, h.cpu.model_name, h.devices.len, h.modules.len }) catch vh.oom();
@@ -286,6 +270,38 @@ pub fn resolve(h: hw.Hw, o: Opts) Result {
     return r;
 }
 
+pub const Deny = struct {
+    list: vh.Strv = .{},
+    /// module -> why: "modules.deny", "the plan", "feature NAME not selected"
+    why: std.StringHashMapUnmanaged([]const u8) = .empty,
+};
+
+/// The modules a build of this plan leaves out on purpose, in order: kernel/profiles/modules.deny,
+/// the plan's deny list, the modules of every feature not among `feats`. vh-kconf check reads
+/// the same list on a machine kernel: there the modules are refused by the build, as
+/// module_blacklist= refuses them on the stock kernel.
+pub fn denyList(plan: PlanView, feats: vh.Strv, profiles: []const u8) Deny {
+    var d: Deny = .{};
+    loadNames(&d.list, vh.fmt("{s}/modules.deny", .{profiles}), true);
+    for (d.list.slice()) |m| d.why.put(vh.gpa, m, "modules.deny") catch vh.oom();
+    for (plan.deny) |x| {
+        const m = alias.normalize(x.value);
+        if (d.list.has(m)) continue;
+        d.list.add(m);
+        d.why.put(vh.gpa, m, "the plan") catch vh.oom();
+    }
+    for (all_features) |f| {
+        if (feats.has(f)) continue;
+        var list: vh.Strv = .{};
+        loadNames(&list, vh.fmt("{s}/features/{s}.modules", .{ profiles, f }), false);
+        for (list.slice()) |m| if (!d.list.has(m)) {
+            d.list.add(m);
+            d.why.put(vh.gpa, m, vh.fmt("feature {s} not selected", .{f})) catch vh.oom();
+        };
+    }
+    return d;
+}
+
 fn applyFragment(r: *Result, path: []const u8, src: []const u8) void {
     applyText(r, readOrDie(path), src);
 }
@@ -317,7 +333,7 @@ pub fn renderFragment(r: *const Result) []u8 {
 }
 
 /// "a,b", "auto" (the plan's features), "none", "auto,game"
-fn features(plan: PlanView, spec: []const u8) vh.Strv {
+pub fn features(plan: PlanView, spec: []const u8) vh.Strv {
     var out: vh.Strv = .{};
     var it = mem.tokenizeScalar(u8, spec, ',');
     while (it.next()) |raw| {

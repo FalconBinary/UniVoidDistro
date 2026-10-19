@@ -31,7 +31,7 @@ tar -C "$repo" -cf - kernel/pins kernel/profiles kernel/hw hwdb vh.conf.example 
 	echo "== vh-kconf check: the GF63 against its own probe, then the AMD desktop against the GF63s"
 	c() { rc=0; /src/build/kt/bin/vh-kconf check --kmsg /dev/null --root /tmp/croot --repo /src "$@" > /tmp/check.out 2>&1 || rc=$?; echo "exit $rc: $(cat /tmp/croot/run/vh/check.done)"; }
 	c --from /src/tests/kernel/fixtures/gf63 --hw /src/kernel/hw/gf63.zon --vh-plan none
-	[ "$rc" = 0 ] && grep -qx "VH_CHECK machine=same devices=0 firmware=0" /tmp/croot/run/vh/check.done && [ ! -e /tmp/croot/run/vh/check ]
+	[ "$rc" = 0 ] && grep -qx "VH_CHECK machine=same devices=0 firmware=0 lost=0" /tmp/croot/run/vh/check.done && [ ! -e /tmp/croot/run/vh/check ]
 	c --from /src/tests/kernel/fixtures/amd-desktop --hw /src/kernel/hw/gf63.zon --vh-plan /src/build/kt/bin/vh-plan
 	[ "$rc" = 1 ] && grep -q "machine=different" /tmp/croot/run/vh/check.done
 	grep "^  CPU\|^  board\|^A fresh plan" /tmp/croot/run/vh/check

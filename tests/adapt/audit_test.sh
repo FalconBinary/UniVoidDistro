@@ -46,7 +46,7 @@ mkdir -p /usr/lib/firmware/i915 /usr/lib/firmware/gpu
 : > /usr/lib/firmware/i915/kbl_dmc_ver1_04.bin.zst
 : > /usr/lib/firmware/regulatory.db
 : > /usr/lib/firmware/gpu/left-out.bin.zst
-echo "VH_CHECK machine=same devices=0 firmware=0" > /run/vh/check.done
+echo "VH_CHECK machine=same devices=0 firmware=0 lost=0" > /run/vh/check.done
 out=$(audit "root=UUID=x module_blacklist=sctp,$(echo "$deny" | tr ' ' ',') $cmdl quiet" "xfs dm_crypt")
 has "the tier" "$out" "[ ok ] protection tier: full (strict mode)"
 has "a service of the plan runs" "$out" "[ ok ] service iwd of the plan is running"
@@ -68,7 +68,7 @@ r=$S/tests/adapt/golden/rpi5/tiered
 rm -f /usr/local/sbin/vh-plan /etc/vh/plan.zon /etc/xbps.d/40-vh-firmware.conf
 cp "$r/plan.env" /root/vh/plan.env
 cp "$r/plan-report.txt" /etc/vh/
-echo "VH_CHECK machine=different devices=0 firmware=0" > /run/vh/check.done
+echo "VH_CHECK machine=different devices=0 firmware=0 lost=0" > /run/vh/check.done
 mkdir -p /run/vh/plan
 echo "VH_PLAN_TIER='full'" > /run/vh/plan/plan.env
 out=$(audit "root=UUID=x module_blacklist=rtsx_pci,rtsx_pci_sdmmc,uvcvideo" "")
