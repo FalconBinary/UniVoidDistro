@@ -1,0 +1,49 @@
+# sched: track S. Builds the BPF objects and the loader with the pinned Zig, runs the lint
+# of the objects (no kernel needed) and the unit tests of sched/ and of the new zig/lib
+# modules. Loading the scheduler needs a kernel with CONFIG_SCHED_CLASS_EXT: that is the
+# kvm-smoke job with the kernel-fat artifact, not this one.
+name: sched
+on:
+  push:
+    paths: ["sched/**", "zig/lib/bpf_uapi.zig", "zig/lib/btf.zig", "zig/lib/elf.zig", ".github/workflows/sched.yml"]
+  pull_request:
+    paths: ["sched/**", "zig/lib/bpf_uapi.zig", "zig/lib/btf.zig", "zig/lib/elf.zig", ".github/workflows/sched.yml"]
+permissions:
+  contents: read
+jobs:
+  build-lint-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-zig
+      - name: build the loader and the BPF objects (x86_64)
+        run: |
+          set -e
+          cd sched
+          zig build -Dtarget=x86_64-linux -Dcpu=baseline --prefix out
+          ls -l out/bin out/bpf
+          file out/bin/vh-sched
+      - name: lint of every BPF object
+        run: |
+          set -e
+          cd sched
+          for o in out/bpf/*.o; do echo "== $o"; out/bin/vh-sched lint "$o"; done
+      - name: unit tests (built once, run directly)
+        run: |
+          set -e
+          cd sched
+          zig build tests -Dtarget=x86_64-linux -Dcpu=baseline --prefix out
+          rc=0
+          for t in out/test/*; do
+            if out_t=$("$t" 2>&1); then echo "ok $(basename "$t"): ${out_t##*$'\n'}"
+            else echo "FAIL $(basename "$t")"; echo "$out_t" | tail -30; rc=1; fi
+          done
+          exit $rc
+      - name: the generated BTF is what the kernel would be given
+        run: |
+          set -e
+          cd sched
+          out/bin/vh-sched btf > own.btf
+          ls -l own.btf
+          python3 -c "import struct,sys; h=open('own.btf','rb').read(24); m,v,f,hl,to,tl,so,sl=struct.unpack('<HBBIIIII',h); assert m==0xeb9f and v==1 and hl==24, (m,v,hl); print('types', tl, 'bytes, strings', sl, 'bytes')"

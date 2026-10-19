@@ -1,0 +1,16 @@
+.{
+    .name = .vh_sched,
+    .version = "0.0.1",
+    .fingerprint = 0xc9ec9d17541802e4,
+    .minimum_zig_version = "0.17.0",
+    .dependencies = .{
+        // the shared modules of zig/lib (vh, and track S's bpf_uapi, btf, elf)
+        .tools = .{ .path = "../zig" },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "bpf",
+        "src",
+    },
+}

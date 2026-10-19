@@ -7,6 +7,7 @@
     .dependencies = .{
         .tools = .{ .path = "zig" },
         .init = .{ .path = "init" },
+        .sched = .{ .path = "sched" },
     },
     .paths = .{
         "build.zig",
