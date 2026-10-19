@@ -2,16 +2,29 @@
 # void-hardperf-light: dead man's switch, wiping the LUKS key from RAM (docs/13, deadman).
 #   doas /root/vh/optional/deadman/enable
 . "$(dirname "$0")/../lib.sh"
+load_plan /root/vh/plan.env
 MOR=/sys/firmware/efi/efivars/MemoryOverwriteRequestControl-e20939be-32d4-41be-a150-897f85d49829
 if [ -e "$MOR" ]; then ok "MOR is supported: a reboot through the firmware wipes RAM"
 else warn "MOR not found: after wiping the key the machine powers off (sysrq o); the firmware does not wipe RAM"; fi
+# The watchdog of the board, as the plan names it (VH_PLAN_WATCHDOG: hwdb's cpu.*.watchdog and
+# arm.watchdog.* rules, softdog when no hardware one is known). A firmware that disabled the
+# hardware watchdog leaves its driver without a device: then there is no /dev/watchdog.
+wdm=${VH_PLAN_WATCHDOG:-softdog}
+modprobe "$wdm" 2>/dev/null || true   # built in, already loaded, or the module lock is on
 wd=no
-if [ -e /dev/watchdog ] && grep -qi tco /sys/class/watchdog/watchdog0/identity 2>/dev/null; then
-	if dmesg 2>/dev/null | grep -qi 'unable to reset NO_REBOOT'; then
-		warn "iTCO: the firmware locked NO_REBOOT; the hardware watchdog is unavailable"
+if [ -e /dev/watchdog ]; then
+	wd=yes
+	id=$(cat /sys/class/watchdog/watchdog0/identity 2>/dev/null)
+	drv=$(basename "$(readlink -f /sys/class/watchdog/watchdog0/device/driver 2>/dev/null)" 2>/dev/null | tr - _)
+	if [ "$wdm" = softdog ]; then
+		warn "softdog ($id): no hardware watchdog is known for this board; a software one resets a dead or hung vh-deadman, not a hung kernel (docs/uni/runtime.md)"
+	elif [ "$drv" = "$wdm" ]; then
+		ok "$wdm ($id): the board's hardware watchdog; vh-deadman pets it"
 	else
-		wd=yes; ok "iTCO_wdt: a hardware watchdog is present; vh-deadman pets it"
+		warn "the plan names $wdm, but /dev/watchdog is ${drv:-a watchdog without a device} ($id); vh-deadman pets that one"
 	fi
+else
+	warn "$wdm: no watchdog device (the firmware may have disabled it); vh-deadman runs without one"
 fi
 
 tag=""
@@ -39,8 +52,8 @@ cat > /etc/vh/deadman.conf <<EOT
 TAG="$tag"
 # Right Ctrl + Right Alt + End on the internal keyboard (i8042) = alarm shutdown
 COMBO=$combo
-# iTCO hardware watchdog: the daemon pets it; a dead or hung daemon = reset through the
-# firmware (MOR wipes RAM), failing towards the safe side
+# the watchdog of the board ($wdm, from the plan): the daemon pets it; a dead or hung daemon
+# = reset (a hardware one resets through the firmware, and MOR wipes RAM), failing towards the safe side
 WATCHDOG=$wd
 EOT
 install -m 0755 "$MOD_DIR/vh-deadman" /usr/local/sbin/vh-deadman
@@ -49,8 +62,11 @@ rm -rf /etc/sv/vh-deadman; cp -r "$MOD_DIR/sv/vh-deadman" /etc/sv/vh-deadman
 rm -rf /usr/lib/dracut/modules.d/91vhdeadman; cp -r "$MOD_DIR/91vhdeadman" /usr/lib/dracut/modules.d/91vhdeadman
 echo 'add_dracutmodules+=" vhdeadman "' > /etc/dracut.conf.d/21-vh-deadman.conf
 if [ "$wd" = yes ]; then
-	echo 'options iTCO_wdt nowayout=1 heartbeat=60' > /etc/modprobe.d/vh-itco.conf
-	grep -qx iTCO_wdt /etc/vh/modules.preload 2>/dev/null || echo iTCO_wdt >> /etc/vh/modules.preload 2>/dev/null || true
+	# nowayout: nobody stops it, root included; every watchdog driver has the parameter, and
+	# vh-deadman sets the timeout through the watchdog API (60 s where the driver allows it)
+	rm -f /etc/modprobe.d/vh-itco.conf   # its name before U2
+	echo "options $wdm nowayout=1" > /etc/modprobe.d/vh-watchdog.conf
+	grep -qx "$wdm" /etc/vh/modules.preload 2>/dev/null || echo "$wdm" >> /etc/vh/modules.preload 2>/dev/null || true
 fi
 # idle: lock after 15 min without physical input, power off after 60 (vh-acpid)
 sed -i 's/^IDLE_LOCK_MIN=.*/IDLE_LOCK_MIN=15/; s/^IDLE_POWEROFF_MIN=.*/IDLE_POWEROFF_MIN=60/' /etc/vh/acpi.conf

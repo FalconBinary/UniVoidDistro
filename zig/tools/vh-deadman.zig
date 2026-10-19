@@ -241,6 +241,32 @@ pub fn uev(d: []const u8, key: []const u8) []const u8 {
     return "";
 }
 
+// linux/watchdog.h: _IOWR('W', 6, int) and _IOR('W', 7, int)
+const WDIOC_SETTIMEOUT: u32 = (3 << 30) | (4 << 16) | (@as(u32, 'W') << 8) | 6;
+const WDIOC_GETTIMEOUT: u32 = (2 << 30) | (4 << 16) | (@as(u32, 'W') << 8) | 7;
+/// the timeout asked of the board's watchdog, whatever its driver: a dead or hung daemon
+/// resets the machine within a minute
+const WD_TIMEOUT: i32 = 60;
+
+/// How often the daemon pets the watchdog, in seconds: a third of the timeout the driver
+/// accepted, at most every 10 s, at least every second. A driver may refuse 60 s and keep a
+/// shorter limit of its own; null or nonsense (the driver cannot say) keeps 10 s.
+pub fn petInterval(timeout: ?i32) u32 {
+    const t = timeout orelse return 10;
+    if (t <= 0) return 10;
+    return @intCast(@max(@min(@divTrunc(t, 3), 10), 1));
+}
+
+/// the timeout of an open watchdog: 60 s asked, what the driver kept read back; null when it
+/// cannot say
+fn wdTimeout(wd: vh.fd_t) ?i32 {
+    var want: i32 = WD_TIMEOUT;
+    _ = linux.ioctl(wd, WDIOC_SETTIMEOUT, @intFromPtr(&want));
+    var got: i32 = 0;
+    if (linux.errno(linux.ioctl(wd, WDIOC_GETTIMEOUT, @intFromPtr(&got))) != .SUCCESS) return null;
+    return got;
+}
+
 const EV_KEY = 1;
 const KEY_RIGHTCTRL = 97;
 const KEY_RIGHTALT = 100;
@@ -286,14 +312,21 @@ fn daemonLoop(conf: *const vh.Kv) noreturn {
             np += 1;
         }
     }
-    if (vh.eql(conf.get("WATCHDOG", "no"), "yes") and vh.pathExists("/dev/watchdog"))
+    var pet_s: u32 = 10;
+    var wd_timeout: ?i32 = null;
+    if (vh.eql(conf.get("WATCHDOG", "no"), "yes") and vh.pathExists("/dev/watchdog")) {
         wd = vh.openFd("/dev/watchdog", .{ .ACCMODE = .WRONLY }, 0) catch -1;
+        if (wd >= 0) {
+            wd_timeout = wdTimeout(wd);
+            pet_s = petInterval(wd_timeout);
+        }
+    }
     vh.mkdirs("/run/vh", 0o755);
     status(if (armed_len > 0) "armed" else "disarmed");
     vh.log("{s}; tag {s}: {s}; combination: {s}; watchdog: {s}", .{
         describe(),                              if (tag.len > 0) tag else "-",
         if (armed_len > 0) "inserted" else "absent", if (kbd >= 0) "yes" else "no",
-        if (wd >= 0) "yes" else "no",
+        if (wd < 0) "no" else if (wd_timeout) |t| vh.fmt("timeout {d} s, petted every {d} s", .{ t, pet_s }) else vh.fmt("petted every {d} s", .{pet_s}),
     });
     var rctrl = false;
     var ralt = false;
@@ -306,7 +339,7 @@ fn daemonLoop(conf: *const vh.Kv) noreturn {
             const e = linux.errno(linux.write(wd, "\x00", 1));
             if (e != .SUCCESS) vh.log("watchdog: {s}", .{vh.strerror(e)});
         }
-        const r = linux.poll(&pfd, np, if (wd >= 0) 10000 else -1);
+        const r = linux.poll(&pfd, np, if (wd >= 0) @as(i32, @intCast(pet_s * 1000)) else -1);
         const pe = linux.errno(r);
         if (pe != .SUCCESS and pe != .INTR) {
             vh.errno = pe;
@@ -387,6 +420,17 @@ pub fn main(init: std.process.Init.Minimal) void {
         vh.exit(2);
     }
     vh.exit(0);
+}
+
+test "the watchdog is petted at a third of its timeout" {
+    try std.testing.expectEqual(@as(u32, 10), petInterval(60));
+    try std.testing.expectEqual(@as(u32, 5), petInterval(15));
+    try std.testing.expectEqual(@as(u32, 3), petInterval(10));
+    try std.testing.expectEqual(@as(u32, 1), petInterval(2));
+    try std.testing.expectEqual(@as(u32, 10), petInterval(null));
+    try std.testing.expectEqual(@as(u32, 10), petInterval(0));
+    try std.testing.expectEqual(@as(u32, 0xC0045706), WDIOC_SETTIMEOUT);
+    try std.testing.expectEqual(@as(u32, 0x80045707), WDIOC_GETTIMEOUT);
 }
 
 test "parseTag and uev" {

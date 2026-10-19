@@ -50,3 +50,20 @@ controller (PCI class `0x03`) that did not bring the console up (`boot_vga`), wh
 vendor: the dGPU with its audio or USB functions. Whether the dGPU sleeps is the plan's
 decision (a rule of `hwdb/gpu.zon` sets the tag `dgpu` and selects its udev rule);
 `vh-audit performance` checks that it is suspended only then.
+
+## The watchdog of `optional/deadman`
+
+`optional/deadman/enable` takes the watchdog from the plan (`VH_PLAN_WATCHDOG`, the scalar
+`watchdog` of `hwdb/`): the chipset's on Intel (iTCO_wdt) and AMD (sp5100_tco), the SBSA
+watchdog of ARM servers, the Raspberry Pi's (bcm2835_wdt), and softdog where no rule knows a
+hardware one. It loads that module, preloads it before the module lock and gives it
+`nowayout=1` (`/etc/modprobe.d/vh-watchdog.conf`; every watchdog driver has the parameter).
+`vh-deadman` asks the driver for a 60 s timeout through the watchdog API and pets it at a
+third of what the driver kept (at most every 10 s): a driver with a shorter limit of its own
+is petted in time too. A firmware that disabled the hardware watchdog leaves its driver
+without a device; `enable` then says so and the daemon runs without one.
+
+| Watchdog | Protects | Residual risk | Speed cost | Convenience cost |
+|---|---|---|---|---|
+| the board's hardware one, from the plan | a dead or hung `vh-deadman`, and a hung kernel: the hardware resets the machine (with MOR the firmware wipes RAM) | the firmware may disable or lock it (no device appears) | one write every 10 s at most | none |
+| softdog, when the plan knows no hardware one | a dead or hung `vh-deadman`: the kernel reboots | a hung kernel (a deadlock, interrupts off) never runs the software timer, so nothing resets the machine | the same | none |

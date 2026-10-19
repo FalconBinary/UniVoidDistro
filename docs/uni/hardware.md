@@ -120,7 +120,7 @@ plan puts that chain into dracut's `add_drivers`:
 | What | Detected by | Effect |
 |---|---|---|
 | chipset (Intel PCH, AMD FCH) | PCI ids of the SMBus, LPC and thermal functions | SMBus (i2c_i801 / i2c_piix4), the pin controller of that chipset generation (the i2c-hid touchpad hangs off it) |
-| watchdog for `optional/deadman` | Intel: iTCO (via LPC/SMBus); AMD: sp5100_tco | the hardware watchdog of the board; softdog is the weaker fallback (a row in the cost table) [U2] |
+| watchdog for `optional/deadman` | Intel: iTCO (via LPC/SMBus); AMD: sp5100_tco (via SMBus); ARM servers: sbsa_gwdt; Raspberry Pi: bcm2835_wdt | the plan's `watchdog`, which `optional/deadman` loads with `nowayout`; softdog is the weaker fallback ([the cost table](runtime.md#the-watchdog-of-optionaldeadman)) |
 | Super I/O sensors (Nuvoton, ITE) | not visible to a probe (ISA ports); DMI board vendor and name | the hwmon driver of `hwdb/board.zon` where the board is known [VERIFY] |
 | WMI and EC platform drivers (ASUS, MSI, Lenovo, Dell, HP, Gigabyte) | the WMI GUID and DMI aliases | the vendor's driver (fan and power modes) |
 | TPM | `/sys/class/tpm/tpm0`: firmware TPM through CRB, discrete through TIS/SPI | class `tpm-crb` or `tpm-tis` |

@@ -2,7 +2,7 @@
 # void-hardperf-light: disable the dead man's switch.
 . "$(dirname "$0")/../lib.sh"
 wd=no; grep -q '^WATCHDOG=yes' /etc/vh/deadman.conf 2>/dev/null && wd=yes
-rm -f /etc/runit/shutdown.d/85-vh-deadman.sh /etc/dracut.conf.d/21-vh-deadman.conf /etc/modprobe.d/vh-itco.conf
+rm -f /etc/runit/shutdown.d/85-vh-deadman.sh /etc/dracut.conf.d/21-vh-deadman.conf /etc/modprobe.d/vh-watchdog.conf /etc/modprobe.d/vh-itco.conf
 rm -rf /usr/lib/dracut/modules.d/91vhdeadman
 sed -i 's/^IDLE_LOCK_MIN=.*/IDLE_LOCK_MIN=0/; s/^IDLE_POWEROFF_MIN=.*/IDLE_POWEROFF_MIN=0/' /etc/vh/acpi.conf
 sv restart vh-acpid >/dev/null 2>&1 || true
