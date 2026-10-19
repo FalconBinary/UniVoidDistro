@@ -39,9 +39,11 @@ decide      vh-plan: hw.zon + hwdb/*.zon + vh.conf -> /etc/vh/plan.zon, plan.env
 specialise  the installer: packages, firmware kept, command line, denied modules, services,
                            initrd drivers, LUKS parameters
             vh-kconf resolve --plan: class fragments, NR_CPUS, -march -> the machine kernel
-            later: vh-stage1, vh-power, vh-acpid, vh-deadman, vh-sched (U2-U4)
+            runtime (U2): udev rules by attributes, vh-power, vh-acpid's built-in input,
+            the deadman's watchdog, vh-backlight; later vh-sched (U4)
 verify      the stock signed UKI always stays in Limine; a machine kernel becomes the default
-            only after it has booted (U3); vh-audit shows the tier and checks the plan
+            only after it has booted (U3); vh-kconf check at boot compares the machine with
+            hw.zon (U2); vh-audit shows the tier and checks the plan (U2)
 ```
 
 ```
@@ -141,6 +143,8 @@ the LUKS passphrase needs 2 GiB, because cryptsetup gives the PBKDF at most half
 
 ### U2. Runtime adaptation
 
+Done; [runtime.md](runtime.md) describes every piece.
+
 - udev rules by attributes: the I/O scheduler (NVMe and virtio: `none`; SATA SSD:
   `mq-deadline`; HDD and eMMC: `bfq`) [VERIFY by measurement per class].
 - `vh-power` for every EPP driver (intel_pstate, amd-pstate-epp), `platform_profile`, the dGPU
@@ -197,14 +201,40 @@ hardware enters: N shows the plan and the tier and runs the gate; G is GPU-vendo
 
 ### State (2026-10-19)
 
-M0 and U1 are done. Verified: the unit tests of `kernel/` (24) and `adapt/` (10) in a container;
+M0, U1 and U2 are done.
+
+U2 verified, in containers on the Mac (aarch64; the `adapt` workflow repeats it on x86_64 once
+the repository is on GitHub): the unit tests of `kernel/` (30), `adapt/` (12), `init/` (27) and
+the Zig tools; `vh-power`'s native step and shell script give the same EPP, platform profile
+and runtime PM on a fake sysfs of a hybrid laptop, on AC and on battery, the dGPU's slot and
+the bridge untouched; `vh-backlight`'s choice on a fake `/sys/class/backlight`; the probe's
+keyboard places on the six fixtures and the plan's internal input of a machine with a built-in
+USB, an external USB and an SPI keyboard; `vh-kconf check` on the fixtures (the same machine,
+another machine, a lost driver, a refused module, new devices with and without a module, the
+kernel log's firmware failures, the trim's verdict) and end to end with a fresh plan;
+`vh-plan env` gives every golden `plan.env` back; `vh-audit plan` on the golden plans of the
+GF63 and the Raspberry Pi 5 in a mocked installed system; the GF63 oracle with the two
+schedulers named in `perf` (its `.config` unchanged); the installer's lists; the lint with no
+U2 entry left in `tests/adapt/lint.allow`.
+
+U2 not verified: nothing of it on a real machine or on the VM rig. The udev scheduler rule has
+no test (no udev in the containers); the schedulers and the platform profiles are [VERIFY by
+measurement per class]; `vh-power` at a real plug event; the watchdog timeouts of each driver
+(sbsa_gwdt, bcm2835_wdt, sp5100_tco) through WDIOC on hardware; how noisy `vh-kconf check` is
+on an installed system (the probe of the installation runs in the live system) and whether its
+5 s delay catches the asynchronous firmware loads; a built-in USB keyboard that the kernel calls
+`fixed`; the backlight on a hybrid laptop; `vh-audit` on an installed system (`tests/vm`
+expects no FAIL on the rig, which the plan area must keep); `install/00-probe.sh` on a live
+system.
+
+U1 verified: the unit tests of `kernel/` (24) and `adapt/` (10) in a container;
 the golden plans of the six machines of `kernel/hw`, each planned twice with the same bytes; the
 gate (the four x86_64 machines full in strict mode, the two ARM64 ones refused in strict and
 installed in tiered); the GF63 oracle (the classes reassemble upstream's 264 fragment symbols
 and `.config`, one explained difference in LSMOD); the installer's packages, blacklist,
 firmware and command line, which for the GF63 are exactly upstream's; the lint.
 
-Not verified yet: a full installation (`kvm-smoke` runs once the repository is on GitHub, or
+U1 not verified yet: a full installation (`kvm-smoke` runs once the repository is on GitHub, or
 `vhvm.py install` under TCG on the Mac: hours and disk space); any real machine; the five
 synthesised fixtures; the [VERIFY] items of `hwdb/` (the firmware narrowed for amdgpu, i915 and
 iwlwifi on hardware, the Secure Boot menu names) and of `tests/vm/vhvm.py` (intel-iommu under

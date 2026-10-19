@@ -1,7 +1,7 @@
 # tests/adapt/lint.allow: hardware constants the lint accepts (docs/uni/principles.md, rule 1).
-# PATH<TAB>REGEX<TAB>reason. A hit in PATH whose line matches REGEX passes. Entries marked U2
-# are upstream code that milestone U2 makes vendor-neutral; the others are where a constant
-# belongs (test data, a file a hwdb rule selects, a runtime rule that names its driver).
+# PATH<TAB>REGEX<TAB>reason. A hit in PATH whose line matches REGEX passes. Every entry is where
+# a constant belongs (test data, a file a hwdb rule selects, a runtime rule that names its
+# driver); the upstream code milestone U2 made vendor-neutral has none left.
 rootfs/etc/udev/rules.d/99-vh-dgpu-off.rules	.	installed only when hwdb's gpu.nvidia.dgpu-off selects it (VH_PLAN_UDEV)
 rootfs/etc/udev/rules.d/99-vh-net.rules	RTL81	a runtime rule by driver (r8169), a no-op on every other machine; the comment names the chips
 kernel/src/hw.zig	GF63|Micro-Star|usb:v8087	test data: the GF63 fixture
