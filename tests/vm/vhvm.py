@@ -237,7 +237,8 @@ def cmd_install(a):
     repo_iso = os.path.join(vm.d, "repo.iso")
     make_repo_iso(repo_iso)
     work = tempfile.mkdtemp(dir=vm.d)
-    subprocess.run(["tar", "-xf", a.iso, "-C", work, "boot/vmlinuz", "boot/initrd"], check=True)
+    # bsdtar (libarchive) reads ISO 9660 images; GNU tar, the tar of Linux, does not
+    subprocess.run(["bsdtar", "-xf", a.iso, "-C", work, "boot/vmlinuz", "boot/initrd"], check=True)
     append = ("root=live:CDLABEL=VOID_LIVE ro init=/sbin/init rd.luks=0 rd.md=0 rd.dm=0 "
               "loglevel=4 console=ttyS0,115200 rd.live.overlay.overlayfs=1")
     ser = vm.start(["-cdrom", a.iso,
