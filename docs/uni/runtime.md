@@ -100,8 +100,12 @@ keys count when they are held at once on any of them, since a keyboard may send 
 and its other keys through two input devices. A keyboard plugged in from outside and a
 virtual one (uinput) never trigger the alarm. `vh-deadman test` lists the keyboards the
 combination listens to. A keyboard that disappears (unplugged, its USB device reset) is
-dropped with a line in the log; one that appears after the service started counts only after
-`sv restart vh-deadman` [VERIFY on hardware with a keyboard on internal USB, I2C or SPI].
+dropped with a line in the log. One that appears while the service runs (a detachable keyboard
+attached again, a USB keyboard enumerated anew) is judged by the same rule as soon as the
+kernel announces its `/dev/input/eventN` in a uevent, and counts from then on if it passes,
+with a line in the log. For this the daemon reads the uevents whenever `COMBO=yes`, with a tag
+or without one; without a tag no USB device arms or sets off the alarm [VERIFY on hardware
+with a keyboard on internal USB, I2C or SPI].
 
 ## `vh-kconf check`
 

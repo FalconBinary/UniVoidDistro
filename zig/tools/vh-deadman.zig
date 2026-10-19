@@ -300,15 +300,40 @@ fn internalInput() []const []const u8 {
     return places.slice();
 }
 
+/// a file under the directory dfd as one line without surrounding whitespace, "" when it
+/// cannot be read: vh.rd, into the caller's buffer
+fn rdAt(dfd: vh.fd_t, name: [*:0]const u8, buf: *[4096]u8) []const u8 {
+    const rc = vh.sysRetry(linux.openat, .{ dfd, name, linux.O{ .ACCMODE = .RDONLY, .CLOEXEC = true }, @as(linux.mode_t, 0) }) catch return "";
+    const fd: vh.fd_t = @intCast(rc);
+    defer vh.close(fd);
+    const n = vh.readFd(fd, buf[0 .. buf.len - 1]) catch 0;
+    return vh.strip(buf[0..n]);
+}
+
+/// Does the combination listen to the input device /sys/class/input/NAME (eventN):
+/// comboKeyboard() on what its sysfs directory shows, opened once, so that the three facts are
+/// of one device. Nothing is allocated: the daemon asks this of every input device plugged in
+/// while it runs, and the arena of zig/lib/vh.zig never frees.
+fn comboEvent(name: []const u8, places: []const []const u8) bool {
+    var path: [128]u8 = undefined;
+    const dir = mem.printSentinel(&path, "/sys/class/input/{s}/device", .{name}, 0) catch return false;
+    const rc = vh.sysRetry(linux.open, .{ dir.ptr, linux.O{ .ACCMODE = .RDONLY, .PATH = true, .CLOEXEC = true }, @as(linux.mode_t, 0) }) catch return false;
+    const dfd: vh.fd_t = @intCast(rc);
+    defer vh.close(dfd);
+    // its real path, read as vh.realpath reads it
+    var link: [32]u8 = undefined;
+    var real: [4096]u8 = undefined;
+    const self_fd = mem.printSentinel(&link, "/proc/self/fd/{d}", .{dfd}, 0) catch unreachable;
+    const n = vh.sys(linux.readlink(self_fd.ptr, &real, real.len)) catch return false;
+    var phys: [4096]u8 = undefined;
+    var keys: [4096]u8 = undefined;
+    return comboKeyboard(rdAt(dfd, "phys", &phys), real[0..n], rdAt(dfd, "capabilities/key", &keys), places);
+}
+
 /// the input devices the combination listens to, by their names in /sys/class/input (event0 ...)
-fn comboKeyboards() []const []const u8 {
-    const places = internalInput();
+fn comboKeyboards(places: []const []const u8) []const []const u8 {
     var found: vh.Strv = .{};
-    for (globDir("/sys/class/input", "event")) |e| {
-        const d = vh.fmt("/sys/class/input/{s}/device", .{e});
-        const real = vh.realpath(d) catch continue;
-        if (comboKeyboard(vh.rd(vh.fmt("{s}/phys", .{d})), real, vh.rd(vh.fmt("{s}/capabilities/key", .{d})), places)) found.add(e);
-    }
+    for (globDir("/sys/class/input", "event")) |e| if (comboEvent(e, places)) found.add(e);
     return found.slice();
 }
 
@@ -320,49 +345,109 @@ fn keyboardsText(names: []const []const u8) []const u8 {
     return s.items;
 }
 
+/// The input device a uevent announces, by its name in /sys/class/input and /dev/input
+/// (eventN), when the combination has to look at it: the kernel added an event device (devtmpfs
+/// made its node before the uevent). Its input device (inputM) and the other handlers' devices
+/// (mouseN), removals and the other subsystems give null.
+pub fn inputAdd(d: []const u8) ?[]const u8 {
+    if (!vh.eql(uev(d, "ACTION"), "add") or !vh.eql(uev(d, "SUBSYSTEM"), "input")) return null;
+    const dev = uev(d, "DEVNAME");
+    if (!vh.startsWith(dev, "input/event")) return null;
+    const num = dev["input/event".len..];
+    if (num.len == 0 or num.len > 10) return null;
+    for (num) |c| if (!std.ascii.isDigit(c)) return null;
+    return dev["input/".len..];
+}
+
+const TagAction = enum { none, arm, alarm };
+
+/// What a uevent means for the tag (prod: "vid/pid/", how PRODUCT of its USB device starts):
+/// the tag plugged in arms the alarm, the armed one pulled out sets it off. Without a tag (prod
+/// "") nothing does: the socket is open for the keyboards of the combination as well, and ""
+/// starts every PRODUCT, so pulling out any USB device would wipe.
+pub fn tagAction(d: []const u8, prod: []const u8, armed: []const u8) TagAction {
+    if (prod.len == 0) return .none;
+    if (!vh.eql(uev(d, "SUBSYSTEM"), "usb") or !vh.eql(uev(d, "DEVTYPE"), "usb_device") or
+        !vh.startsWith(uev(d, "PRODUCT"), prod)) return .none;
+    const action = uev(d, "ACTION");
+    if (vh.eql(action, "add")) return .arm;
+    if (vh.eql(action, "remove") and armed.len > 0 and vh.eql(uev(d, "DEVPATH"), armed)) return .alarm;
+    return .none;
+}
+
+/// What the daemon polls: [0] the uevent socket (-1 without one), then the keyboards of the
+/// combination, name[i] their event names. A keyboard that went away leaves its slot (fd -1:
+/// poll skips a negative descriptor) to the next one.
+const Polled = struct {
+    pfd: [1 + MAX_KBD]linux.pollfd = undefined,
+    name: [1 + MAX_KBD][]const u8 = undefined,
+    n: usize = 1,
+
+    /// does the combination listen to the input device eventN already
+    fn listening(self: *const Polled, e: []const u8) bool {
+        for (self.pfd[1..self.n], self.name[1..self.n]) |p, x| if (p.fd >= 0 and vh.eql(x, e)) return true;
+        return false;
+    }
+
+    /// the slot for one more keyboard: the first one a keyboard left, else a new one; null when
+    /// MAX_KBD are open
+    fn slot(self: *const Polled) ?usize {
+        for (1..self.n) |i| if (self.pfd[i].fd < 0) return i;
+        return if (self.n < self.pfd.len) self.n else null;
+    }
+
+    /// opens /dev/input/eventN for the combination; false when it cannot (the log says why)
+    fn open(self: *Polled, e: []const u8) bool {
+        const i = self.slot() orelse {
+            vh.log("{s}: the combination listens to {d} input devices already", .{ e, MAX_KBD });
+            return false;
+        };
+        const node = vh.fmt("/dev/input/{s}", .{e});
+        const fd = vh.openFd(node, .{ .ACCMODE = .RDONLY }, 0) catch {
+            vh.log("{s}: {s}", .{ node, vh.serr() });
+            return false;
+        };
+        self.pfd[i] = .{ .fd = fd, .events = linux.POLL.IN, .revents = 0 };
+        self.name[i] = vh.dupe(e); // a uevent's name lives only until the next one
+        if (i == self.n) self.n += 1;
+        return true;
+    }
+};
+
 fn daemonLoop(conf: *const vh.Kv) noreturn {
     const tag = conf.get("TAG", "");
     const combo = vh.eql(conf.get("COMBO", "no"), "yes");
+    const vp: ?[2]u16 = if (tag.len > 0) parseTagOrDie(tag) else null;
     var armed: [512]u8 = undefined;
     var armed_len: usize = 0;
     var prod_buf: [32]u8 = undefined;
     var prod: []const u8 = "";
-    // the uevent socket, then the keyboards of the combination (kbd_name: their event names)
-    var pfd: [1 + MAX_KBD]linux.pollfd = undefined;
-    var kbd_name: [1 + MAX_KBD][]const u8 = undefined;
-    var np: usize = 0;
+    if (vp) |v| prod = std.fmt.bufPrint(&prod_buf, "{x}/{x}/", .{ v[0], v[1] }) catch unreachable;
+    var po: Polled = .{};
     var nl: vh.fd_t = -1;
     var wd: vh.fd_t = -1;
-    if (tag.len > 0) {
-        const vp = parseTagOrDie(tag);
-        prod = std.fmt.bufPrint(&prod_buf, "{x}/{x}/", .{ vp[0], vp[1] }) catch unreachable;
+    // the uevents: the tag's USB device, and a keyboard of the combination that appears while
+    // the daemon runs (a detachable one attached again, a USB one enumerated anew). The socket
+    // is open before the devices are looked for, so that none appears unseen in between.
+    if (tag.len > 0 or combo) {
         const rc = linux.socket(linux.AF.NETLINK, linux.SOCK.DGRAM | linux.SOCK.CLOEXEC, 15); // NETLINK_KOBJECT_UEVENT
         nl = @intCast(vh.sys(rc) catch vh.die("netlink uevent: {s}", .{vh.serr()}));
         var sa = mem.zeroes(linux.sockaddr.nl);
         sa.family = linux.AF.NETLINK;
         sa.groups = 1;
         _ = vh.sys(linux.bind(nl, @ptrCast(&sa), @sizeOf(linux.sockaddr.nl))) catch vh.die("netlink uevent: {s}", .{vh.serr()});
-        pfd[np] = .{ .fd = nl, .events = linux.POLL.IN, .revents = 0 };
-        np += 1;
-        if (tagPresent(vp)) |p| {
+    }
+    po.pfd[0] = .{ .fd = nl, .events = linux.POLL.IN, .revents = 0 };
+    if (vp) |v| {
+        if (tagPresent(v)) |p| {
             armed_len = @min(p.len, armed.len);
             @memcpy(armed[0..armed_len], p[0..armed_len]);
         }
     }
+    const places: []const []const u8 = if (combo) internalInput() else &.{};
     var kbds: vh.Strv = .{};
     if (combo) {
-        for (comboKeyboards()) |e| {
-            if (kbds.len() >= MAX_KBD) break;
-            const node = vh.fmt("/dev/input/{s}", .{e});
-            const fd = vh.openFd(node, .{ .ACCMODE = .RDONLY }, 0) catch {
-                vh.log("{s}: {s}", .{ node, vh.serr() });
-                continue;
-            };
-            pfd[np] = .{ .fd = fd, .events = linux.POLL.IN, .revents = 0 };
-            kbd_name[np] = e;
-            np += 1;
-            kbds.add(e);
-        }
+        for (comboKeyboards(places)) |e| if (po.open(e)) kbds.add(e);
     }
     var pet_s: u32 = 10;
     var wd_timeout: ?i32 = null;
@@ -391,62 +476,71 @@ fn daemonLoop(conf: *const vh.Kv) noreturn {
             const e = linux.errno(linux.write(wd, "\x00", 1));
             if (e != .SUCCESS) vh.log("watchdog: {s}", .{vh.strerror(e)});
         }
-        const r = linux.poll(&pfd, np, if (wd >= 0) @as(i32, @intCast(pet_s * 1000)) else -1);
+        const r = linux.poll(&po.pfd, po.n, if (wd >= 0) @as(i32, @intCast(pet_s * 1000)) else -1);
         const pe = linux.errno(r);
         if (pe != .SUCCESS and pe != .INTR) {
             vh.errno = pe;
             vh.die("poll: {s}", .{vh.serr()});
         }
         if (pe != .SUCCESS) continue;
-        for (pfd[0..np], 0..) |*p, i| {
+        // the keyboards before the uevent: one that went away gives up its event name, which the
+        // kernel may already have given to the device the uevent announces
+        for (po.pfd[1..po.n], po.name[1..po.n]) |*p, kbd| {
             if (p.revents == 0) continue;
-            if (p.fd == nl) {
-                var from: linux.sockaddr.nl = undefined;
-                var fl: linux.socklen_t = @sizeOf(linux.sockaddr.nl);
-                const n = linux.recvfrom(nl, &S.buf, S.buf.len - 1, 0, @ptrCast(&from), &fl);
-                if (linux.errno(n) != .SUCCESS or n == 0 or from.pid != 0) continue; // kernel messages only
-                const d = S.buf[0..n];
-                if (!vh.eql(uev(d, "SUBSYSTEM"), "usb") or !vh.eql(uev(d, "DEVTYPE"), "usb_device") or
-                    !vh.startsWith(uev(d, "PRODUCT"), prod)) continue;
-                const action = uev(d, "ACTION");
-                const devpath = uev(d, "DEVPATH");
-                if (vh.eql(action, "add")) {
+            var ev: [64]InputEvent = undefined;
+            const n = linux.read(p.fd, @ptrCast(&ev), @sizeOf(@TypeOf(ev)));
+            const e = linux.errno(n);
+            if (e == .INTR or e == .AGAIN) continue;
+            if (e != .SUCCESS or n == 0) {
+                // the keyboard is gone (unplugged, its USB device reset): poll skips a
+                // negative descriptor, and the keys it held no longer count
+                vh.log("{s}: {s}: the combination no longer listens to it", .{ kbd, if (e != .SUCCESS) vh.strerror(e) else "end of input" });
+                vh.close(p.fd);
+                p.fd = -1;
+                rctrl = false;
+                ralt = false;
+                end = false;
+                continue;
+            }
+            for (ev[0 .. n / @sizeOf(InputEvent)]) |x| {
+                if (x.type != EV_KEY or x.value == 2) continue;
+                const down = x.value == 1;
+                switch (x.code) {
+                    KEY_RIGHTCTRL => rctrl = down,
+                    KEY_RIGHTALT => ralt = down,
+                    KEY_END => end = down,
+                    else => {},
+                }
+                if (rctrl and ralt and end) {
+                    vh.log("alarm combination: shutdown", .{});
+                    wipe(false);
+                }
+            }
+        }
+        if (po.pfd[0].revents != 0) {
+            var from: linux.sockaddr.nl = undefined;
+            var fl: linux.socklen_t = @sizeOf(linux.sockaddr.nl);
+            const n = linux.recvfrom(nl, &S.buf, S.buf.len - 1, 0, @ptrCast(&from), &fl);
+            if (linux.errno(n) != .SUCCESS or n == 0 or from.pid != 0) continue; // kernel messages only
+            const d = S.buf[0..n];
+            switch (tagAction(d, prod, armed[0..armed_len])) {
+                .arm => {
+                    const devpath = uev(d, "DEVPATH");
                     armed_len = @min(devpath.len, armed.len);
                     @memcpy(armed[0..armed_len], devpath[0..armed_len]);
                     status("armed");
-                } else if (vh.eql(action, "remove") and armed_len > 0 and vh.eql(devpath, armed[0..armed_len])) {
+                },
+                .alarm => {
                     vh.log("tag removed: alarm shutdown", .{});
                     wipe(false);
-                }
-            } else {
-                var ev: [64]InputEvent = undefined;
-                const n = linux.read(p.fd, @ptrCast(&ev), @sizeOf(@TypeOf(ev)));
-                const e = linux.errno(n);
-                if (e == .INTR or e == .AGAIN) continue;
-                if (e != .SUCCESS or n == 0) {
-                    // the keyboard is gone (unplugged, its USB device reset): poll skips a
-                    // negative descriptor, and the keys it held no longer count
-                    vh.log("{s}: {s}: the combination no longer listens to it", .{ kbd_name[i], if (e != .SUCCESS) vh.strerror(e) else "end of input" });
-                    vh.close(p.fd);
-                    p.fd = -1;
-                    rctrl = false;
-                    ralt = false;
-                    end = false;
-                    continue;
-                }
-                for (ev[0 .. n / @sizeOf(InputEvent)]) |x| {
-                    if (x.type != EV_KEY or x.value == 2) continue;
-                    const down = x.value == 1;
-                    switch (x.code) {
-                        KEY_RIGHTCTRL => rctrl = down,
-                        KEY_RIGHTALT => ralt = down,
-                        KEY_END => end = down,
-                        else => {},
-                    }
-                    if (rctrl and ralt and end) {
-                        vh.log("alarm combination: shutdown", .{});
-                        wipe(false);
-                    }
+                },
+                .none => {},
+            }
+            // a keyboard plugged in while the daemon runs: the rule of the start
+            if (combo) {
+                if (inputAdd(d)) |e| {
+                    if (!po.listening(e) and comboEvent(e, places) and po.open(e))
+                        vh.log("{s}: the combination listens to it", .{keyboardsText(&.{e})});
                 }
             }
         }
@@ -467,7 +561,7 @@ pub fn main(init: std.process.Init.Minimal) void {
         const tag = conf.get("TAG", "");
         const armed: ?[]const u8 = if (tag.len > 0) tagPresent(parseTagOrDie(tag)) else null;
         vh.out("{s} | tag: {s} {s}\n", .{ describe(), if (tag.len > 0) tag else "-", if (armed != null) "inserted" else "" });
-        if (vh.eql(conf.get("COMBO", "no"), "yes")) vh.out("combination: {s}\n", .{keyboardsText(comboKeyboards())});
+        if (vh.eql(conf.get("COMBO", "no"), "yes")) vh.out("combination: {s}\n", .{keyboardsText(comboKeyboards(internalInput()))});
     } else if (vh.eql(mode, "final")) {
         wiperInit();
         if (vh.eql(conf.get("WATCHDOG", "no"), "yes")) {
@@ -526,4 +620,54 @@ test "the combination listens to the built-in keyboards: not a touchpad, a keybo
     // a keyboard plugged in from outside, and uinput that claims the PS/2 controller
     try std.testing.expect(!comboKeyboard("usb-0000:00:14.0-2/input0", "/sys/devices/pci0000:00/0000:00:14.0/usb1/1-2/1-2:1.0/0003:1234:9abc.0005/input/input8", keyboard, places));
     try std.testing.expect(!comboKeyboard("isa0060/serio0/input0", "/sys/devices/virtual/input/input12", keyboard, places));
+}
+
+test "inputAdd: an event device the kernel added, nothing else" {
+    const add = "add@/devices/platform/i8042/serio0/input/input9/event5\x00ACTION=add\x00DEVPATH=/devices/platform/i8042/serio0/input/input9/event5\x00SUBSYSTEM=input\x00MAJOR=13\x00MINOR=69\x00DEVNAME=input/event5\x00SEQNUM=4211\x00";
+    try std.testing.expectEqualStrings("event5", inputAdd(add).?);
+    // the same keyboard's input device and its removal; a mouse device
+    try std.testing.expect(inputAdd("add@/devices/platform/i8042/serio0/input/input9\x00ACTION=add\x00DEVPATH=/devices/platform/i8042/serio0/input/input9\x00SUBSYSTEM=input\x00NAME=\"AT Translated Set 2 keyboard\"\x00") == null);
+    try std.testing.expect(inputAdd("remove@/devices/platform/i8042/serio0/input/input9/event5\x00ACTION=remove\x00SUBSYSTEM=input\x00DEVNAME=input/event5\x00") == null);
+    try std.testing.expect(inputAdd("add@/devices/x/input/input10/mouse2\x00ACTION=add\x00SUBSYSTEM=input\x00DEVNAME=input/mouse2\x00") == null);
+    // another subsystem, and names that are not eventN
+    try std.testing.expect(inputAdd("add@/devices/x\x00ACTION=add\x00SUBSYSTEM=usb\x00DEVNAME=input/event5\x00") == null);
+    try std.testing.expect(inputAdd("add@/x\x00ACTION=add\x00SUBSYSTEM=input\x00DEVNAME=input/event\x00") == null);
+    try std.testing.expect(inputAdd("add@/x\x00ACTION=add\x00SUBSYSTEM=input\x00DEVNAME=input/event5/../../sda\x00") == null);
+    try std.testing.expect(inputAdd("add@/x\x00ACTION=add\x00SUBSYSTEM=input\x00DEVNAME=input/event12345678901\x00") == null);
+}
+
+test "tagAction: without a tag, no USB device arms or sets off the alarm" {
+    const add = "add@/devices/pci/usb1/1-2\x00ACTION=add\x00DEVPATH=/devices/pci/usb1/1-2\x00SUBSYSTEM=usb\x00DEVTYPE=usb_device\x00PRODUCT=1234/5678/100\x00";
+    const remove = "remove@/devices/pci/usb1/1-2\x00ACTION=remove\x00DEVPATH=/devices/pci/usb1/1-2\x00SUBSYSTEM=usb\x00DEVTYPE=usb_device\x00PRODUCT=1234/5678/100\x00";
+    // COMBO=yes alone opens the socket: "" would start every PRODUCT
+    try std.testing.expectEqual(TagAction.none, tagAction(add, "", ""));
+    try std.testing.expectEqual(TagAction.none, tagAction(remove, "", ""));
+    try std.testing.expectEqual(TagAction.none, tagAction(remove, "", "/devices/pci/usb1/1-2"));
+    // the tag 1234:5678: plugged in, pulled out once armed
+    try std.testing.expectEqual(TagAction.arm, tagAction(add, "1234/5678/", ""));
+    try std.testing.expectEqual(TagAction.alarm, tagAction(remove, "1234/5678/", "/devices/pci/usb1/1-2"));
+    try std.testing.expectEqual(TagAction.none, tagAction(remove, "1234/5678/", ""));
+    // the same model pulled out of a port the tag is not in, another product, the tag's interface
+    try std.testing.expectEqual(TagAction.none, tagAction(remove, "1234/5678/", "/devices/pci/usb1/1-3"));
+    try std.testing.expectEqual(TagAction.none, tagAction(remove, "1234/567/", "/devices/pci/usb1/1-2"));
+    try std.testing.expectEqual(TagAction.none, tagAction("remove@/devices/pci/usb1/1-2/1-2:1.0\x00ACTION=remove\x00DEVPATH=/devices/pci/usb1/1-2/1-2:1.0\x00SUBSYSTEM=usb\x00DEVTYPE=usb_interface\x00PRODUCT=1234/5678/100\x00", "1234/5678/", "/devices/pci/usb1/1-2"));
+}
+
+test "a keyboard plugged in takes the slot one that went away left, else a new one" {
+    var po: Polled = .{};
+    po.pfd[0] = .{ .fd = -1, .events = linux.POLL.IN, .revents = 0 };
+    try std.testing.expectEqual(@as(?usize, 1), po.slot());
+    for ([_][]const u8{ "event3", "event4" }, 1..) |e, i| {
+        po.pfd[i] = .{ .fd = @intCast(10 + i), .events = linux.POLL.IN, .revents = 0 };
+        po.name[i] = e;
+        po.n += 1;
+    }
+    try std.testing.expect(po.listening("event3") and po.listening("event4") and !po.listening("event5"));
+    try std.testing.expectEqual(@as(?usize, 3), po.slot());
+    po.pfd[1].fd = -1; // event3 went away: its name and its slot are free
+    try std.testing.expect(!po.listening("event3"));
+    try std.testing.expectEqual(@as(?usize, 1), po.slot());
+    for (1..po.pfd.len) |i| po.pfd[i].fd = @intCast(10 + i);
+    po.n = po.pfd.len;
+    try std.testing.expectEqual(@as(?usize, null), po.slot());
 }
