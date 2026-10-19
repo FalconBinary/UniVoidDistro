@@ -159,7 +159,11 @@ class VM:
             time.sleep(0.1)
         cmd = [
             "qemu-system-x86_64", "-machine", "q35,smm=on", "-accel", os.environ.get("VH_ACCEL", "tcg"),
-            "-cpu", "max", "-smp", str(self.smp), "-m", str(self.mem),
+            # a named CPU, not max: under KVM max is the runner's own CPU (an AMD EPYC with
+            # AVX-512 one day, another the next), under TCG QEMU's synthetic one; the rig's hw.zon,
+            # its plan and the machine kernel of kernel/hw/qemu-q35.zon belong to one CPU. Zen 3,
+            # x86-64-v3 without AVX-512, a subset of every AMD runner of GitHub's; VH_CPU overrides it
+            "-cpu", os.environ.get("VH_CPU", "EPYC-Milan"), "-smp", str(self.smp), "-m", str(self.mem),
             # an emulated VT-d (a DMAR table) before any PCI device: the rig has the full
             # protection of the security gate (VH_SECURITY=strict); no interrupt remapping, so
             # no split irqchip is needed [VERIFY under TCG and KVM]
@@ -297,7 +301,10 @@ def cmd_boot(a, interactive=False):
     ser = boot_and_login(a, vm)
     try:
         for c in a.run:
+            start = len(ser.alltext)
             rc = ser.sh(c, timeout=a.timeout, check=False, password=USER_PASS)
+            # what the command printed on the console, then its status: kvm-smoke keeps both
+            print(ser.alltext[start:], flush=True)
             print(f"\n== '{c}' -> {rc}", flush=True)
         if interactive:
             print("interactive console: socat - UNIX-CONNECT:" + os.path.join(vm.sockdir, "serial"))

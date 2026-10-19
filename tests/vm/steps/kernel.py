@@ -149,7 +149,10 @@ def step_machine(a):
             check(f"trial boot {n}: Limine started the machine entry (the one-shot entry)", started(out) == mid, started(out))
             rc, kv = run(ser, "uname -r; test -e /proc/modules && echo MODULES || echo NOMODULES; cat /run/vh/check.done")
             check(f"trial boot {n}: the machine kernel runs, without loadable modules", "-vh\n" in kv and "NOMODULES" in kv, kv[-200:])
-            check(f"trial boot {n}: vh-kconf check finds the rig with every driver", "machine=same" in kv and "lost=0" in kv, kv[-200:])
+            # what vh-kconf check found, device by device (written only when it has something to say)
+            rc, found = run(ser, "cat /run/vh/check 2>/dev/null || echo 'no /run/vh/check'")
+            check(f"trial boot {n}: vh-kconf check finds the rig with every driver", "machine=same" in kv and "lost=0" in kv,
+                  (kv[-120:] + "\n" + found[-900:]).replace("\n", " | "))
             if n < 3:
                 check(f"trial boot {n}: {n} of 3 good boots, set again", f"{n} of 3 good boots, set for the next boot" in out,
                       out[-400:].replace("\n", " | "))
