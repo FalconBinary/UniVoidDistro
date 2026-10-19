@@ -8,6 +8,8 @@
 #   sh tests/kernel/oracle.sh --update   # rewrite the golden files
 # Like run.sh, the binary runs in a throwaway container and the inputs are streamed in with tar.
 set -eu
+# macOS tar: no AppleDouble ("._name") files for the extended attributes
+export COPYFILE_DISABLE=1
 repo=$(cd "$(dirname "$0")/../.." && pwd)
 case $(uname -m) in arm64|aarch64) arch=aarch64 ;; *) arch=x86_64 ;; esac
 out=$repo/build/ko

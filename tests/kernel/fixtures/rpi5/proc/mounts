@@ -1,0 +1,8 @@
+- - devtmpfs - 0 0
+- - proc - 0 0
+- - sysfs - 0 0
+- - ext4 - 0 0
+- - tmpfs - 0 0
+- - devpts - 0 0
+- - vfat - 0 0
+- - cgroup2 - 0 0

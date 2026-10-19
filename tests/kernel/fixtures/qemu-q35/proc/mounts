@@ -1,0 +1,9 @@
+- - devtmpfs - 0 0
+- - proc - 0 0
+- - sysfs - 0 0
+- - iso9660 - 0 0
+- - squashfs - 0 0
+- - overlay - 0 0
+- - tmpfs - 0 0
+- - devpts - 0 0
+- - efivarfs - 0 0

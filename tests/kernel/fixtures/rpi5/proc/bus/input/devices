@@ -1,0 +1,10 @@
+I: Bus=0003 Vendor=046d Product=c31c Version=0110
+N: Name="Logitech USB Keyboard"
+S: Sysfs=/devices/platform/axi/1000120000.pcie/pci0001:00/0001:00:00.0/0001:01:00.0/1f00200000.usb/xhci-hcd.0/usb1/1-1/1-1:1.0/0003:046D:C31C.0001/input/input0
+H: Handlers=sysrq kbd leds event0
+B: PROP=0
+B: EV=120013
+B: KEY=1000000000007 ff9f207ac14057ff febeffdfffefffff fffffffffffffffe
+B: MSC=10
+B: LED=7
+

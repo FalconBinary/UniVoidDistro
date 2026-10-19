@@ -8,6 +8,8 @@
 # the Claude app carry it.
 #   sh tests/kernel/run.sh
 set -eu
+# macOS tar: no AppleDouble ("._name") files for the extended attributes
+export COPYFILE_DISABLE=1
 repo=$(cd "$(dirname "$0")/../.." && pwd)
 case $(uname -m) in arm64|aarch64) arch=aarch64 ;; *) arch=x86_64 ;; esac
 out=$repo/build/kt

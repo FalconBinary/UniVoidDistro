@@ -38,13 +38,16 @@ pub const Src = struct {
         return vh.dupe(vh.strip(data[0..end]));
     }
 
-    /// directory entries, sorted; empty when absent
+    /// directory entries, sorted; empty when absent. Names starting with a dot are skipped:
+    /// sysfs and procfs have none, and a snapshot copied through macOS may carry AppleDouble
+    /// ("._name") or .DS_Store files
     pub fn list(self: *const Src, rel: []const u8) []const []const u8 {
         const entries = vh.listDir(self.abs(rel)) catch return &.{};
         if (self.save) |dir| vh.mkdirs(vh.fmt("{s}{s}", .{ dir, self.resolve(dir, rel) }), 0o755);
-        const sorted = vh.gpa.dupe([]const u8, entries) catch vh.oom();
-        mem.sort([]const u8, sorted, {}, vh.lessStr);
-        return sorted;
+        var kept: std.ArrayList([]const u8) = .empty;
+        for (entries) |e| if (e.len > 0 and e[0] != '.') kept.append(vh.gpa, e) catch vh.oom();
+        mem.sort([]const u8, kept.items, {}, vh.lessStr);
+        return kept.items;
     }
 
     /// the target of a symlink, null when it is not one
@@ -636,7 +639,17 @@ fn blocks(src: *const Src) []const hw.Block {
         b.model = src.line(vh.fmt("{s}/device/model", .{base}));
         if (b.model.len == 0) b.model = src.line(vh.fmt("{s}/device/name", .{base}));
         b.drivers = driverChain(src, real);
-        if (b.drivers.len == 0 and src.exists(vh.fmt("{s}/device", .{base}))) b.drivers = driverChain(src, src.real(vh.fmt("{s}/device", .{base})));
+        if (b.drivers.len == 0) {
+            // an NVMe namespace under native multipath hangs off its subsystem, a virtual
+            // device: the drivers are those of the subsystem's controllers (the nvmeN links)
+            const dev = vh.fmt("{s}/device", .{base});
+            for (src.list(dev)) |e| {
+                if (!vh.startsWith(e, "nvme") or !allDigits(e[4..])) continue;
+                if (src.link(vh.fmt("{s}/{s}", .{ dev, e })) == null) continue;
+                b.drivers = driverChain(src, src.real(vh.fmt("{s}/{s}", .{ dev, e })));
+                if (b.drivers.len > 0) break;
+            }
+        }
         out.append(vh.gpa, b) catch vh.oom();
     }
     return out.items;
@@ -717,10 +730,15 @@ fn displays(src: *const Src, devices_: []const hw.Device) []const hw.Display {
         if (src.link(dev) == null and !src.exists(dev)) continue;
         const real = src.real(dev);
         const name = basename(real);
+        // the display this card belongs to: its own device, or a PCI display it sits on (a
+        // virtio GPU is a virtio device under the PCI function)
         var idx: ?usize = null;
-        for (out.items, 0..) |x, i| if (vh.eql(x.name, name)) {
-            idx = i;
-        };
+        var up = real;
+        while (idx == null and vh.startsWith(up, "/sys/devices/")) : (up = dirname(up)) {
+            for (out.items, 0..) |x, i| if (vh.eql(x.name, basename(up))) {
+                idx = i;
+            };
+        }
         if (idx == null) {
             var x: hw.Display = .{ .name = vh.dupe(name), .bus = busOf(real) };
             if (linkOf(src, real)) |l| {
@@ -1025,4 +1043,160 @@ test "probe: the GF63 fixture" {
     try std.testing.expectEqual(h.devices.len, h2.devices.len);
     try std.testing.expectEqualStrings(hw.render(h), mem.replaceOwned(u8, vh.gpa, hw.render(h2), basename(copy), "gf63") catch vh.oom());
     _ = vh.runOpts(&.{ "rm", "-rf", copy }, .{});
+}
+
+/// a fixture of tests/kernel/fixtures through the probe, null when the repository is not found
+fn fixture(name: []const u8) ?hw.Hw {
+    const dir = repoPath(vh.fmt("tests/kernel/fixtures/{s}", .{name})) orelse return null;
+    const src: Src = .{ .root = dir };
+    return run(&src);
+}
+
+/// --save of a fixture, then --from of the copy: the same hw.zon (but the source name)
+fn roundTrip(name: []const u8) !void {
+    const dir = repoPath(vh.fmt("tests/kernel/fixtures/{s}", .{name})) orelse return error.SkipZigTest;
+    const first: Src = .{ .root = dir };
+    const h = run(&first);
+    const copy = vh.fmt("/tmp/vh-kconf-test-{s}-{d}", .{ name, linux.getpid() });
+    _ = vh.runOpts(&.{ "rm", "-rf", copy }, .{});
+    const saving: Src = .{ .root = dir, .save = copy };
+    _ = run(&saving);
+    const again: Src = .{ .root = copy };
+    const h2 = run(&again);
+    try std.testing.expectEqualStrings(hw.render(h), mem.replaceOwned(u8, vh.gpa, hw.render(h2), basename(copy), name) catch vh.oom());
+    _ = vh.runOpts(&.{ "rm", "-rf", copy }, .{});
+}
+
+fn hasTable(h: hw.Hw, sig: []const u8) bool {
+    for (h.firmware.acpi_tables) |t| if (vh.eql(t, sig)) return true;
+    return false;
+}
+
+test "probe: format 2 on the GF63" {
+    const h = fixture("gf63") orelse return error.SkipZigTest;
+    try std.testing.expectEqualStrings("x86_64", h.arch);
+    try std.testing.expectEqual(@as(u32, 12), h.cpu.possible);
+    try std.testing.expectEqual(@as(u64, 7_942_384), h.memory.total_kib);
+    try std.testing.expectEqualStrings("intel_pstate", h.cpu.freq_driver);
+    try std.testing.expect(h.cpu.epp);
+    try std.testing.expectEqual(@as(usize, 12), h.cpu.topology.len);
+    try std.testing.expectEqualStrings("0,6", h.cpu.topology[0].siblings);
+    try std.testing.expectEqualStrings("0-11", h.cpu.topology[11].llc);
+    try std.testing.expectEqual(@as(u32, 12288), h.cpu.topology[11].llc_kb);
+    try std.testing.expectEqual(@as(u32, 4500000), h.cpu.topology[3].max_khz);
+    try std.testing.expectEqual(@as(usize, 1), h.cpu.numa.len);
+    try std.testing.expect(h.cpu.vulnerabilities.len > 10);
+    try std.testing.expect(hasTable(h, "DMAR") and hasTable(h, "TPM2") and !hasTable(h, "IVRS"));
+    try std.testing.expectEqual(@as(u32, 2), h.firmware.iommu_units);
+    try std.testing.expectEqual(@as(?bool, false), h.firmware.setup_mode);
+    try std.testing.expect(h.firmware.mor);
+    // the NVMe namespace under multipath: the drivers come from the subsystem's controller
+    try std.testing.expectEqual(@as(usize, 1), h.blocks.len);
+    try std.testing.expectEqualStrings("nvme", h.blocks[0].bus);
+    try std.testing.expect(h.blocks[0].discard and !h.blocks[0].rotational);
+    try std.testing.expectEqualStrings("nvme", h.blocks[0].drivers[0].driver);
+    try std.testing.expectEqual(@as(usize, 2), h.net.len);
+    try std.testing.expect(!h.net[0].wireless and vh.eql(h.net[0].driver, "r8169"));
+    try std.testing.expect(h.net[1].wireless and vh.eql(h.net[1].driver, "iwlwifi"));
+    try std.testing.expectEqual(@as(usize, 2), h.power.supplies.len);
+    try std.testing.expectEqualStrings("raw", h.power.backlights[0].kind);
+    // the iGPU that brought the console up and its panel (00:02.0 sorts first), the dGPU without a driver
+    try std.testing.expectEqual(@as(usize, 2), h.displays.len);
+    try std.testing.expect(h.displays[0].boot_vga and vh.eql(h.displays[0].driver, "i915"));
+    try std.testing.expectEqualStrings("eDP-1 connected", h.displays[0].connectors[0]);
+    try std.testing.expect(!h.displays[1].boot_vga and h.displays[1].driver.len == 0);
+    // the keyboard backlight controller on USB is not a keyboard
+    try std.testing.expectEqual(@as(usize, 1), h.keyboards.len);
+    try std.testing.expectEqualStrings("i8042", h.keyboards[0].bus);
+    try std.testing.expectEqualStrings("atkbd", h.keyboards[0].drivers[0].driver);
+    try std.testing.expectEqualStrings("i8042", h.keyboards[0].drivers[1].driver);
+    try std.testing.expectEqualStrings("snd_hda_intel", h.sound[0].driver);
+    try roundTrip("gf63");
+}
+
+test "probe: an AMD desktop with two CCDs and two GPUs" {
+    const h = fixture("amd-desktop") orelse return error.SkipZigTest;
+    try std.testing.expectEqual(@as(u32, 16), h.cpu.cores);
+    try std.testing.expectEqual(@as(u32, 32), h.cpu.threads);
+    try std.testing.expectEqualStrings("amd-pstate-epp", h.cpu.freq_driver);
+    // the V-Cache CCD and the other one: two last-level caches of different sizes
+    try std.testing.expectEqual(@as(u32, 98304), h.cpu.topology[0].llc_kb);
+    try std.testing.expectEqual(@as(u32, 32768), h.cpu.topology[8].llc_kb);
+    try std.testing.expectEqualStrings("8-15,24-31", h.cpu.topology[24].llc);
+    try std.testing.expect(hasTable(h, "IVRS") and !hasTable(h, "DMAR"));
+    try std.testing.expectEqual(@as(usize, 2), h.blocks.len);
+    try std.testing.expect(vh.eql(h.blocks[1].bus, "ata") and h.blocks[1].rotational and h.blocks[1].physical_block == 4096);
+    // the SCSI disk driver, then the SATA controller
+    try std.testing.expectEqualStrings("sd", h.blocks[1].drivers[0].driver);
+    try std.testing.expectEqualStrings("ahci", h.blocks[1].drivers[1].driver);
+    try std.testing.expectEqual(@as(usize, 2), h.displays.len);
+    try std.testing.expect(h.displays[0].boot_vga and h.displays[0].connectors.len == 3);
+    try std.testing.expect(!h.displays[1].boot_vga);
+    try std.testing.expectEqualStrings("usb", h.keyboards[0].bus);
+    try std.testing.expectEqualStrings("xhci_pci", h.keyboards[0].drivers[4].module);
+    try std.testing.expectEqual(@as(usize, 0), h.power.supplies.len);
+    try std.testing.expectEqual(@as(usize, 3), h.sound.len);
+}
+
+test "probe: a hybrid Intel laptop with its disk behind VMD" {
+    const h = fixture("intel-hybrid-laptop") orelse return error.SkipZigTest;
+    var p_cores: usize = 0;
+    var e_cores: usize = 0;
+    for (h.cpu.topology) |t| {
+        if (vh.eql(t.kind, "core")) p_cores += 1;
+        if (vh.eql(t.kind, "atom")) e_cores += 1;
+    }
+    try std.testing.expectEqual(@as(usize, 8), p_cores);
+    try std.testing.expectEqual(@as(usize, 8), e_cores);
+    try std.testing.expectEqual(@as(u32, 12), h.cpu.cores);
+    try std.testing.expectEqual(@as(u32, 3400000), h.cpu.topology[9].max_khz);
+    // VMD: the controller the NVMe disk hangs off
+    const chain = h.blocks[0].drivers;
+    try std.testing.expectEqualStrings("vmd", chain[chain.len - 1].driver);
+    try std.testing.expectEqualStrings("sof-audio-pci-intel-tgl", h.sound[0].driver);
+    try std.testing.expectEqual(@as(usize, 4), h.power.supplies.len);
+    try std.testing.expectEqual(@as(usize, 3), h.power.profiles.len);
+    try std.testing.expectEqual(@as(usize, 1), h.net.len);
+    try roundTrip("intel-hybrid-laptop");
+}
+
+test "probe: the rig's virtual machine at installation time" {
+    const h = fixture("qemu-q35") orelse return error.SkipZigTest;
+    try std.testing.expect(mem.indexOf(u8, h.cpu.flags, " hypervisor ") != null);
+    try std.testing.expectEqual(@as(?bool, false), h.firmware.secure_boot);
+    try std.testing.expectEqual(@as(?bool, true), h.firmware.setup_mode);
+    try std.testing.expect(hasTable(h, "DMAR"));
+    // virtio-gpu: the DRM card sits on the virtio device under the PCI function
+    try std.testing.expectEqual(@as(usize, 1), h.displays.len);
+    try std.testing.expectEqualStrings("Virtual-1 connected", h.displays[0].connectors[0]);
+    try std.testing.expectEqualStrings("e1000", h.net[0].driver);
+    try std.testing.expectEqual(@as(usize, 0), h.sound.len);
+}
+
+test "probe: a real ARM64 virtual machine" {
+    const h = fixture("aarch64-virt") orelse return error.SkipZigTest;
+    try std.testing.expectEqualStrings("aarch64", h.arch);
+    try std.testing.expect(h.cpu.implementer.len > 0);
+    try std.testing.expect(mem.indexOf(u8, h.cpu.flags, "aes") != null);
+    try std.testing.expect(h.firmware.efi and h.firmware.secure_boot == null and !h.firmware.tpm);
+    try std.testing.expect(h.blocks.len > 0 and vh.eql(h.blocks[0].bus, "virtio"));
+    try std.testing.expectEqualStrings("virtio", h.net[0].bus);
+    try std.testing.expect(h.keyboards.len > 0);
+}
+
+test "probe: a Raspberry Pi 5" {
+    const h = fixture("rpi5") orelse return error.SkipZigTest;
+    try std.testing.expectEqualStrings("aarch64", h.arch);
+    try std.testing.expectEqualStrings("0xd0b", h.cpu.part);
+    try std.testing.expect(!h.firmware.efi and !h.firmware.tpm and h.firmware.acpi_tables.len == 0);
+    try std.testing.expectEqualStrings("brcm,bcm2712", h.firmware.dt_compatible[1]);
+    try std.testing.expectEqualStrings("mmc", h.blocks[0].bus);
+    try std.testing.expectEqualStrings("mmc", h.net[1].bus);
+    try std.testing.expectEqual(@as(usize, 2), h.displays.len);
+    try std.testing.expectEqual(@as(u32, 1024), h.cpu.topology[0].capacity);
+    // the snapshot holds no Serial line: the board's serial number is never copied
+    const dir = repoPath("tests/kernel/fixtures/rpi5") orelse return error.SkipZigTest;
+    const info = vh.readFile(vh.fmt("{s}/proc/cpuinfo", .{dir})) catch return error.SkipZigTest;
+    try std.testing.expect(mem.indexOf(u8, info, "Serial") == null);
+    try roundTrip("rpi5");
 }

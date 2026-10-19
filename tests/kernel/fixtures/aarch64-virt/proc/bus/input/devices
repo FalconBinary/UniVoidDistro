@@ -1,0 +1,29 @@
+I: Bus=0019 Vendor=0000 Product=0001 Version=0000
+N: Name="Power Button"
+S: Sysfs=/devices/LNXSYSTM:00/PNP0C0C:00/input/input0
+H: Handlers=kbd event0 
+B: PROP=0
+B: EV=3
+B: KEY=8000 10000000000000 0
+
+I: Bus=0003 Vendor=05ac Product=8105 Version=0110
+N: Name="Apple Inc. Virtual USB Keyboard"
+S: Sysfs=/devices/pci0000:00/0000:00:0d.0/usb1/1-1/1-1:1.0/0003:05AC:8105.0001/input/input1
+H: Handlers=sysrq kbd event1 leds 
+B: PROP=0
+B: EV=120013
+B: KEY=1000000000007 ff800000000007ff febeffdff3cfffff fffffffffffffffe
+B: MSC=10
+B: LED=7
+
+I: Bus=0003 Vendor=05ac Product=8106 Version=0110
+N: Name="Apple Inc. Virtual USB Digitizer"
+S: Sysfs=/devices/pci0000:00/0000:00:0d.0/usb1/1-2/1-2:1.0/0003:05AC:8106.0002/input/input2
+H: Handlers=mouse0 event2 js0 
+B: PROP=0
+B: EV=1f
+B: KEY=70000 0 0 0 0
+B: REL=1b40
+B: ABS=10000000003
+B: MSC=10
+

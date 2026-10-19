@@ -27,7 +27,8 @@ pub const Device = struct {
 /// one driver on the way from a device up to its bus
 pub const Link = struct {
     driver: []const u8 = "",
-    /// the module that owns the driver, "" when the driver is built into the probed kernel
+    /// the module that owns the driver as sysfs names it (built-in drivers have one too);
+    /// "" when sysfs does not say
     module: []const u8 = "",
 };
 
