@@ -38,7 +38,7 @@ def step_stage1(a):
         rc, out = run(ser, "sv status /var/service/*")
         bad = [l for l in out.splitlines() if l.startswith(("down:", "fail:", "warning:"))]
         check("all runit services running under vh-stage1", not bad, "; ".join(bad))
-        rc, out = run(ser, "findmnt -no TARGET,OPTIONS /proc /dev/shm /run /home /tmp /var/tmp /dev; swapon --show; "
+        rc, out = run(ser, "for m in /proc /dev/shm /run /home /tmp /var/tmp /dev; do findmnt -no TARGET,OPTIONS $m; done; swapon --show; "
                            "cat /run/vh/power; ls -ld /run/vh-sandbox; nft list tables; "
                            "cat /sys/kernel/mm/transparent_hugepage/defrag; sysctl -n kernel.kptr_restrict net.ipv4.tcp_congestion_control; "
                            "hostname; ls -l /run/utmp; who -b; cat /var/lib/seedrng/seed.* | wc -c; ls -la /var/log/dmesg.log")
@@ -60,10 +60,10 @@ def step_stage1(a):
     vm, ser = boot(a)                     # back on runit-void's stage 1
     try:
         rc, out = run(ser, "dmesg | grep -ac 'vh-stage1: done'; sv status /var/service/* | grep -vc '^run:'; vh-stage1 --status; echo st=$?")
-        lines = out.strip().splitlines()
+        # the first line of the output carries the shell prompt
+        nums = [l.replace("vh# ", "").strip() for l in out.strip().splitlines()[:2]]
         check("after the rollback: no marker, every service up, --status reports the shell script",
-              len(lines) >= 2 and lines[0].strip() == "0" and lines[1].strip() == "0" and "st=1" in out and "shell script" in out,
-              out[-400:].replace("\n", " | "))
+              nums == ["0", "0"] and "st=1" in out and "shell script" in out, out[-400:].replace("\n", " | "))
     finally:
         shutdown(vm, ser)
 
