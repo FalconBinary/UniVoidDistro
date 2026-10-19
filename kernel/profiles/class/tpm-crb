@@ -7,4 +7,7 @@
 # tpm2-totp and the measurement log; the TPM also feeds the kernel's random number generator.
 CONFIG_TCG_TPM=y
 CONFIG_TCG_CRB=y
+# HW_RANDOM_TPM sits on the hw_random core, which a module list need not name (kernel-custom
+# run 39318902051: intel-hybrid-laptop and qemu-q35 lost it).
+CONFIG_HW_RANDOM=y
 CONFIG_HW_RANDOM_TPM=y

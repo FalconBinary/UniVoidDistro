@@ -5,3 +5,34 @@ lsmod -rtsx_pci         # VH_CARDREADER=no: upstream refuses the card reader on 
 lsmod -rtsx_pci_sdmmc   # the same, its SD host driver
 fragment.symbols +CONFIG_IOSCHED_BFQ=y          # U2: kernel/profiles/perf names the schedulers of rootfs/etc/udev/rules.d/99-vh-iosched.rules; Void builds them in, so .config is unchanged
 fragment.symbols +CONFIG_MQ_IOSCHED_DEADLINE=y  # the same, the scheduler of an SSD on SATA
+# U3, the dependency closure of the fragments (kernel-custom run 39318902051: intel-hybrid-laptop and
+# qemu-q35 lost class symbols whose parents their module lists did not name). Each parent requested
+# below is =y in the GF63's kernel already, brought in by its modules (i915, rng_core, usbcore,
+# usbhid, usb_storage, snd), except the sd disk driver: the one change to the GF63's kernel.
+fragment.symbols +CONFIG_DRM=y            # class/gpu-*: the DRM core under the GPU driver
+fragment.symbols +CONFIG_HW_RANDOM=y      # class/tpm-*: the hw_random core under HW_RANDOM_TPM
+fragment.symbols +CONFIG_USB_SUPPORT=y    # base: the USB core under xHCI and usbhid
+fragment.symbols +CONFIG_USB=y            # the same
+fragment.symbols +CONFIG_HID_SUPPORT=y    # base: the HID core under usbhid and hid-generic
+fragment.symbols +CONFIG_HID=y            # the same
+fragment.symbols +CONFIG_SCSI=y           # features/usb-common: USB mass storage runs over SCSI
+fragment.symbols +CONFIG_BLK_DEV_SD=y     # features/usb-common: the sd disk driver, without which a USB stick is no /dev/sdX; new in the GF63's kernel
+fragment.symbols +CONFIG_SOUND=y          # features/usb-common: the sound core under USB audio
+fragment.symbols +CONFIG_SND=y            # the same
+fragment.symbols +CONFIG_SND_USB=y        # the same, the menu of USB sound devices
+config.sorted -CONFIG_DRM=m               # requested =y now (above); localyesconfig built it in before, from the module list
+config.sorted +CONFIG_DRM=y               # the same
+config.sorted -CONFIG_HW_RANDOM=m         # the same
+config.sorted +CONFIG_HW_RANDOM=y         # the same
+config.sorted -CONFIG_USB=m               # the same
+config.sorted +CONFIG_USB=y               # the same
+config.sorted -CONFIG_HID=m               # the same
+config.sorted +CONFIG_HID=y               # the same
+config.sorted -CONFIG_SCSI=m              # the same
+config.sorted +CONFIG_SCSI=y              # the same
+config.sorted -CONFIG_SOUND=m             # the same
+config.sorted +CONFIG_SOUND=y             # the same
+config.sorted -CONFIG_SND=m               # the same
+config.sorted +CONFIG_SND=y               # the same
+config.sorted -CONFIG_BLK_DEV_SD=m        # requested =y now (above): not in the GF63's module list, so this one is new in its kernel
+config.sorted +CONFIG_BLK_DEV_SD=y        # the same

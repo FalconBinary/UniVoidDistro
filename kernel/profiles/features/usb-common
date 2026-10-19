@@ -4,7 +4,11 @@
 # (install/30-lock.sh "extra") because they are rarely loaded at probe time; with no modules
 # they must be built in. Selected by default in the kernel-custom workflow.
 
-# Mass storage: the classic driver and UAS, FAT and exFAT with the NLS tables (base).
+# Mass storage: the classic driver and UAS over the SCSI disk driver, without which a stick is
+# no /dev/sdX (no machine's module list names sd_mod unless a disk was plugged in at probe
+# time), FAT and exFAT with the NLS tables (base).
+CONFIG_SCSI=y
+CONFIG_BLK_DEV_SD=y
 CONFIG_USB_STORAGE=y
 CONFIG_USB_UAS=y
 CONFIG_VFAT_FS=y
@@ -13,5 +17,8 @@ CONFIG_EXFAT_FS=y
 CONFIG_USB_HID=y
 CONFIG_HID_GENERIC=y
 CONFIG_HID_MULTITOUCH=y
-# USB audio class (headsets, DACs).
+# USB audio class (headsets, DACs), with the sound core that a machine without a sound card lacks.
+CONFIG_SOUND=y
+CONFIG_SND=y
+CONFIG_SND_USB=y
 CONFIG_SND_USB_AUDIO=y

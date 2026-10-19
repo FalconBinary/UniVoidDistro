@@ -51,7 +51,13 @@ CONFIG_NLS_UTF8=y
 
 # The LUKS passphrase is typed on a USB keyboard (xHCI, usbhid) or the internal one: the
 # PS/2 controller is class/input-i8042, chosen with the plan; dracut's add_drivers takes the
-# keyboard's driver chain from the plan too.
+# keyboard's driver chain from the plan too. The USB and HID cores are named as well: a machine
+# with no USB device at probe time has neither in its module list (kernel-custom run
+# 39318902051, qemu-q35).
+CONFIG_USB_SUPPORT=y
+CONFIG_USB=y
+CONFIG_HID_SUPPORT=y
+CONFIG_HID=y
 CONFIG_USB_XHCI_HCD=y
 CONFIG_USB_XHCI_PCI=y
 CONFIG_USB_HID=y
@@ -59,11 +65,10 @@ CONFIG_HID_GENERIC=y
 CONFIG_INPUT_EVDEV=y
 
 # The console: the EFI framebuffer until the GPU's driver (class/gpu-*) takes over, then the DRM
-# fbdev console (tty1-tty3).
+# fbdev console (tty1-tty3), which the GPU classes request with DRM itself.
 CONFIG_VT=y
 CONFIG_FRAMEBUFFER_CONSOLE=y
 CONFIG_FB_EFI=y
-CONFIG_DRM_FBDEV_EMULATION=y
 
 # The TPM, by its interface: class/tpm-crb or class/tpm-tis.
 

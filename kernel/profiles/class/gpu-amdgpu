@@ -5,3 +5,9 @@
 # mandatory.
 
 CONFIG_DRM_AMDGPU=y
+
+# The DRM core under the driver, and its fbdev console (tty1-tty3) after the EFI framebuffer of
+# base: named here because a machine's module list need not name drm itself (kernel-custom
+# run 39318902051: qemu-q35 lost its GPU driver without it).
+CONFIG_DRM=y
+CONFIG_DRM_FBDEV_EMULATION=y
