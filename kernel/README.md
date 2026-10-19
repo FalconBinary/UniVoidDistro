@@ -31,6 +31,7 @@ tests/kernel/          the GF63 sysfs/procfs fixture (mkfixture.py writes it), r
 vh-kconf probe [--from DIR] [--save DIR] [-o FILE|--stdout]
 vh-kconf resolve --hw FILE --plan FILE --out DIR --repo DIR [--features LIST|auto|none] [--alias F ...]
 vh-kconf diff --config .config --requested fragment.config [--lsmod FILE] [--kernel DIR]
+vh-kconf check [--hw FILE] [--out DIR] [--repo DIR] [--vh-plan PATH|none] [--kmsg FILE] [--from DIR] [--root DIR]
 ```
 
 - **probe** reads sysfs and procfs (nothing else) and writes `/etc/vh/hw.zon`: the modalias
@@ -56,6 +57,14 @@ vh-kconf diff --config .config --requested fragment.config [--lsmod FILE] [--ker
   a choice, a symbol this version does not have; and for every LSMOD module whether its
   `obj-$(CONFIG_*)` symbol is `=y`. A lost symbol from `mandatory`, from a class or from the
   machine fragment is exit code 2.
+- **check** (U2, the `vh-check` service at boot) probes the running system and compares it
+  with `/etc/vh/hw.zon`: another CPU model or board, devices without a driver (one that had
+  a driver at installation, or a new one, unless the kernel refuses its module), firmware the
+  kernel log says failed to load, and whether the plan's firmware trim left it out. A finding
+  goes to `/run/vh/check`, which the admin sees at login on tty2, with a fresh plan of the
+  running system in `/run/vh/plan` (`vh-plan` run by argv); `/run/vh/check.done` always
+  holds the summary line `VH_CHECK machine=same|different devices=N firmware=N` for
+  `vh-audit plan` ([docs/uni/runtime.md](../docs/uni/runtime.md#vh-kconf-check)).
 
 The workflow does the rest in this order: PGP-verify the tarball, `vh-plan plan`, resolve,
 copy `.config`, `yes "" | make LLVM=1 localyesconfig LSMOD=lsmod`, `make LLVM=1 olddefconfig`,
@@ -105,8 +114,9 @@ laptop produces the real one [VERIFY].
    default entry stays the stock UKI until the runbook's flip step: boot the custom entry
    once from the menu, check `uname -r`, Wi-Fi, sound, the touchpad, `vh-audit`, then make it
    the default; the way back is the menu.
-5. **check** (a service at start): a modalias without a driver in sysfs -> a message at the
-   admin login on tty2, with the `vh-kconf probe` + CI steps of the runbook as the answer.
+5. **check** (a service at start, done in U2: see above): a modalias without a driver in
+   sysfs -> a message at the admin login on tty2, with the `vh-kconf probe` + CI steps of the
+   runbook as the answer.
 
 Not in v0.1: `fetch` and `build` on the laptop (the kbuild root arrives in v0.3 with the thor
 policy for separate roots); `resolve` v2 (`allnoconfig` + fragments, v1 as the oracle).

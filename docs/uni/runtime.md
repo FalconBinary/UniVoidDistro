@@ -90,3 +90,33 @@ the place of every built-in keyboard vh-acpid cannot tell (`internal_input`, in
 `/etc/vh/acpi.conf` as `INTERNAL_INPUT`. A keyboard whose USB device the kernel calls
 `unknown` (no ACPI description of the port) is not counted [VERIFY on hardware with an
 internal USB keyboard].
+
+## `vh-kconf check`
+
+The `vh-check` service runs `vh-kconf check` once a boot, a few seconds after the services
+start (a service rather than a step of stage 1: it stays off the boot's critical path and
+works with either stage 1). It probes the running system and compares it with
+`/etc/vh/hw.zon`, the probe the system was planned from:
+
+| Finding | When | Not a finding |
+|---|---|---|
+| another machine | the architecture, the CPU model (vendor, family, model; ARM implementer and part) or the board (the DMI baseboard, else the system, else the device tree's model) differ | another stepping or microcode, a BIOS update |
+| a device without a driver | one that had a driver at installation has none now; a new one on a bus hardware is plugged into (PCI, USB, HID, SDIO, MMC, SPI, I2C, serio, virtio, Thunderbolt); a new one elsewhere that a module of the running kernel would drive | a device whose module the kernel refuses (`module_blacklist=`), one that had no driver at installation either, a removed one |
+| firmware that failed to load | "Direct firmware load for F failed" or "firmware: failed to load F" in this boot's kernel log; the message says whether F is on disk and whether the plan's firmware trim (`/etc/xbps.d/40-vh-firmware.conf`) left it out | |
+
+On another machine the devices are not compared (they all differ). With a finding,
+`/run/vh/check` holds the message that the admin sees at login on tty2
+(`/etc/profile.d/zz-vh.sh`), and `/run/vh/plan` a fresh plan of the running system
+(`hw.zon`, `plan.zon`, `plan.env`, `plan-report.txt`; `vh-plan` with `/root/vh/hwdb`,
+`/root/vh/kernel/pins` and the installation's `vh.conf`). `/run/vh/check.done` always holds
+`VH_CHECK machine=same|different devices=N firmware=N`, which `vh-audit plan` reads.
+
+What to do: another machine means the plan (packages, firmware, the kernel's classes, the
+command line) was made for the other one: compare `/run/vh/plan/plan-report.txt` with
+`/etc/vh/plan-report.txt` and reinstall, or keep the stock UKI. A module that would drive a
+new device but is not bound was refused by the module lock: run
+`doas /root/vh/install/30-lock.sh` with the device present, then reboot. A firmware file the
+trim left out: keep it in `/etc/xbps.d/40-vh-firmware.conf` (or `VH_FIRMWARE_KEEP`) and
+reinstall its package with `xbps-install -f`. The heuristics are **[VERIFY on hardware]**:
+the probe at installation runs in the live system, whose devices and drivers may differ a
+little from the installed system's.

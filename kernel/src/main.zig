@@ -11,6 +11,11 @@
 //!                 [--kernel DIR] [--oracle localyesconfig|localmodconfig]
 //!       after the kernel's olddefconfig: which requests survived and why the others did not
 //!       (exit 2 when a mandatory symbol was lost)
+//!   vh-kconf check [--hw FILE] [--out DIR] [--repo DIR] [--vh-plan PATH|none] [--kmsg FILE]
+//!                  [--from DIR] [--root DIR] [--alias F] [--builtin F]
+//!       at boot: is this still the machine of /etc/vh/hw.zon? Another CPU or board, devices
+//!       without a driver, firmware that failed to load -> /run/vh/check (shown at the admin's
+//!       login) and a fresh plan in /run/vh/plan; exit 1 with a finding, 0 without
 //!
 //! Static PIE, ReleaseSafe, std.os.linux only (zig/README.md). The kernel's own tools do the
 //! Kconfig solving: see .github/workflows/kernel-custom.yml for the order of the calls.
@@ -20,11 +25,13 @@ const hw = @import("hw.zig");
 const probe = @import("probe.zig");
 const resolve = @import("resolve.zig");
 const diff = @import("diff.zig");
+const check = @import("check.zig");
 
 const usage =
     \\usage: vh-kconf probe [--from DIR] [--save DIR] [-o FILE|--stdout]
     \\       vh-kconf resolve --hw FILE --plan FILE --out DIR [--repo DIR] [--features LIST|auto|none] [--alias F] [--builtin F] [--builtin-list F] [--base .config] [--profiles DIR]
     \\       vh-kconf diff --config .config --requested fragment.config [--lsmod FILE] [--kernel DIR] [--oracle localyesconfig|localmodconfig]
+    \\       vh-kconf check [--hw FILE] [--out DIR] [--repo DIR] [--vh-plan PATH|none] [--kmsg FILE] [--from DIR] [--root DIR] [--alias F] [--builtin F]
     \\       vh-kconf version
     \\
 ;
@@ -46,7 +53,8 @@ pub fn main(init: std.process.Init.Minimal) void {
     if (vh.eql(cmd, "probe")) vh.exit(cmdProbe(rest));
     if (vh.eql(cmd, "resolve")) vh.exit(cmdResolve(rest));
     if (vh.eql(cmd, "diff")) vh.exit(cmdDiff(rest));
-    if (vh.eql(cmd, "install") or vh.eql(cmd, "fetch") or vh.eql(cmd, "build") or vh.eql(cmd, "check"))
+    if (vh.eql(cmd, "check")) vh.exit(cmdCheck(rest));
+    if (vh.eql(cmd, "install") or vh.eql(cmd, "fetch") or vh.eql(cmd, "build"))
         vh.die("{s}: not in v0.1 (kernel/README.md says what it will do)", .{cmd});
     vh.warn("unknown command {s}", .{cmd});
     vh.outs(usage);
@@ -153,6 +161,33 @@ fn cmdDiff(argv: []const [:0]const u8) u8 {
     return diff.run(o);
 }
 
+fn cmdCheck(argv: []const [:0]const u8) u8 {
+    var a: Args = .{ .items = argv };
+    var o: check.Opts = .{};
+    while (a.next()) |arg| {
+        if (a.value(arg, "--hw")) |v| {
+            o.hw = v;
+        } else if (a.value(arg, "--out")) |v| {
+            o.out = std.mem.trimEnd(u8, v, "/");
+        } else if (a.value(arg, "--repo")) |v| {
+            o.repo = std.mem.trimEnd(u8, v, "/");
+        } else if (a.value(arg, "--vh-plan")) |v| {
+            o.vh_plan = v;
+        } else if (a.value(arg, "--kmsg")) |v| {
+            o.kmsg = v;
+        } else if (a.value(arg, "--from")) |v| {
+            o.from = v;
+        } else if (a.value(arg, "--root")) |v| {
+            o.root = v;
+        } else if (a.value(arg, "--alias")) |v| {
+            o.alias = v;
+        } else if (a.value(arg, "--builtin")) |v| {
+            o.builtin = v;
+        } else vh.die("check: unknown argument {s}", .{arg});
+    }
+    return check.run(o);
+}
+
 test {
     _ = hw;
     _ = @import("alias.zig");
@@ -160,6 +195,7 @@ test {
     _ = probe;
     _ = resolve;
     _ = diff;
+    _ = check;
 }
 
 test "Args" {

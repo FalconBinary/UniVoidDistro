@@ -123,7 +123,8 @@ say "runit services"
 SVDIR=/etc/runit/runsvdir/default
 for t in 3 4 5 6; do rm -f "$SVDIR/agetty-tty$t"; done
 enable_sv() { [ -d "/etc/sv/$1" ] || die "no service $1"; ln -sfn "/etc/sv/$1" "$SVDIR/$1"; }
-for s in agetty-tty1 agetty-tty2 udevd dbus unbound chronyd seatd socklog-unix nanoklogd; do
+# vh-check: is this still the machine of /etc/vh/hw.zon (vh-kconf check, docs/uni/runtime.md)
+for s in agetty-tty1 agetty-tty2 udevd dbus unbound chronyd seatd socklog-unix nanoklogd vh-check; do
 	enable_sv "$s"
 done
 # what the hardware needs: iwd with Wi-Fi, dhcpcd on a wired interface, vh-acpid with a lid or a

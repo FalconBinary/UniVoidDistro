@@ -1,0 +1,12 @@
+#!/bin/sh
+# UniVoidDistro: is this still the machine the system was planned for? vh-kconf check once a
+# boot (docs/uni/runtime.md): another CPU or board, devices without a driver, firmware that
+# failed to load -> /run/vh/check, shown at the admin's login on tty2, and a fresh plan in
+# /run/vh/plan. A service rather than a step of stage 1: it stays off the boot's critical path
+# and runs with either stage 1. A few seconds after the services start, so that the drivers
+# have asked for their firmware; then it rests until the next boot.
+exec 2>&1
+[ -x /usr/local/sbin/vh-kconf ] || exec pause
+sleep 5
+/usr/local/sbin/vh-kconf check
+exec pause

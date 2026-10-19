@@ -11,6 +11,9 @@ if [ "$(id -un)" = "@VH_ADMIN@" ]; then
 	readonly TMOUT=600
 	export TMOUT
 	trap 'kill -KILL -1' EXIT
+	# what vh-kconf check found at boot: another machine, devices without a driver, firmware
+	# that did not load (docs/uni/runtime.md)
+	[ -s /run/vh/check ] && cat /run/vh/check
 fi
 
 # The everyday user on tty1 goes straight into the graphical session; after leaving
