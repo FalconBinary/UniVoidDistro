@@ -137,4 +137,5 @@
         "platform psci-cpuidle platform:psci-cpuidle",
         "platform regulatory.0 platform:regulatory",
     },
+    .udev_known = .{"99-vh-dgpu-off.rules"},
 }

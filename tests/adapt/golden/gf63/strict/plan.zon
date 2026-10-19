@@ -397,4 +397,5 @@
     },
     .kernel = .{ .nr_cpus = 12, .march = "skylake" },
     .unknown = .{ "pci 0000:00:08.0 pci:v00008086d00001911sv00001462sd000012D5bc08sc80i00", "pci 0000:00:14.2 pci:v00008086d000006EFsv00001462sd000012D5bc05sc00i00" },
+    .udev_known = .{"99-vh-dgpu-off.rules"},
 }

@@ -149,4 +149,5 @@
     },
     .kernel = .{ .nr_cpus = 4, .march = "cortex-a76" },
     .unknown = .{},
+    .udev_known = .{"99-vh-dgpu-off.rules"},
 }

@@ -195,6 +195,21 @@ hardware enters: N shows the plan and the tier and runs the gate; G is GPU-vendo
 | **U6: live image** | x86_64 and aarch64 images | U1 |
 | **V (continuous)** | the VM matrix, the fixture corpus from real snapshots, runbooks per vendor | — |
 
+### State (2026-10-19)
+
+M0 and U1 are done. Verified: the unit tests of `kernel/` (24) and `adapt/` (10) in a container;
+the golden plans of the six machines of `kernel/hw`, each planned twice with the same bytes; the
+gate (the four x86_64 machines full in strict mode, the two ARM64 ones refused in strict and
+installed in tiered); the GF63 oracle (the classes reassemble upstream's 264 fragment symbols
+and `.config`, one explained difference in LSMOD); the installer's packages, blacklist,
+firmware and command line, which for the GF63 are exactly upstream's; the lint.
+
+Not verified yet: a full installation (`kvm-smoke` runs once the repository is on GitHub, or
+`vhvm.py install` under TCG on the Mac: hours and disk space); any real machine; the five
+synthesised fixtures; the [VERIFY] items of `hwdb/` (the firmware narrowed for amdgpu, i915 and
+iwlwifi on hardware, the Secure Boot menu names) and of `tests/vm/vhvm.py` (intel-iommu under
+TCG and KVM).
+
 ## Measurements
 
 The upstream method applies (`bench/`, alternating runs, medians and p95, bootstrap CI,

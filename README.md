@@ -30,7 +30,9 @@ verify   the stock signed UKI always stays in Limine; vh-audit shows the protect
 | speed | built-in drivers, a stage 1 without a shell, no waiting for hardware that is not there |
 | optimisation per machine | every decision is a rule in `hwdb/` with its reason; `vh-plan explain ITEM` says why |
 
-**Current state: M0 and U1** (detect and decide): see [docs/uni/ROADMAP.md](docs/uni/ROADMAP.md).
+**Current state: M0 and U1 are done** (detect and decide: the probe, `vh-plan` with `hwdb/`, the
+kernel's class fragments, the installer driven by the plan); next is U2, the runtime rules. What
+is verified and what is not: [docs/uni/ROADMAP.md](docs/uni/ROADMAP.md#state-2026-10-19).
 The rules every change follows are in [docs/uni/principles.md](docs/uni/principles.md); what
 hardware is supported, and how each piece is detected, is in [docs/uni/hardware.md](docs/uni/hardware.md).
 
@@ -71,7 +73,8 @@ init/ sched/ thor/ installer/ session/   the upstream tracks (see each README)
 desktop/        snapshots of RefursWM and RefursLine
 tools/ bench/   vh-bench, vh-session-usage; measurements and their results
 tests/          vm/ (qemu + OVMF Secure Boot + swtpm rig), kernel/ (fixtures of real and
-                synthesised machines), adapt/ (golden plans, the hardware-constant lint), zig/, thor/, init/
+                synthesised machines, the GF63 oracle), adapt/ (golden plans, the hardware-constant
+                lint), install/ (the installer's lists per plan), zig/, thor/, init/
 docs/           uni/ (this distribution), ROADMAP.md and principles.md (upstream), ru/ (the Russian
                 guide of the predecessor), runbook-gf63.md, spikes/
 ```

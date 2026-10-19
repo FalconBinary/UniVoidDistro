@@ -436,4 +436,5 @@
         "pci 0000:00:14.2 pci:v00008086d000051EFsv00001028sd00000AF3bc05sc00i00",
         "pci 0000:00:1f.0 pci:v00008086d00005182sv00001028sd00000AF3bc06sc01i00",
     },
+    .udev_known = .{"99-vh-dgpu-off.rules"},
 }
