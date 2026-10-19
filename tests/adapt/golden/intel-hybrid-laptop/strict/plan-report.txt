@@ -124,6 +124,8 @@ initrd drivers (3):
   i8042  <- keyboard i8042
   vmd  <- storage.vmd
 
+internal input (vh-acpid) (0):
+
 notes (4):
   Dell: Secure Boot, Expert Key Management, Enable Custom Mode, then Delete All Keys.  <- board.dell.secure-boot
   Thunderbolt/USB4: the thunderbolt driver is refused; USB devices and displays on these ports work, docks with PCIe devices (a network card) do not.  <- quirk.thunderbolt

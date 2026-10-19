@@ -412,6 +412,8 @@
     .keyboards = .{.{
         .name = "Logitech USB Keyboard",
         .bus = "usb",
+        .path = "platform/axi/1000120000.pcie/pci0001:00/0001:00:00.0/0001:01:00.0/1f00200000.usb/xhci-hcd.0/usb1/1-1",
+        .removable = "",
         .drivers = .{
             .{ .driver = "hid-generic", .module = "hid_generic" },
             .{ .driver = "usbhid", .module = "usbhid" },

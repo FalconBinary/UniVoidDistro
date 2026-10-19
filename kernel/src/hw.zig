@@ -208,6 +208,13 @@ pub const Keyboard = struct {
     /// the input bus: i8042, usb, i2c, host, spi, other (Bluetooth and virtual devices are
     /// not recorded: neither can type the LUKS passphrase in the initrd)
     bus: []const u8 = "",
+    /// the place of the keyboard under /sys/devices (the topology, never an address): its USB
+    /// device on USB ("pci0000:00/0000:00:14.0/usb1/1-8"), else the device its input node
+    /// hangs off ("platform/i8042/serio0")
+    path: []const u8 = "",
+    /// on USB, the kernel's word for that USB device: "fixed" (built into the machine),
+    /// "removable" or "unknown"; "" off USB or when the kernel does not say
+    removable: []const u8 = "",
     /// the drivers from the keyboard up to its controller, nearest first: what the initrd needs
     drivers: []const Link = &.{},
 };
@@ -344,7 +351,10 @@ test "hw.zon format 2 round trip" {
     const conns = [_][]const u8{"eDP-1 connected"};
     const displays = [_]Display{.{ .name = "0000:00:02.0", .bus = "pci", .boot_vga = true, .driver = "i915", .module = "i915", .connectors = &conns }};
     const kchain = [_]Link{ .{ .driver = "atkbd", .module = "atkbd" }, .{ .driver = "i8042" } };
-    const kbds = [_]Keyboard{.{ .name = "AT Translated Set 2 keyboard", .bus = "i8042", .drivers = &kchain }};
+    const kbds = [_]Keyboard{
+        .{ .name = "AT Translated Set 2 keyboard", .bus = "i8042", .path = "platform/i8042/serio0", .drivers = &kchain },
+        .{ .name = "Keyboard", .bus = "usb", .path = "pci0000:00/0000:00:14.0/usb1/1-8", .removable = "fixed" },
+    };
     const tables = [_][]const u8{ "DMAR", "TPM2" };
     const hw: Hw = .{
         .arch = "x86_64",
@@ -372,4 +382,7 @@ test "hw.zon format 2 round trip" {
     try std.testing.expect(back.displays[0].boot_vga);
     try std.testing.expectEqualStrings("eDP-1 connected", back.displays[0].connectors[0]);
     try std.testing.expectEqualStrings("i8042", back.keyboards[0].drivers[1].driver);
+    try std.testing.expectEqualStrings("platform/i8042/serio0", back.keyboards[0].path);
+    try std.testing.expectEqualStrings("", back.keyboards[0].removable);
+    try std.testing.expectEqualStrings("fixed", back.keyboards[1].removable);
 }

@@ -169,6 +169,29 @@ test "the security gate: strict, tiered, the floor" {
     try t.expectEqual(@as(u8, 3), floor.status);
 }
 
+test "vh-acpid's internal input: built-in keyboards it cannot tell by their bus" {
+    const d = db(".{ .rules = .{} }");
+    var cfg: vh.Kv = .{};
+    // the laptop's PS/2 keyboard: vh-acpid knows it by itself
+    const ps2 = plan.compute(.{ .hw = laptop(), .db = d, .config = &cfg }).plan;
+    try t.expectEqual(@as(usize, 0), ps2.internal_input.len);
+    // a keyboard on internal USB, an external one, and one on SPI
+    const kbds = [_]hw.Keyboard{
+        .{ .name = "Keyboard", .bus = "usb", .path = "pci0000:00/0000:00:14.0/usb1/1-8", .removable = "fixed" },
+        .{ .name = "USB Keyboard", .bus = "usb", .path = "pci0000:00/0000:00:14.0/usb1/1-2", .removable = "removable" },
+        .{ .name = "SPI Keyboard", .bus = "spi", .path = "pci0000:00/0000:00:1e.3/pxa2xx-spi.3/spi_master/spi2/spi-KBD0001:00" },
+    };
+    var h = laptop();
+    h.keyboards = &kbds;
+    const p = plan.compute(.{ .hw = h, .db = d, .config = &cfg }).plan;
+    try t.expectEqual(@as(usize, 2), p.internal_input.len);
+    try t.expect(hasItem(p.internal_input, "/pci0000:00/0000:00:14.0/usb1/1-8/"));
+    try t.expect(hasItem(p.internal_input, "/pci0000:00/0000:00:1e.3/pxa2xx-spi.3/spi_master/spi2/spi-KBD0001:00/"));
+    try t.expect(!hasItem(p.internal_input, "/pci0000:00/0000:00:14.0/usb1/1-2/"));
+    const env = emit.renderEnv(p);
+    try t.expect(std.mem.indexOf(u8, env, "VH_PLAN_INTERNAL_INPUT='/pci0000:00/0000:00:14.0/usb1/1-8/ /pci0000:00/0000:00:1e.3/pxa2xx-spi.3/spi_master/spi2/spi-KBD0001:00/'\n") != null);
+}
+
 test "a misspelt condition is an error, not a match" {
     // parse() dies on unknown fields; the schema check is that a valid file round-trips
     const f = rules.parse(".{ .rules = .{ .{ .id = \"x\", .why = \"y\", .when = .{ .lacks = .{\"vm\"} } } } }", "test");

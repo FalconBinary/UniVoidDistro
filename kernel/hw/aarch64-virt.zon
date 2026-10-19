@@ -644,6 +644,8 @@
     .keyboards = .{.{
         .name = "Apple Inc. Virtual USB Keyboard",
         .bus = "usb",
+        .path = "pci0000:00/0000:00:0d.0/usb1/1-1",
+        .removable = "",
         .drivers = .{
             .{ .driver = "hid-generic", .module = "hid_generic" },
             .{ .driver = "usbhid", .module = "usbhid" },

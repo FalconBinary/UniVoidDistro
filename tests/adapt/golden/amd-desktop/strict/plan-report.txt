@@ -130,6 +130,8 @@ initrd drivers (4):
   usbhid  <- keyboard usb
   xhci_pci  <- keyboard usb
 
+internal input (vh-acpid) (0):
+
 notes (5):
   ASUS: Advanced Mode, Boot, Secure Boot, Key Management, Clear Secure Boot Keys puts the firmware in Setup Mode for vh-firstboot.  <- board.asus.secure-boot
   The board's sensors (Super I/O) are not probed: on most ASUS, MSI and ASRock boards it is a Nuvoton chip (nct6775) [VERIFY with sensors-detect from a live image].  <- board.superio

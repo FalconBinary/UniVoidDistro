@@ -269,6 +269,10 @@ def build(m):
             w.write(cc + "/status", status + "\n")
             w.link(f"sys/class/drm/{card['card']}-{conn}", cc)
 
+    # attributes no table above covers (a USB device's removable), as plain files
+    for rel, content in getattr(m, "FILES", {}).items():
+        w.write(rel, content + "\n")
+
     # sound cards
     for card, path in getattr(m, "SOUND", []):
         dev = "sys/devices/" + path

@@ -88,6 +88,7 @@ pub fn renderEnv(p: Plan) []u8 {
         .{ "VH_PLAN_UDEV_KNOWN", known(p.udev_known) },
         .{ "VH_PLAN_DENY", values(p.deny) },
         .{ "VH_PLAN_DRACUT", values(p.dracut) },
+        .{ "VH_PLAN_INTERNAL_INPUT", values(p.internal_input) },
         .{ "VH_PLAN_LUKS_CIPHER", p.luks.cipher },
         .{ "VH_PLAN_LUKS_KEY_SIZE", vh.fmt("{d}", .{p.luks.key_size}) },
         .{ "VH_PLAN_LUKS_MEM_KIB", vh.fmt("{d}", .{p.luks.pbkdf_memory_kib}) },

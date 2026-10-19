@@ -416,6 +416,7 @@
         } },
         .{ .value = "xhci_pci", .rules = .{ "device pci 0000:00:0d.0", "device pci 0000:00:14.0" } },
     },
+    .internal_input = .{},
     .exports = .{},
     .notes = .{
         .{ .value = "Dell: Secure Boot, Expert Key Management, Enable Custom Mode, then Delete All Keys.", .rules = .{"board.dell.secure-boot"} },

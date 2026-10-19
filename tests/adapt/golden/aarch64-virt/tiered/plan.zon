@@ -114,6 +114,7 @@
         .{ .value = "vmw_vsock_virtio_transport", .rules = .{"device virtio virtio6"} },
         .{ .value = "xhci_pci", .rules = .{"device pci 0000:00:0d.0"} },
     },
+    .internal_input = .{},
     .exports = .{},
     .notes = .{},
     .luks = .{

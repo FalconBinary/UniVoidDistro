@@ -124,6 +124,8 @@ initrd drivers (2):
   atkbd  <- keyboard i8042
   i8042  <- keyboard i8042
 
+internal input (vh-acpid) (0):
+
 notes (4):
   MSI: Settings, Advanced, Windows OS Configuration, Secure Boot, Secure Boot Mode Custom, Key Management, Delete All Secure Boot Variables.  <- board.msi.secure-boot
   MSI laptop: msi-ec controls the fan and the power modes if it supports this EC firmware (ls /sys/devices/platform/msi-ec).  <- board.msi.ec

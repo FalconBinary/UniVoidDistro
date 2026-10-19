@@ -1011,6 +1011,8 @@
     .keyboards = .{.{
         .name = "AT Translated Set 2 keyboard",
         .bus = "i8042",
+        .path = "platform/i8042/serio0",
+        .removable = "",
         .drivers = .{ .{ .driver = "atkbd", .module = "atkbd" }, .{ .driver = "i8042", .module = "i8042" } },
     }},
     .sound = .{.{

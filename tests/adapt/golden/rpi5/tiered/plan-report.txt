@@ -88,6 +88,8 @@ initrd drivers (7):
   usbhid  <- keyboard usb
   xhci_plat_hcd  <- keyboard usb
 
+internal input (vh-acpid) (0):
+
 notes (0):
 
 scalars (4):

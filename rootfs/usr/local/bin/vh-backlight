@@ -1,8 +1,20 @@
 #!/bin/sh
 # void-hardperf-light: brightness without root and without SUID: a sysfs write (group backlight).
 #   vh-backlight +5 | -5 | 50   (percent)
+# With several interfaces the one that drives the panel is chosen by what the kernel says of
+# each, never by its name (docs/uni/runtime.md): firmware before platform before raw, as the
+# kernel's ABI document asks, and last the raw interface of a GPU whose connector is not
+# connected (a hybrid laptop's other GPU). VH_BACKLIGHT=NAME picks one by hand.
 set -eu
-for d in /sys/class/backlight/*; do break; done
+d="" rank=99
+for b in /sys/class/backlight/*; do
+	[ -r "$b/max_brightness" ] || continue
+	case $(cat "$b/type" 2>/dev/null) in firmware) r=1 ;; platform) r=2 ;; raw) r=3 ;; *) r=4 ;; esac
+	if [ -r "$b/device/status" ] && [ "$(cat "$b/device/status")" != connected ]; then r=$((r + 10)); fi
+	if [ "$r" -lt "$rank" ]; then d=$b rank=$r; fi
+done
+[ -n "${VH_BACKLIGHT:-}" ] && d=/sys/class/backlight/$VH_BACKLIGHT
+[ -n "$d" ] || { echo "no backlight interface in /sys/class/backlight" >&2; exit 1; }
 [ -w "$d/brightness" ] || { echo "no access to $d/brightness (group backlight?)" >&2; exit 1; }
 max=$(cat "$d/max_brightness") cur=$(cat "$d/brightness")
 step=$(( max / 100 )); [ "$step" -ge 1 ] || step=1

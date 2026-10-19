@@ -836,10 +836,61 @@ fn keyboards(src: *const Src) []const hw.Keyboard {
             if (vh.startsWith(l, "N: Name=")) k.name = vh.dupe(mem.trim(u8, l["N: Name=".len..], "\""));
             if (vh.startsWith(l, "S: Sysfs=")) sysfs = l["S: Sysfs=".len..];
         }
-        if (sysfs.len > 0) k.drivers = driverChain(src, src.real(vh.fmt("/sys{s}", .{sysfs})));
+        if (sysfs.len > 0) {
+            const real = src.real(vh.fmt("/sys{s}", .{sysfs}));
+            k.drivers = driverChain(src, real);
+            const place = keyboardPlace(real);
+            k.path = place.path;
+            if (place.usb) k.removable = src.line(vh.fmt("/sys/devices/{s}/removable", .{place.path}));
+        }
         out.append(vh.gpa, k) catch vh.oom();
     }
     return out.items;
+}
+
+pub const Place = struct {
+    /// under /sys/devices, without that prefix
+    path: []const u8,
+    /// the path is a USB device
+    usb: bool = false,
+};
+
+/// Where a keyboard sits, from the real path of its input node (".../input/inputN"): the USB
+/// device it is part of, else the device the node hangs off, without a HID device directory
+/// ("0018:06CB:7E7E.0002": its instance number changes between boots).
+pub fn keyboardPlace(real: []const u8) Place {
+    var dev = real;
+    if (vh.eql(basename(dirname(dev)), "input")) dev = dirname(dirname(dev));
+    const top = "/sys/devices/";
+    var up = dev;
+    while (vh.startsWith(up, top)) : (up = dirname(up)) {
+        if (usbDevice(basename(up))) return .{ .path = vh.dupe(up[top.len..]), .usb = true };
+    }
+    if (hidDevice(basename(dev))) dev = dirname(dev);
+    return .{ .path = vh.dupe(if (vh.startsWith(dev, top)) dev[top.len..] else dev) };
+}
+
+/// the sysfs name of a USB device: its bus and port path, "1-8", "3-1.4.2" (not a root hub
+/// "usb1", not an interface "1-8:1.0")
+pub fn usbDevice(name: []const u8) bool {
+    const dash = mem.indexOfScalar(u8, name, '-') orelse return false;
+    if (!allDigits(name[0..dash]) or dash + 1 >= name.len) return false;
+    for (name[dash + 1 ..]) |c| if (!std.ascii.isDigit(c) and c != '.') return false;
+    return true;
+}
+
+/// the sysfs name of a HID device: bus, vendor, product and instance, "0003:046D:C31C.0001"
+pub fn hidDevice(name: []const u8) bool {
+    if (name.len != 19) return false;
+    for (name, 0..) |c, i| {
+        const ok = switch (i) {
+            4, 9 => c == ':',
+            14 => c == '.',
+            else => std.ascii.isHex(c),
+        };
+        if (!ok) return false;
+    }
+    return true;
 }
 
 fn sound(src: *const Src) []const hw.Sound {
@@ -922,6 +973,22 @@ test "buses, classes and addresses" {
     try std.testing.expect(!addressLike("BAT0"));
     try std.testing.expect(virtualDisk("loop0") and virtualDisk("zram0") and virtualDisk("dm-0") and virtualDisk("mmcblk0boot1"));
     try std.testing.expect(!virtualDisk("nvme0n1") and !virtualDisk("sda") and !virtualDisk("mmcblk0") and !virtualDisk("vda"));
+}
+
+test "a keyboard's place: its USB device, or the device of its input node" {
+    const usbk = keyboardPlace("/sys/devices/pci0000:00/0000:00:14.0/usb1/1-8/1-8:1.0/0003:048D:C101.0001/input/input5");
+    try std.testing.expectEqualStrings("pci0000:00/0000:00:14.0/usb1/1-8", usbk.path);
+    try std.testing.expect(usbk.usb);
+    const hub = keyboardPlace("/sys/devices/pci0000:00/0000:00:14.0/usb3/3-1/3-1.4/3-1.4:1.0/0003:04D9:0006.0002/input/input9");
+    try std.testing.expectEqualStrings("pci0000:00/0000:00:14.0/usb3/3-1/3-1.4", hub.path);
+    const ps2 = keyboardPlace("/sys/devices/platform/i8042/serio0/input/input0");
+    try std.testing.expectEqualStrings("platform/i8042/serio0", ps2.path);
+    try std.testing.expect(!ps2.usb);
+    const i2c = keyboardPlace("/sys/devices/pci0000:00/0000:00:15.1/i2c_designware.1/i2c-1/i2c-SYNA2B5B:00/0018:06CB:7E7E.0002/input/input12");
+    try std.testing.expectEqualStrings("pci0000:00/0000:00:15.1/i2c_designware.1/i2c-1/i2c-SYNA2B5B:00", i2c.path);
+    try std.testing.expect(usbDevice("1-8") and usbDevice("3-1.4.2"));
+    try std.testing.expect(!usbDevice("usb1") and !usbDevice("1-8:1.0") and !usbDevice("i2c-1") and !usbDevice("1-"));
+    try std.testing.expect(hidDevice("0003:046D:C31C.0001") and !hidDevice("i2c-SYNA2B5B:00"));
 }
 
 test "input devices: keyboards, and what a snapshot keeps" {
@@ -1110,6 +1177,8 @@ test "probe: format 2 on the GF63" {
     try std.testing.expectEqualStrings("i8042", h.keyboards[0].bus);
     try std.testing.expectEqualStrings("atkbd", h.keyboards[0].drivers[0].driver);
     try std.testing.expectEqualStrings("i8042", h.keyboards[0].drivers[1].driver);
+    try std.testing.expectEqualStrings("platform/i8042/serio0", h.keyboards[0].path);
+    try std.testing.expectEqualStrings("", h.keyboards[0].removable);
     try std.testing.expectEqualStrings("snd_hda_intel", h.sound[0].driver);
     try roundTrip("gf63");
 }
@@ -1134,6 +1203,9 @@ test "probe: an AMD desktop with two CCDs and two GPUs" {
     try std.testing.expect(!h.displays[1].boot_vga);
     try std.testing.expectEqualStrings("usb", h.keyboards[0].bus);
     try std.testing.expectEqualStrings("xhci_pci", h.keyboards[0].drivers[4].module);
+    // the keyboard's USB device on a rear port: not built in
+    try std.testing.expectEqualStrings("pci0000:00/0000:00:08.1/0000:0b:00.3/usb1/1-1", h.keyboards[0].path);
+    try std.testing.expectEqualStrings("removable", h.keyboards[0].removable);
     try std.testing.expectEqual(@as(usize, 0), h.power.supplies.len);
     try std.testing.expectEqual(@as(usize, 3), h.sound.len);
 }

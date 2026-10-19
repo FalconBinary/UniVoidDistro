@@ -67,3 +67,26 @@ without a device; `enable` then says so and the daemon runs without one.
 |---|---|---|---|---|
 | the board's hardware one, from the plan | a dead or hung `vh-deadman`, and a hung kernel: the hardware resets the machine (with MOR the firmware wipes RAM) | the firmware may disable or lock it (no device appears) | one write every 10 s at most | none |
 | softdog, when the plan knows no hardware one | a dead or hung `vh-deadman`: the kernel reboots | a hung kernel (a deadlock, interrupts off) never runs the software timer, so nothing resets the machine | the same | none |
+
+## The backlight: `vh-backlight`
+
+A machine may register several backlight interfaces: a hybrid laptop's two GPUs each a raw
+one, the firmware's ACPI one beside a GPU's. `vh-backlight` writes the one that drives the
+panel, chosen by what the kernel says of each, never by its name: `firmware` before
+`platform` before `raw`, the order the kernel's ABI document (`sysfs-class-backlight`) asks
+for, and last a raw interface whose DRM connector is not connected (the GPU the panel is not
+wired to). `VH_BACKLIGHT=NAME vh-backlight +5` picks one by hand. `tests/init/stage1_test.sh`
+checks the choice on a fake `/sys/class/backlight`.
+
+## Built-in input for `vh-acpid`
+
+The idle watchdog of `vh-acpid` (lock and power off without physical input,
+`optional/deadman`) counts only built-in keyboards and touchpads. It knows the PS/2 (i8042)
+and I2C ones by their bus; a keyboard on internal USB, SPI or the host bus it cannot tell from
+an external one. The probe records each keyboard's place under `/sys/devices` and, on USB,
+the kernel's word for its USB device (`removable`: `fixed` means built in). The plan lists
+the place of every built-in keyboard vh-acpid cannot tell (`internal_input`, in
+`plan.env` `VH_PLAN_INTERNAL_INPUT`), and the installer writes it into
+`/etc/vh/acpi.conf` as `INTERNAL_INPUT`. A keyboard whose USB device the kernel calls
+`unknown` (no ACPI description of the port) is not counted [VERIFY on hardware with an
+internal USB keyboard].

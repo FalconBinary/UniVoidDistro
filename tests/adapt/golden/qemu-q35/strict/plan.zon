@@ -119,6 +119,7 @@
         .{ .value = "virtio_gpu", .rules = .{"device virtio virtio0"} },
         .{ .value = "virtio_pci", .rules = .{"device pci 0000:00:03.0"} },
     },
+    .internal_input = .{},
     .exports = .{},
     .notes = .{},
     .luks = .{

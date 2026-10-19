@@ -419,6 +419,7 @@
         .{ .value = "usbhid", .rules = .{"device usb 1-1:1.0"} },
         .{ .value = "xhci_pci", .rules = .{ "device pci 0000:08:00.0", "device pci 0000:0b:00.3" } },
     },
+    .internal_input = .{},
     .exports = .{},
     .notes = .{
         .{ .value = "ASUS: Advanced Mode, Boot, Secure Boot, Key Management, Clear Secure Boot Keys puts the firmware in Setup Mode for vh-firstboot.", .rules = .{"board.asus.secure-boot"} },

@@ -70,6 +70,10 @@ pub const Plan = struct {
     dracut: []const Item = &.{},
     /// the modules the machine's devices need, after the deny list
     modules: []const Item = &.{},
+    /// the built-in keyboards vh-acpid cannot tell by their bus (it knows i8042 and I2C): the
+    /// place of each under /sys/devices, "/pci0000:00/0000:00:14.0/usb1/1-8/" (acpi.conf's
+    /// INTERNAL_INPUT, the physical input of its idle watchdog)
+    internal_input: []const Item = &.{},
     exports: []const ScalarItem = &.{},
     notes: []const Item = &.{},
     luks: Luks = .{},
@@ -453,6 +457,18 @@ pub fn compute(o: Opts) Result {
         if (l.module.len == 0) continue;
         dracut.add(alias.normalize(l.module), vh.fmt("keyboard {s}", .{k.bus}));
     };
+    // vh-acpid's idle watchdog counts the input of built-in devices only; it knows the i8042
+    // and I2C ones by their bus. A keyboard on internal USB (the kernel calls its USB device
+    // fixed), on SPI or on the host bus is built in as well: its place goes to INTERNAL_INPUT
+    var internal: Bag = .{};
+    for (m.hw.keyboards) |k| {
+        if (k.path.len == 0) continue;
+        if (vh.eql(k.bus, "usb") and vh.eql(k.removable, "fixed")) {
+            internal.add(vh.fmt("/{s}/", .{k.path}), "keyboard usb, fixed");
+        } else if (vh.eql(k.bus, "spi") or vh.eql(k.bus, "host")) {
+            internal.add(vh.fmt("/{s}/", .{k.path}), vh.fmt("keyboard {s}", .{k.bus}));
+        }
+    }
 
     // the security gate
     var missing: std.ArrayList(Missing) = .empty;
@@ -513,6 +529,7 @@ pub fn compute(o: Opts) Result {
         .deny = deny.items(true),
         .dracut = dracut.items(true),
         .modules = modules.items(true),
+        .internal_input = internal.items(true),
         .exports = exports.items,
         .notes = notes.items(false),
         .luks = luks,
@@ -557,6 +574,7 @@ pub fn compute(o: Opts) Result {
         .{ .name = "udev rules", .items = plan.udev },
         .{ .name = "denied modules", .items = plan.deny },
         .{ .name = "initrd drivers", .items = plan.dracut },
+        .{ .name = "internal input (vh-acpid)", .items = plan.internal_input },
         .{ .name = "notes", .items = plan.notes },
     };
     for (lists) |l| {

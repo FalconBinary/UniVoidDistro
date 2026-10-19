@@ -115,6 +115,10 @@ plan puts that chain into dracut's `add_drivers`:
 | USB (desktops, some laptops' internal keyboards) | xhci_pci (or ehci/ohci on old machines), usbhid, hid_generic |
 | I2C-HID (some laptops) | the platform's I2C and GPIO drivers (intel_lpss_pci, the pinctrl driver of the chipset, i2c_designware), i2c_hid_acpi |
 
+The probe also records where each keyboard sits and, on USB, whether the kernel calls its
+USB device built in (`fixed`): a built-in keyboard on USB or SPI becomes the physical input of
+`vh-acpid`'s idle watchdog ([runtime](runtime.md#built-in-input-for-vh-acpid)).
+
 ## Motherboards and chipsets
 
 | What | Detected by | Effect |

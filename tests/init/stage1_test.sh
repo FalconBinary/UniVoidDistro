@@ -204,6 +204,32 @@ for ac in 1 0; do
 	has "vh-runtime (AC $ac): no errors" "$(grep -c ERROR /tmp/runtime-$ac.log)" '^0$'
 done
 
+echo "== vh-backlight: the panel's interface among several, on a fake /sys/class/backlight"
+fake_light() { # $1: the directory, $2: the name, $3: the type, $4: its connector's status ("" without one)
+	mkdir -p "$1/$2/device"
+	echo "$3" > "$1/$2/type"
+	echo 1000 > "$1/$2/max_brightness"
+	echo 500 > "$1/$2/brightness"
+	[ -n "$4" ] && echo "$4" > "$1/$2/device/status"
+	return 0
+}
+light() { # $1: the fake directory, $2...: the environment and arguments -> the brightness of each interface
+	unshare -m sh -c "mount --bind $1 /sys/class/backlight && env $2 sh $T/vh-backlight +5" > /tmp/bl.log 2>&1 || { echo "error: $(cat /tmp/bl.log)"; return; }
+	for b in "$1"/*; do printf '%s=%s ' "${b##*/}" "$(cat "$b/brightness")"; done
+}
+rm -rf /tmp/bl1 /tmp/bl2 /tmp/bl3
+# a hybrid laptop: both GPUs register a raw interface; only the iGPU's connector is connected
+fake_light /tmp/bl1 intel_backlight raw connected
+fake_light /tmp/bl1 nv_backlight raw disconnected
+chk "vh-backlight: the raw interface of the connected panel" "$(light /tmp/bl1 VH_X=)" "intel_backlight=550 nv_backlight=500 "
+# firmware before raw (the kernel's ABI document)
+fake_light /tmp/bl2 acpi_video0 firmware ""
+fake_light /tmp/bl2 intel_backlight raw connected
+chk "vh-backlight: firmware before raw" "$(light /tmp/bl2 VH_X=)" "acpi_video0=550 intel_backlight=500 "
+fake_light /tmp/bl3 acpi_video0 firmware ""
+fake_light /tmp/bl3 intel_backlight raw connected
+chk "vh-backlight: VH_BACKLIGHT picks one by hand" "$(light /tmp/bl3 VH_BACKLIGHT=intel_backlight)" "acpi_video0=500 intel_backlight=550 "
+
 echo "== vh-suid under a fake root: bits and file capabilities"
 for f in passwd su ping extra; do cp /usr/bin/true $R/usr/bin/$f; done
 chmod u+s $R/usr/bin/passwd

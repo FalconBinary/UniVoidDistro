@@ -382,6 +382,7 @@
         } },
         .{ .value = "xhci_pci", .rules = .{"device pci 0000:00:14.0"} },
     },
+    .internal_input = .{},
     .exports = .{},
     .notes = .{
         .{ .value = "MSI: Settings, Advanced, Windows OS Configuration, Secure Boot, Secure Boot Mode Custom, Key Management, Delete All Secure Boot Variables.", .rules = .{"board.msi.secure-boot"} },

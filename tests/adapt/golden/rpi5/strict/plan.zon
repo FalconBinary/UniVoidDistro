@@ -134,6 +134,7 @@
         .{ .value = "vc4", .rules = .{ "device platform 107c701400.hdmi", "device platform axi:gpu" } },
         .{ .value = "xhci_plat_hcd", .rules = .{"device platform xhci-hcd.0"} },
     },
+    .internal_input = .{},
     .exports = .{},
     .notes = .{},
     .luks = .{

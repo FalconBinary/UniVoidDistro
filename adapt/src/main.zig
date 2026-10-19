@@ -167,6 +167,7 @@ fn cmdExplain(argv: []const [:0]const u8) u8 {
         .{ .name = "udev rule", .items = p.udev },
         .{ .name = "denied module", .items = p.deny },
         .{ .name = "initrd driver", .items = p.dracut },
+        .{ .name = "internal input", .items = p.internal_input },
         .{ .name = "module", .items = p.modules },
     };
     var found = false;

@@ -185,6 +185,8 @@ DRM = [
      "connectors": [("DP-3", "disconnected"), ("HDMI-A-2", "disconnected")]},
 ]
 SOUND = [("card0", GPU + "/0000:03:00.1"), ("card1", IGPU + "/0000:0b:00.1"), ("card2", IGPU + "/0000:0b:00.6")]
+# the keyboard on a rear USB port: the kernel calls its USB device removable (not built in) [VERIFY]
+FILES = {"sys/devices/" + IGPU + "/0000:0b:00.3/usb1/1-1/removable": "removable"}
 INPUT = """I: Bus=0003 Vendor=046d Product=c31c Version=0110
 N: Name="Logitech USB Keyboard"
 S: Sysfs=/devices/pci0000:00/0000:00:08.1/0000:0b:00.3/usb1/1-1/1-1:1.0/0003:046D:C31C.0001/input/input3
