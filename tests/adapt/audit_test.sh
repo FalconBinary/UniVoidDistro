@@ -63,6 +63,16 @@ has "a refused module not on the command line" "$out" "[FAIL] modules the plan r
 has "a refused module loaded" "$out" "[FAIL] modules the plan refuses are loaded: nouveau"
 has "a parameter missing" "$out" "[FAIL] command line: the plan's parameters missing: efi=disable_early_pci_dma intel_iommu=on"
 
+echo "== the GF63's machine kernel: no loadable modules (no /proc/modules), no module_blacklist="
+audit_nomod() { # $1: the command line of a kernel without loadable modules -> the plan area's lines
+	printf '%s\n' "$1" > /tmp/cmdline
+	unshare -m sh -c 'mount -t tmpfs none /proc && cp /tmp/cmdline /proc/cmdline && /usr/local/sbin/vh-audit plan' 2>&1
+}
+out=$(audit_nomod "root=UUID=x $cmdl quiet iwlwifi.power_save=0")
+has "a machine kernel: the refused modules cannot be loaded" "$out" "[ ok ] the 11 modules the plan refuses cannot be loaded: this kernel has no loadable modules"
+has "a machine kernel: the plan's command line" "$out" "[ ok ] command line: the plan's parameters ($cmdl)"
+case $out in *"missing from module_blacklist="*) bad "a machine kernel: module_blacklist= is not asked for" ;; *) ok "a machine kernel: module_blacklist= is not asked for" ;; esac
+
 echo "== a reduced machine, every risk acknowledged: the Raspberry Pi's tiered plan, without vh-plan"
 r=$S/tests/adapt/golden/rpi5/tiered
 rm -f /usr/local/sbin/vh-plan /etc/vh/plan.zon /etc/xbps.d/40-vh-firmware.conf

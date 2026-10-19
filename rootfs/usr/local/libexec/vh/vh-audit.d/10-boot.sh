@@ -2,10 +2,19 @@
 # vh-audit: boot chain and kernel (docs/03, docs/05). Sourced by vh-audit.
 sec "Boot and kernel"
 cmd=$(cat /proc/cmdline)
+# a kernel without loadable modules (a machine kernel, CONFIG_MODULES=n: vh-kconf install,
+# docs/uni/kernel.md) has no /proc/modules: nothing can be loaded into it, so neither
+# module.sig_enforce (its UKI's command line leaves it out) nor the module lock has a job there
+nomod=0
+[ -e /proc/modules ] || nomod=1
 # every machine's parameters; what the hardware asks for (the IOMMU of a DMAR table ...) is
 # checked against the plan (area plan)
 for p in lockdown=confidentiality module.sig_enforce=1 lsm=landlock,lockdown,yama,apparmor \
 	iommu.strict=1 init_on_free=1 rd.shell=0 rd.emergency=poweroff panic=10; do
+	if [ "$p" = module.sig_enforce=1 ] && [ "$nomod" = 1 ]; then
+		ok "no loadable modules in this kernel ($(uname -r)): module.sig_enforce has nothing to check"
+		continue
+	fi
 	case " $cmd " in *" $p "*) ok "cmdline: $p" ;; *) bad "cmdline: missing $p" ;; esac
 done
 chk lockdown "$(cat /sys/kernel/security/lockdown)" "none integrity [confidentiality]"
@@ -49,13 +58,20 @@ if [ -e /var/lib/vh/boot-assess ]; then
 		*) unk "machine kernel: vh-limine-update --status gave no summary" ;;
 	esac
 fi
-if [ -e /etc/vh/modlock.enabled ]; then
+if [ "$nomod" = 1 ]; then
+	ok "no loadable modules in this kernel ($(uname -r)): no module lock is needed (kernel.modules_disabled does not exist)"
+elif [ -e /etc/vh/modlock.enabled ]; then
 	chk kernel.modules_disabled "$(cat /proc/sys/kernel/modules_disabled)" 1
 else
 	unk "module lock not enabled (stage 3: 30-lock.sh)"
 fi
 for m in fuse overlay; do
-	grep -q "^$m " /proc/modules && bad "module $m is loaded" || ok "module $m is not loaded"
+	if [ "$nomod" = 1 ]; then
+		# built in or not at all: the file system types this kernel has
+		grep -qw "$m" /proc/filesystems && bad "$m is built into this kernel" || ok "$m is not in this kernel"
+	else
+		grep -q "^$m " /proc/modules && bad "module $m is loaded" || ok "module $m is not loaded"
+	fi
 done
 /usr/local/libexec/vh/vh-seccomp --selftest >/dev/null 2>&1 \
 	&& ok "sandbox seccomp filters: self-test" || bad "vh-seccomp --selftest failed"

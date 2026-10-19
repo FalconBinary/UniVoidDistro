@@ -35,19 +35,26 @@ else
 		else bad "service $s of the plan is not running"; fi
 	done
 
-	# the refused modules: on the command line (module_blacklist=), and none loaded
+	# the refused modules: on the command line (module_blacklist=), and none loaded; a kernel
+	# without loadable modules (a machine kernel, built without them by vh-kconf resolve's deny
+	# list) has no module_blacklist= and no /proc/modules: nothing can load them
 	cmd=" $(cat /proc/cmdline) "
 	# shellcheck disable=SC2086 # one parameter per line
 	bl=" $(printf '%s\n' $cmd | sed -n 's/^module_blacklist=//p' | tr ',' ' ') "
 	n=0 notbl="" loaded=""
 	for m in $(plan DENY); do
 		n=$((n + 1))
+		[ -e /proc/modules ] || continue
 		case $bl in *" $m "*) ;; *) notbl="$notbl $m" ;; esac
 		grep -q "^$m " /proc/modules && loaded="$loaded $m"
 	done
-	[ -z "$notbl" ] || bad "modules the plan refuses, missing from module_blacklist= of the command line:$notbl"
-	[ -z "$loaded" ] || bad "modules the plan refuses are loaded:$loaded"
-	[ -z "$notbl$loaded" ] && ok "the $n modules the plan refuses are refused by the kernel, none is loaded"
+	if [ ! -e /proc/modules ]; then
+		ok "the $n modules the plan refuses cannot be loaded: this kernel has no loadable modules ($(uname -r))"
+	else
+		[ -z "$notbl" ] || bad "modules the plan refuses, missing from module_blacklist= of the command line:$notbl"
+		[ -z "$loaded" ] || bad "modules the plan refuses are loaded:$loaded"
+		[ -z "$notbl$loaded" ] && ok "the $n modules the plan refuses are refused by the kernel, none is loaded"
+	fi
 
 	# the command line of the plan (the IOMMU, early DMA, ia32 ...)
 	missing=""
