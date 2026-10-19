@@ -1,4 +1,4 @@
-//! void-hardperf-light: the aggregator over every Zig component.
+//! UniVoidDistro: the aggregator over every Zig component.
 //!   zig build -Dtarget=x86_64-linux --prefix DIR   -- every program of every track into DIR
 //!   zig build test                                  -- the unit tests of every component
 //! Each track lives in its own directory with its own build.zig and is listed in

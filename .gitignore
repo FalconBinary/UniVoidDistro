@@ -22,3 +22,6 @@ installer/zig-out/
 session/.zig-cache/
 session/zig-out/
 bench/results/*.tmp
+adapt/.zig-cache/
+adapt/zig-out/
+tests/adapt/out/

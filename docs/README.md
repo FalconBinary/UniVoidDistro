@@ -1,5 +1,17 @@
 # Documentation
 
+## UniVoidDistro
+
+| File | What |
+|---|---|
+| [uni/ROADMAP.md](uni/ROADMAP.md) | this distribution's plan: the adaptive architecture, tracks, milestones M0, U1-U6 and V, measurements, success criteria, risks |
+| [uni/principles.md](uni/principles.md) | the rules of adaptivity on top of the upstream rules; the protective properties per architecture |
+| [uni/hardware.md](uni/hardware.md) | what hardware is supported, how each piece is detected, what the plan does with it, what is not supported |
+
+## Upstream (void-hardperf-light)
+
+The plan and the documents of the shared tracks, merged from upstream unchanged.
+
 | File | What |
 |---|---|
 | [ROADMAP.md](ROADMAP.md) | the development plan: context, components, milestones, measurements, verification, risks |
