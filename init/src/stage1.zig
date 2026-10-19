@@ -128,6 +128,10 @@ fn run(selected: ?[]const []const u8, force: bool) void {
     const whole = selected == null;
     if (whole) sys.msg("void-hardperf-light: stage 1 (vh-stage1 {s})", .{version});
     if (ctx.container) sys.detail("container detected: udev, modules, console, fstab and swap are skipped{s}", .{if (force) " (--force: not skipped)" else ""});
+    // the start marker at the entry (after an initramfs /dev exists already); without /dev
+    // it is written after the pseudofs step, with that step's time named
+    var marked = false;
+    if (whole) marked = sys.kmsg("vh-stage1: start", .{});
 
     var times: std.ArrayList(Timing) = .empty;
     for (steps, 0..) |s, i| {
@@ -144,7 +148,7 @@ fn run(selected: ?[]const []const u8, force: bool) void {
         s.run();
         const dt = sys.monoUs() - a;
         times.append(vh.gpa, .{ .name = s.name, .us = dt }) catch vh.oom();
-        if (whole and i == 0) sys.kmsg("vh-stage1: start (pseudofs {d} ms)", .{(dt + 500) / 1000});
+        if (whole and i == 0 and !marked) marked = sys.kmsg("vh-stage1: start (after pseudofs, {d} ms)", .{(dt + 500) / 1000});
     }
     const total = sys.monoUs() - t0;
 
@@ -152,8 +156,8 @@ fn run(selected: ?[]const []const u8, force: bool) void {
     for (times.items) |t| line.print(vh.gpa, "{s}={d} ", .{ t.name, (t.us + 500) / 1000 }) catch vh.oom();
     if (whole) {
         sys.msg("Initialization complete, running stage 2...", .{});
-        sys.kmsg("vh-stage1: done in {d} ms ({d} errors)", .{ (total + 500) / 1000, sys.failures });
-        for (splitLine(line.items, 900), 0..) |part, i| sys.kmsg("vh-stage1: steps{s} {s}", .{ if (i == 0) "" else " (cont.)", part });
+        _ = sys.kmsg("vh-stage1: done in {d} ms ({d} errors)", .{ (total + 500) / 1000, sys.failures });
+        for (splitLine(line.items, 900), 0..) |part, i| _ = sys.kmsg("vh-stage1: steps{s} {s}", .{ if (i == 0) "" else " (cont.)", part });
         vh.mkdirs(sys.p("/run/vh"), 0o755);
         _ = sys.writeFile(sys.p(setup.status_file), vh.fmt("done {d} ms\nerrors {d}\nsteps {s}\n", .{ (total + 500) / 1000, sys.failures, line.items }), 0o644);
     } else {

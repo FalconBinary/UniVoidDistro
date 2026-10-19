@@ -76,11 +76,12 @@ pub fn emergency() void {
 
 var kmsg_fd: linux.fd_t = -1;
 
-/// a line into the kernel log (dmesg), level info; silently nothing without /dev/kmsg
-pub fn kmsg(comptime f: []const u8, args: anytype) void {
-    if (kmsg_fd < 0) kmsg_fd = vh.openFd(p("/dev/kmsg"), .{ .ACCMODE = .WRONLY, .NONBLOCK = true }, 0) catch return;
+/// a line into the kernel log (dmesg), level info; false (and nothing) without /dev/kmsg
+pub fn kmsg(comptime f: []const u8, args: anytype) bool {
+    if (kmsg_fd < 0) kmsg_fd = vh.openFd(p("/dev/kmsg"), .{ .ACCMODE = .WRONLY, .NONBLOCK = true }, 0) catch return false;
     const line = vh.fmt("<6>" ++ f ++ "\n", args);
-    vh.writeAllFd(kmsg_fd, line) catch {};
+    vh.writeAllFd(kmsg_fd, line) catch return false;
+    return true;
 }
 
 /// CLOCK_MONOTONIC in microseconds

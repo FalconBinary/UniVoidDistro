@@ -10,10 +10,11 @@ cold boot of the VM. Both variants mark their start and their end in the kernel 
 the shell variant is the stock /etc/runit/1 plus two echo lines (bench/init/1.shell-marked),
 vh-stage1 writes its own markers. From dmesg of every boot:
 
-  init_s     the kernel's "Run /sbin/init as init process" timestamp
   start_s    the stage-1 start marker        done_s   the stage-1 end marker
-  stage1_ms  done - start                    init_ms  done - the kernel's init start
+  stage1_ms  done - start: the measured quantity
   self_ms    vh-stage1's own "done in N ms"  steps    its per-step times (vh-stage1 only)
+  init_s     the kernel's "Run /init as init process" line: the initramfs start, kept for
+             reference only (the time to stage 1 from there holds the LUKS passphrase wait)
 
 Output: bench/results/stage1-TAG.csv (every boot, warm-ups marked) and the summary: median,
 p95, the bootstrap 95 % CI of the difference of medians, and the verdict by the rule
@@ -95,21 +96,20 @@ def summary(rows, title):
     """the table of the measured boots: median, p95, the bootstrap CI, the verdict"""
     shell = [r["stage1_ms"] for r in rows if r["variant"] == "shell" and not r["warmup"]]
     zig = [r["stage1_ms"] for r in rows if r["variant"] == "zig" and not r["warmup"]]
-    shell_i = [r["init_ms"] for r in rows if r["variant"] == "shell" and not r["warmup"] and r["init_ms"] != ""]
-    zig_i = [r["init_ms"] for r in rows if r["variant"] == "zig" and not r["warmup"] and r["init_ms"] != ""]
     print(f"{title}: {len(shell)} + {len(zig)} measured boots\n")
-    print("| stage 1 (ms) | runit-void shell | vh-stage1 | difference | 95 % CI |")
+    if not shell or not zig:
+        print("not enough boots of both variants")
+        return
+    lo, hi = bootstrap_ci(shell, zig)
+    d = statistics.median(zig) - statistics.median(shell)
+    pct = 100 * d / statistics.median(shell)
+    verdict = "faster" if hi < 0 and pct <= -3 else "slower" if lo > 0 and pct >= 3 else "no claim"
+    print("| stage 1, done - start (ms) | runit-void shell | vh-stage1 | difference | 95 % CI |")
     print("|---|---|---|---|---|")
-    for name, x, y in (("done - start", shell, zig), ("done - kernel init start", shell_i, zig_i)):
-        if not x or not y:
-            continue
-        lo, hi = bootstrap_ci(x, y)
-        d = statistics.median(y) - statistics.median(x)
-        pct = 100 * d / statistics.median(x)
-        print(f"| {name}: median | {statistics.median(x):.0f} | {statistics.median(y):.0f} | {d:+.0f} ({pct:+.1f} %) | [{lo:+.0f}, {hi:+.0f}] |")
-        print(f"| {name}: p95 | {percentile(x, 95):.0f} | {percentile(y, 95):.0f} | | |")
-        verdict = "faster" if hi < 0 and pct <= -3 else "slower" if lo > 0 and pct >= 3 else "no claim"
-        print(f"| {name}: verdict | | | {verdict} | |")
+    print(f"| median | {statistics.median(shell):.0f} | {statistics.median(zig):.0f} | {d:+.0f} ({pct:+.1f} %) | [{lo:+.0f}, {hi:+.0f}] |")
+    print(f"| p95 | {percentile(shell, 95):.0f} | {percentile(zig, 95):.0f} | | |")
+    print(f"| min / max | {min(shell):.0f} / {max(shell):.0f} | {min(zig):.0f} / {max(zig):.0f} | | |")
+    print(f"| verdict (CI excludes 0 and at least 3 %) | | | {verdict} | |")
     steps = [r["steps"] for r in rows if r["variant"] == "zig" and not r["warmup"] and r["steps"]]
     if steps:
         per = {}
@@ -224,7 +224,7 @@ def main():
                 rows.append(row)
                 w.writerow(row)
                 f.flush()
-                print(f"boot {i} {variant}{' (warm-up)' if warm else ''}: stage1 {row['stage1_ms']} ms, from init {row['init_ms']} ms"
+                print(f"boot {i} {variant}{' (warm-up)' if warm else ''}: stage1 {row['stage1_ms']} ms"
                       + (f", self {row['self_ms']} ms" if row["self_ms"] != "" else ""), flush=True)
                 if i + 1 < len(order):
                     switch_variant(ser, order[i + 1])
