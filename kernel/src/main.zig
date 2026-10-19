@@ -16,6 +16,11 @@
 //!       at boot: is this still the machine of /etc/vh/hw.zon? Another CPU or board, devices
 //!       without a driver, firmware that failed to load -> /run/vh/check (shown at the admin's
 //!       login) and a fresh plan in /run/vh/plan; exit 1 with a finding, 0 without
+//!   vh-kconf install DIR [--dry-run] [--hw FILE] [--plan FILE] [--repo DIR] [--root DIR]
+//!       the machine kernel of a kernel-custom run (its files in DIR, checked against SHA256SUMS
+//!       and against /etc/vh/hw.zon) -> the signed machine UKI
+//!       /boot/efi/EFI/void/linux-A.B.C-vh_N.efi on trial (dracut --no-kernel, the firmware of
+//!       the plan, the stock UKI's command line without module parameters; vh-limine-update --new)
 //!
 //! Static PIE, ReleaseSafe, std.os.linux only (zig/README.md). The kernel's own tools do the
 //! Kconfig solving: see .github/workflows/kernel-custom.yml for the order of the calls.
@@ -26,12 +31,14 @@ const probe = @import("probe.zig");
 const resolve = @import("resolve.zig");
 const diff = @import("diff.zig");
 const check = @import("check.zig");
+const install = @import("install.zig");
 
 const usage =
     \\usage: vh-kconf probe [--from DIR] [--save DIR] [-o FILE|--stdout]
     \\       vh-kconf resolve --hw FILE --plan FILE --out DIR [--repo DIR] [--features LIST|auto|none] [--alias F] [--builtin F] [--builtin-list F] [--base .config] [--profiles DIR]
     \\       vh-kconf diff --config .config --requested fragment.config [--lsmod FILE] [--kernel DIR] [--oracle localyesconfig|localmodconfig]
     \\       vh-kconf check [--hw FILE] [--out DIR] [--repo DIR] [--vh-plan PATH|none] [--kmsg FILE] [--from DIR] [--root DIR] [--alias F] [--builtin F]
+    \\       vh-kconf install DIR [--dry-run] [--hw FILE] [--plan FILE] [--repo DIR] [--root DIR]
     \\       vh-kconf version
     \\
 ;
@@ -54,8 +61,9 @@ pub fn main(init: std.process.Init.Minimal) void {
     if (vh.eql(cmd, "resolve")) vh.exit(cmdResolve(rest));
     if (vh.eql(cmd, "diff")) vh.exit(cmdDiff(rest));
     if (vh.eql(cmd, "check")) vh.exit(cmdCheck(rest));
-    if (vh.eql(cmd, "install") or vh.eql(cmd, "fetch") or vh.eql(cmd, "build"))
-        vh.die("{s}: not in v0.1 (kernel/README.md says what it will do)", .{cmd});
+    if (vh.eql(cmd, "install")) vh.exit(cmdInstall(rest));
+    if (vh.eql(cmd, "fetch") or vh.eql(cmd, "build"))
+        vh.die("{s}: not yet: the kbuild root arrives with upstream v0.3 (kernel/README.md, docs/uni/kernel.md)", .{cmd});
     vh.warn("unknown command {s}", .{cmd});
     vh.outs(usage);
     vh.exit(2);
@@ -188,6 +196,28 @@ fn cmdCheck(argv: []const [:0]const u8) u8 {
     return check.run(o);
 }
 
+fn cmdInstall(argv: []const [:0]const u8) u8 {
+    var a: Args = .{ .items = argv };
+    var o: install.Opts = .{ .dir = "" };
+    while (a.next()) |arg| {
+        if (a.value(arg, "--hw")) |v| {
+            o.hw = v;
+        } else if (a.value(arg, "--plan")) |v| {
+            o.plan = v;
+        } else if (a.value(arg, "--repo")) |v| {
+            o.repo = std.mem.trimEnd(u8, v, "/");
+        } else if (a.value(arg, "--root")) |v| {
+            o.root = v;
+        } else if (vh.eql(arg, "--dry-run")) {
+            o.dry_run = true;
+        } else if (arg.len > 0 and arg[0] != '-' and o.dir.len == 0) {
+            o.dir = arg;
+        } else vh.die("install: unknown argument {s}", .{arg});
+    }
+    if (o.dir.len == 0) vh.die("install: the directory of the run's files is required (vh-kconf install DIR)", .{});
+    return install.run(o);
+}
+
 test {
     _ = hw;
     _ = @import("alias.zig");
@@ -196,6 +226,8 @@ test {
     _ = resolve;
     _ = diff;
     _ = check;
+    _ = install;
+    _ = @import("uki.zig");
 }
 
 test "Args" {

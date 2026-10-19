@@ -80,7 +80,9 @@ The modules of a device are what the running system bound, or, without a driver,
 pinned tables of the stock kernel (`kernel/pins`) name for its modalias. The firmware kept is,
 for every module of the machine's devices after the deny list, the files the module names
 (`kernel/pins/modules.firmware`), unless a `firmware_only` rule narrows them, plus every
-`firmware` pattern of the rules that apply.
+`firmware` pattern of the rules that apply. A machine UKI's initrd carries every kept file
+except those of the rules whose id ends in `.microcode` (`cpu.intel.microcode`, ...): dracut's
+early cpio carries the CPU's own microcode file (`vh-kconf install`, [kernel/README.md](../kernel/README.md#install)).
 
 ## Tags
 
