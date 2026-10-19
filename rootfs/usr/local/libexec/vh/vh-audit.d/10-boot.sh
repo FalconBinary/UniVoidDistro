@@ -2,8 +2,10 @@
 # vh-audit: boot chain and kernel (docs/03, docs/05). Sourced by vh-audit.
 sec "Boot and kernel"
 cmd=$(cat /proc/cmdline)
+# every machine's parameters; what the hardware asks for (the IOMMU of a DMAR table ...) is
+# checked against the plan (area plan)
 for p in lockdown=confidentiality module.sig_enforce=1 lsm=landlock,lockdown,yama,apparmor \
-	intel_iommu=on iommu.strict=1 init_on_free=1 rd.shell=0 rd.emergency=poweroff panic=10; do
+	iommu.strict=1 init_on_free=1 rd.shell=0 rd.emergency=poweroff panic=10; do
 	case " $cmd " in *" $p "*) ok "cmdline: $p" ;; *) bad "cmdline: missing $p" ;; esac
 done
 chk lockdown "$(cat /sys/kernel/security/lockdown)" "none integrity [confidentiality]"

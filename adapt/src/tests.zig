@@ -192,6 +192,14 @@ test "vh-acpid's internal input: built-in keyboards it cannot tell by their bus"
     try t.expect(std.mem.indexOf(u8, env, "VH_PLAN_INTERNAL_INPUT='/pci0000:00/0000:00:14.0/usb1/1-8/ /pci0000:00/0000:00:1e.3/pxa2xx-spi.3/spi_master/spi2/spi-KBD0001:00/'\n") != null);
 }
 
+test "plan.zon gives plan.env back (vh-plan env)" {
+    const d = db(".{ .rules = .{ .{ .id = \"wifi.iwd\", .why = \"Wi-Fi\", .when = .{ .has = .{\"wifi\"} }, .services = .{\"iwd\"}, .packages = .{\"iwd\"} } } }");
+    var cfg: vh.Kv = .{};
+    const p = plan.compute(.{ .hw = laptop(), .db = d, .config = &cfg }).plan;
+    const back = emit.parseZon(emit.renderZon(p), "test");
+    try t.expectEqualStrings(emit.renderEnv(p), emit.renderEnv(back));
+}
+
 test "a misspelt condition is an error, not a match" {
     // parse() dies on unknown fields; the schema check is that a valid file round-trips
     const f = rules.parse(".{ .rules = .{ .{ .id = \"x\", .why = \"y\", .when = .{ .lacks = .{\"vm\"} } } } }", "test");

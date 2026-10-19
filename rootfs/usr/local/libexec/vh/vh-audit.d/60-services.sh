@@ -1,7 +1,8 @@
 # shellcheck shell=sh
 # vh-audit: runit services (docs/05). Sourced by vh-audit.
 sec "Services"
-for sv in dbus iwd unbound chronyd seatd socklog-unix nanoklogd vh-acpid; do
+# every machine's; what the hardware needs (iwd, vh-acpid ...) is checked against the plan (area plan)
+for sv in dbus unbound chronyd seatd socklog-unix nanoklogd vh-check; do
 	sv status "$sv" 2>/dev/null | grep -q '^run:' && ok "service $sv is running" || bad "service $sv is not running"
 done
 for sv in sshd acpid dhcpcd wpa_supplicant cronie snooze-daily; do

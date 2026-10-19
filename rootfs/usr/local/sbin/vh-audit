@@ -6,7 +6,8 @@
 #
 # The checks live in /usr/local/libexec/vh/vh-audit.d/NN-area.sh, one file per area and
 # sourced in order, so that a component adds its own checks with a new file instead of
-# editing this script. A file sees the helpers below and the variables of /etc/vh/vh.env.
+# editing this script. A file sees the helpers below, the variables of /etc/vh/vh.env and
+# the plan of the machine through "plan KEY" (the value of VH_PLAN_KEY of /etc/vh/plan.zon).
 # The last line, "VH_AUDIT ok=N fail=N unchecked=N", is the machine-readable summary.
 set -u
 PATH=/usr/bin
@@ -18,6 +19,10 @@ bad()  { fail=$((fail+1)); printf '[FAIL] %s\n' "$*"; }
 unk()  { unk=$((unk+1));  printf '[ ?? ] %s\n' "$*"; }
 chk()  { if [ "$2" = "$3" ]; then ok "$1 = $3"; else bad "$1 = $2 (expected $3)"; fi; }
 sec()  { printf '\n== %s\n' "$*"; }
+# the plan of this machine (docs/uni/runtime.md): vh-plan renders /etc/vh/plan.zon in the form of
+# plan.env; without vh-plan, the installer's copy. Every value is quoted, without a quote inside.
+PLAN_ENV=$(/usr/local/sbin/vh-plan env --plan /etc/vh/plan.zon 2>/dev/null || cat /root/vh/plan.env 2>/dev/null || true)
+plan() { printf '%s\n' "$PLAN_ENV" | sed -n "s/^VH_PLAN_$1='\(.*\)'\$/\1/p"; }
 
 AUDIT_D=/usr/local/libexec/vh/vh-audit.d
 [ -d "$AUDIT_D" ] || { echo "vh-audit: no $AUDIT_D" >&2; exit 1; }

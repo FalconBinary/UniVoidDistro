@@ -120,3 +120,25 @@ trim left out: keep it in `/etc/xbps.d/40-vh-firmware.conf` (or `VH_FIRMWARE_KEE
 reinstall its package with `xbps-install -f`. The heuristics are **[VERIFY on hardware]**:
 the probe at installation runs in the live system, whose devices and drivers may differ a
 little from the installed system's.
+
+## `vh-audit plan`
+
+The audit area `rootfs/usr/local/libexec/vh/vh-audit.d/15-plan.sh` reads the plan of the
+installation, `/etc/vh/plan.zon`, through `vh-plan env` (the plan in the form of
+`plan.env`; without `vh-plan`, the installer's copy `/root/vh/plan.env`). Every area may ask
+it with `plan KEY`, the value of `VH_PLAN_KEY`.
+
+| Check | ok | FAIL | ?? |
+|---|---|---|---|
+| the protection tier | full | a missing requirement nobody acknowledged; refused | each requirement acknowledged at installation (tiered), with its residual risk from `plan-report.txt` |
+| the plan's services (iwd, dhcpcd-eth0, vh-acpid, vh-fstrim, bluetoothd) | enabled and running | not enabled, or not running | |
+| the refused modules | all in `module_blacklist=` of the command line, none loaded | missing from it, or loaded | |
+| the plan's command line (`intel_iommu=on`, `efi=disable_early_pci_dma`, `ia32_emulation=0` ...) | all present | missing | |
+| the firmware on disk | every pattern of the plan kept in `/etc/xbps.d/40-vh-firmware.conf`, every file under `/usr/lib/firmware` kept by one | a pattern missing; a file the plan does not keep | no trim (`VH_FIRMWARE_TRIM=no`) |
+| `vh-kconf check` at this boot | the same machine, no finding | another machine; the fresh plan's tier differs from the installation's | devices or firmware found; the check did not run |
+
+The checks that depend on the hardware left the other areas for this one: `intel_iommu=on`
+(the boot area checked it on every machine), iwd and vh-acpid (the services area expected them
+everywhere); the services area checks `vh-check` instead, and the performance area asks the
+plan for the tag `dgpu`. `tests/adapt/audit_test.sh` runs the area on the golden plans of the
+GF63 (full) and the Raspberry Pi 5 (reduced, tiered and strict) in a mocked installed system.

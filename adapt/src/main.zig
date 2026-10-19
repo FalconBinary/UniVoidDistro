@@ -7,6 +7,9 @@
 //!       are written all the same, so that the installer can show why)
 //!   vh-plan explain ITEM --plan FILE [--hwdb DIR]
 //!       which rules put ITEM (a package, a firmware pattern, a parameter ...) into the plan
+//!   vh-plan env --plan FILE
+//!       plan.zon in the form of plan.env, for the shell scripts of the installed system
+//!       (vh-audit reads /etc/vh/plan.zon so)
 //!   vh-plan version
 //!
 //! Static PIE, ReleaseSafe, std.os.linux only (zig/README.md).
@@ -22,6 +25,7 @@ const emit = @import("emit.zig");
 const usage =
     \\usage: vh-plan plan --hw FILE --hwdb DIR [--pins DIR] [--config FILE ...] [--set KEY=VALUE ...] [--security strict|tiered] --out DIR
     \\       vh-plan explain ITEM --plan FILE [--hwdb DIR]
+    \\       vh-plan env --plan FILE
     \\       vh-plan version
     \\
 ;
@@ -41,6 +45,7 @@ pub fn main(init: std.process.Init.Minimal) void {
     }
     if (vh.eql(cmd, "plan")) vh.exit(cmdPlan(args[1..]));
     if (vh.eql(cmd, "explain")) vh.exit(cmdExplain(args[1..]));
+    if (vh.eql(cmd, "env")) vh.exit(cmdEnv(args[1..]));
     vh.warn("unknown command {s}", .{cmd});
     vh.outs(usage);
     vh.exit(2);
@@ -189,6 +194,21 @@ fn cmdExplain(argv: []const [:0]const u8) u8 {
         vh.warn("{s} is not in {s}", .{ item, plan_path });
         return 1;
     }
+    return 0;
+}
+
+/// plan.zon as plan.env: the same values, the same checks of their characters
+fn cmdEnv(argv: []const [:0]const u8) u8 {
+    var a: Args = .{ .items = argv };
+    var plan_path: []const u8 = "";
+    while (a.next()) |arg| {
+        if (a.value(arg, "--plan")) |v| {
+            plan_path = v;
+        } else vh.die("env: unknown argument {s}", .{arg});
+    }
+    if (plan_path.len == 0) vh.die("env: --plan FILE is required", .{});
+    const p = emit.parseZon(vh.readFile(plan_path) catch vh.die("{s}: {s}", .{ plan_path, vh.serr() }), plan_path);
+    vh.outs(emit.renderEnv(p));
     return 0;
 }
 

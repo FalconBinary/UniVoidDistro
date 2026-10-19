@@ -36,7 +36,7 @@ if [ -e "$pp" ]; then
 fi
 # the dGPU, a display controller that did not bring the console up, whatever its vendor:
 # asleep where the plan says so (the tag dgpu, set by a rule of hwdb/gpu.zon)
-case " $(sed -n "s/^VH_PLAN_TAGS='\(.*\)'\$/\1/p" /root/vh/plan.env 2>/dev/null) " in *" dgpu "*)
+case " $(plan TAGS) " in *" dgpu "*)
 	for d in /sys/bus/pci/devices/*; do
 		case $(cat "$d/class") in 0x03*) ;; *) continue ;; esac
 		[ "$(cat "$d/boot_vga" 2>/dev/null)" = 1 ] && continue

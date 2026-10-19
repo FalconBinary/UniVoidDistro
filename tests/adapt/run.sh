@@ -1,7 +1,9 @@
 #!/bin/sh
 # vh-plan against the golden plans of every machine in kernel/hw (tests/adapt/golden), after
 # its unit tests. Every machine is planned in strict mode, and in tiered mode when strict
-# refuses it; each plan twice, and the two runs must be the same byte for byte.
+# refuses it; each plan twice, and the two runs must be the same byte for byte; vh-plan env must
+# give plan.env back from plan.zon (what the installed system reads). Then vh-audit's plan area
+# reads golden plans in a mocked installed system (tests/adapt/audit_test.sh).
 #   sh tests/adapt/run.sh            # compare
 #   sh tests/adapt/run.sh --update   # rewrite the golden plans: the git diff is the review
 # Like tests/kernel/run.sh: Zig cross-builds for Linux of the host's architecture, a throwaway
@@ -32,6 +34,8 @@ tar -C "$repo" -cf - kernel/hw kernel/pins hwdb vh.conf.example build/at/bin bui
 				./build/at/bin/vh-plan plan --hw "$hwf" --hwdb hwdb --pins kernel/pins \
 					--config vh.conf.example --security "$mode" --out "$d" > "$d/stdout" 2>&1 || rc=$?
 				echo "$rc" > "$d/status"
+				# what the installed system reads: plan.zon in the form of plan.env
+				./build/at/bin/vh-plan env --plan "$d/plan.zon" > "$d/env" 2>&1 || true
 			done
 		done
 	done
@@ -51,6 +55,7 @@ for d in "$out"/plans/*/; do
 		for f in plan.zon plan.env plan-report.txt status; do
 			cmp -s "$a/$f" "$b/$f" || { echo "NOT DETERMINISTIC: $m $mode $f"; rc=1; }
 		done
+		cmp -s "$a/env" "$a/plan.env" || { echo "vh-plan env does not give plan.env back: $m $mode"; diff "$a/plan.env" "$a/env" | head -10; rc=1; }
 		g=$golden/$m/$mode
 		if [ "${1:-}" = --update ]; then
 			mkdir -p "$g"
@@ -69,4 +74,10 @@ for d in "$out"/plans/*/; do
 done
 [ "${1:-}" = --update ] && { echo "golden plans rewritten: $golden"; exit 0; }
 [ "$rc" = 0 ] && echo "every plan is deterministic and matches its golden plan"
+
+echo "== vh-audit's plan area on golden plans (a privileged Void container)"
+img=$(sh "$repo/tests/docker/build.sh")
+tar -C "$repo" -cf - rootfs/usr/local/sbin/vh-audit rootfs/usr/local/libexec/vh/vh-audit.d/15-plan.sh \
+	tests/adapt/golden tests/adapt/audit_test.sh build/at/bin |
+	docker run --rm -i --privileged "$img" sh -c 'mkdir -p /src && cd /src && tar -xf - 2>/dev/null && sh tests/adapt/audit_test.sh /src' || rc=1
 exit "$rc"
