@@ -17,12 +17,29 @@ for b in /sys/block/*; do
 	esac
 	chk "I/O scheduler of $n" "$(sed 's/.*\[\(.*\)\].*/\1/' "$b/queue/scheduler")" "$want"
 done
+# the power profile of vh-power: EPP where the frequency driver offers it (intel_pstate,
+# amd-pstate-epp), the ACPI platform profile where the firmware offers one
 st=$(cat /run/vh/power 2>/dev/null || echo ?)
-epp=$(cat /sys/devices/system/cpu/cpufreq/policy0/energy_performance_preference 2>/dev/null || echo none)
-case $st:$epp in ac:balance_performance|battery:balance_power) ok "EPP $epp ($st)" ;; *) unk "EPP $epp while on $st power" ;; esac
-if [ "$VH_GPU" = igpu ]; then
-	for d in /sys/bus/pci/devices/*; do
-		[ "$(cat "$d/vendor")" = 0x10de ] || continue
-		chk "dGPU ${d##*/} runtime" "$(cat "$d/power/runtime_status")" suspended
+cf=/sys/devices/system/cpu/cpufreq/policy0
+if [ -e "$cf/energy_performance_preference" ]; then
+	epp=$(cat "$cf/energy_performance_preference")
+	case $st:$epp in ac:balance_performance|battery:balance_power) ok "EPP $epp ($st)" ;; *) unk "EPP $epp while on $st power" ;; esac
+else
+	unk "EPP: the frequency driver $(cat "$cf/scaling_driver" 2>/dev/null || echo '(none)') offers none"
+fi
+pp=/sys/firmware/acpi/platform_profile
+if [ -e "$pp" ]; then
+	case $st in ac) want=balanced ;; *) want="low-power quiet balanced" ;; esac
+	for w in $want; do
+		case " $(cat "${pp}_choices") " in *" $w "*) chk "platform profile ($st)" "$(cat "$pp")" "$w"; break ;; esac
 	done
 fi
+# the dGPU, a display controller that did not bring the console up, whatever its vendor:
+# asleep where the plan says so (the tag dgpu, set by a rule of hwdb/gpu.zon)
+case " $(sed -n "s/^VH_PLAN_TAGS='\(.*\)'\$/\1/p" /root/vh/plan.env 2>/dev/null) " in *" dgpu "*)
+	for d in /sys/bus/pci/devices/*; do
+		case $(cat "$d/class") in 0x03*) ;; *) continue ;; esac
+		[ "$(cat "$d/boot_vga" 2>/dev/null)" = 1 ] && continue
+		chk "dGPU ${d##*/} runtime" "$(cat "$d/power/runtime_status")" suspended
+	done ;;
+esac

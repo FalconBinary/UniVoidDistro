@@ -178,8 +178,63 @@ pub fn onAc(supplies: []const Supply) bool {
     return on_ac or !has_bat;
 }
 
-/// vh-power boot: EPP and the runtime PM of PCI devices by the power source, /run/vh/power.
-/// (The udev rule at plug events keeps calling the vh-power script.)
+/// the energy-performance preference for the power source; the CPU's frequency driver offers
+/// it where it can (intel_pstate and amd-pstate-epp alike)
+pub fn eppFor(ac: bool) []const u8 {
+    return if (ac) "balance_performance" else "balance_power";
+}
+
+/// The ACPI platform profile for the power source: the first wanted one the firmware offers
+/// (`choices` as platform_profile_choices lists them), null when it offers none of them. On
+/// battery low-power, else quiet; on AC balanced, the profile that goes with the EPP
+/// balance_performance [VERIFY by measurement per class].
+pub fn platformProfile(ac: bool, choices: []const u8) ?[]const u8 {
+    const wanted: []const []const u8 = if (ac) &.{"balanced"} else &.{ "low-power", "quiet", "balanced" };
+    for (wanted) |w| if (offered(choices, w)) return w;
+    return null;
+}
+
+/// whether `value` is one of the words of `list` ("default performance balance_performance")
+pub fn offered(list: []const u8, value: []const u8) bool {
+    var it = mem.tokenizeAny(u8, list, " \t\n");
+    while (it.next()) |x| if (vh.eql(x, value)) return true;
+    return false;
+}
+
+pub const Pci = struct {
+    /// the sysfs name, "0000:01:00.1"
+    name: []const u8,
+    /// the class attribute, "0x030000"
+    class: []const u8,
+    /// boot_vga is "1": the firmware brought the console up on it
+    boot_vga: bool = false,
+};
+
+/// the slot of a PCI function: "0000:01:00.1" -> "0000:01:00"
+pub fn slot(name: []const u8) []const u8 {
+    return name[0 .. mem.lastIndexOfScalar(u8, name, '.') orelse name.len];
+}
+
+/// Whether the profile leaves the runtime PM of `d` alone: a bridge (the dGPU sleeps through
+/// its root port), or any function in the slot of a display controller that did not bring the
+/// console up, whatever its vendor: the dGPU and its audio or USB functions, whose runtime PM
+/// its udev rule and its driver decide (docs/uni/runtime.md).
+pub fn keepRpm(devs: []const Pci, d: Pci) bool {
+    if (vh.startsWith(d.class, "0x0604")) return true;
+    for (devs) |x| {
+        if (!vh.startsWith(x.class, "0x03") or x.boot_vga) continue;
+        if (vh.eql(slot(x.name), slot(d.name))) return true;
+    }
+    return false;
+}
+
+fn writable(path: []const u8) bool {
+    return linux.errno(linux.access(vh.z(path).ptr, linux.W_OK)) == .SUCCESS;
+}
+
+/// vh-power boot: EPP, the ACPI platform profile and the runtime PM of PCI devices by the
+/// power source, /run/vh/power. (The udev rule at plug events keeps calling the vh-power
+/// script, which does the same.)
 pub fn power() void {
     var supplies: std.ArrayList(Supply) = .empty;
     const ps = sys.p("/sys/class/power_supply");
@@ -189,22 +244,31 @@ pub fn power() void {
         supplies.append(vh.gpa, .{ .type = t, .online = vh.rd(vh.fmt("{s}/{s}/online", .{ ps, name })) }) catch vh.oom();
     }
     const ac = onAc(supplies.items);
-    const epp: []const u8 = if (ac) "balance_performance" else "balance_power";
+    const epp = eppFor(ac);
     const rpm: []const u8 = if (ac) "on" else "auto";
     const cpufreq = sys.p("/sys/devices/system/cpu/cpufreq");
     for (vh.listDir(cpufreq) catch &.{}) |name| {
         if (!vh.startsWith(name, "policy")) continue;
         const f = vh.fmt("{s}/{s}/energy_performance_preference", .{ cpufreq, name });
-        if (linux.errno(linux.access(vh.z(f).ptr, linux.W_OK)) == .SUCCESS) _ = vh.writeStr(f, epp);
+        if (!writable(f) or !offered(vh.rd(vh.fmt("{s}/{s}/energy_performance_available_preferences", .{ cpufreq, name })), epp)) continue;
+        _ = vh.writeStr(f, epp);
+    }
+    const pp = sys.p("/sys/firmware/acpi/platform_profile");
+    if (writable(pp)) {
+        if (platformProfile(ac, vh.rd(vh.fmt("{s}_choices", .{pp})))) |want| {
+            if (!vh.writeStr(pp, want)) sys.note("! platform profile {s}: {s}", .{ want, vh.serr() });
+        }
     }
     const pci = sys.p("/sys/bus/pci/devices");
+    var devs: std.ArrayList(Pci) = .empty;
     for (vh.listDir(pci) catch &.{}) |name| {
         const d = vh.fmt("{s}/{s}", .{ pci, name });
-        // bridges are left alone (the dGPU sleeps through them), NVIDIA is always auto (docs/04)
-        if (vh.startsWith(vh.rd(vh.fmt("{s}/class", .{d})), "0x0604")) continue;
-        if (vh.eql(vh.rd(vh.fmt("{s}/vendor", .{d})), "0x10de")) continue;
-        const f = vh.fmt("{s}/power/control", .{d});
-        if (linux.errno(linux.access(vh.z(f).ptr, linux.W_OK)) == .SUCCESS) _ = vh.writeStr(f, rpm);
+        devs.append(vh.gpa, .{ .name = name, .class = vh.rd(vh.fmt("{s}/class", .{d})), .boot_vga = vh.eql(vh.rd(vh.fmt("{s}/boot_vga", .{d})), "1") }) catch vh.oom();
+    }
+    for (devs.items) |d| {
+        if (keepRpm(devs.items, d)) continue;
+        const f = vh.fmt("{s}/{s}/power/control", .{ pci, d.name });
+        if (writable(f)) _ = vh.writeStr(f, rpm);
     }
     vh.mkdirs(sys.p("/run/vh"), 0o755);
     if (!sys.writeFile(sys.p("/run/vh/power"), if (ac) "ac\n" else "battery\n", 0o644)) sys.fail("/run/vh/power: {s}", .{vh.serr()});
@@ -313,6 +377,44 @@ test "power: AC or battery" {
     try testing.expect(onAc(&.{.{ .type = "Battery", .online = "" }, .{ .type = "Mains", .online = "1" }}));
     try testing.expect(!onAc(&.{.{ .type = "Battery", .online = "" }, .{ .type = "Mains", .online = "0" }}));
     try testing.expect(onAc(&.{.{ .type = "Mains", .online = "0" }})); // no battery at all
+}
+
+test "power: EPP and the platform profile by the power source" {
+    try testing.expectEqualStrings("balance_performance", eppFor(true));
+    try testing.expectEqualStrings("balance_power", eppFor(false));
+    try testing.expect(offered("default performance balance_performance balance_power power", "balance_power"));
+    try testing.expect(!offered("default performance", "balance_power"));
+    try testing.expect(!offered("balance_performance", "balance"));
+    // the firmware's choices decide; a firmware without any wanted profile is left alone
+    try testing.expectEqualStrings("low-power", platformProfile(false, "low-power balanced performance").?);
+    try testing.expectEqualStrings("quiet", platformProfile(false, "quiet balanced performance").?);
+    try testing.expectEqualStrings("balanced", platformProfile(false, "cool balanced performance").?);
+    try testing.expectEqualStrings("balanced", platformProfile(true, "low-power balanced performance").?);
+    try testing.expect(platformProfile(true, "quiet performance") == null);
+    try testing.expect(platformProfile(false, "") == null);
+}
+
+test "power: the dGPU of any vendor keeps its runtime PM" {
+    // a hybrid laptop: the iGPU brought the console up, the dGPU (VGA or 3D controller, any
+    // vendor) did not; its HDMI audio function shares its slot
+    const devs = [_]Pci{
+        .{ .name = "0000:00:02.0", .class = "0x030000", .boot_vga = true },
+        .{ .name = "0000:00:01.0", .class = "0x060400" },
+        .{ .name = "0000:00:14.3", .class = "0x028000" },
+        .{ .name = "0000:01:00.0", .class = "0x030200" },
+        .{ .name = "0000:01:00.1", .class = "0x040300" },
+        .{ .name = "0000:02:00.0", .class = "0x010802" },
+    };
+    try testing.expect(!keepRpm(&devs, devs[0])); // the iGPU follows the profile
+    try testing.expect(keepRpm(&devs, devs[1])); // the root port
+    try testing.expect(!keepRpm(&devs, devs[2]));
+    try testing.expect(keepRpm(&devs, devs[3])); // the dGPU
+    try testing.expect(keepRpm(&devs, devs[4])); // its audio function
+    try testing.expect(!keepRpm(&devs, devs[5])); // the NVMe disk
+    try testing.expectEqualStrings("0000:01:00", slot("0000:01:00.1"));
+    // a single GPU that brought the console up is not a dGPU
+    const one = [_]Pci{ .{ .name = "0000:00:02.0", .class = "0x030000", .boot_vga = true }, .{ .name = "0000:00:02.1", .class = "0x040300" } };
+    try testing.expect(!keepRpm(&one, one[1]));
 }
 
 test "nftables: the emergency ruleset flushes and drops" {

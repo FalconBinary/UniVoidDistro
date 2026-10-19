@@ -1,9 +1,15 @@
 #!/bin/sh
 # void-hardperf-light: power profile without daemons (docs/11). Called by a udev rule when
-# the charger is plugged in or out, and once at boot. Takes no arguments.
-#   on AC:       EPP balance_performance, runtime PM of PCI devices off (on)
-#   on battery:  EPP balance_power,       runtime PM on (auto)
-# Wi-Fi power saving is not switched by the profile: it is always off (docs/07).
+# the charger is plugged in or out; at boot vh-stage1 does the same natively (init/src/vhsteps.zig).
+# Takes no arguments.
+#   on AC:       EPP balance_performance, platform profile balanced,           runtime PM of PCI devices off (on)
+#   on battery:  EPP balance_power,       platform profile low-power or quiet, runtime PM on (auto)
+# EPP is written where the CPU's frequency driver offers it (intel_pstate and amd-pstate-epp
+# alike), the ACPI platform profile where the firmware offers it [VERIFY by measurement per
+# class]. Bridges keep their runtime PM (the dGPU sleeps through its root port), and so does
+# every function in the slot of a display controller that did not bring the console up
+# (boot_vga): the dGPU of any vendor, which its udev rule and driver put to sleep
+# (docs/uni/runtime.md). Wi-Fi power saving is not switched by the profile: it is always off (docs/07).
 set -u
 PATH=/usr/bin
 on_ac=0 has_bat=0
@@ -16,16 +22,34 @@ for s in /sys/class/power_supply/*; do
 done
 [ "$has_bat" = 0 ] && on_ac=1   # desktop PC or VM
 
-if [ "$on_ac" = 1 ]; then epp=balance_performance rpm=on state=ac
-else epp=balance_power rpm=auto state=battery; fi
+if [ "$on_ac" = 1 ]; then epp=balance_performance profiles=balanced rpm=on state=ac
+else epp=balance_power profiles="low-power quiet balanced" rpm=auto state=battery; fi
 
-for p in /sys/devices/system/cpu/cpufreq/policy*/energy_performance_preference; do
-	[ -w "$p" ] && echo "$epp" > "$p"
+for p in /sys/devices/system/cpu/cpufreq/policy*; do
+	[ -w "$p/energy_performance_preference" ] || continue
+	case " $(cat "$p/energy_performance_available_preferences" 2>/dev/null) " in
+		*" $epp "*) echo "$epp" > "$p/energy_performance_preference" 2>/dev/null ;;
+	esac
+done
+pp=/sys/firmware/acpi/platform_profile
+if [ -w "$pp" ]; then
+	choices=" $(cat "${pp}_choices" 2>/dev/null) "
+	for want in $profiles; do
+		case $choices in *" $want "*) echo "$want" > "$pp" 2>/dev/null; break ;; esac
+	done
+fi
+# the slots of the display controllers that did not bring the console up: the dGPU
+dgpu=" "
+for d in /sys/bus/pci/devices/*; do
+	case $(cat "$d/class") in 0x03*) ;; *) continue ;; esac
+	[ "$(cat "$d/boot_vga" 2>/dev/null)" = 1 ] && continue
+	n=${d##*/}
+	dgpu="$dgpu${n%.*} "
 done
 for d in /sys/bus/pci/devices/*; do
-	# bridges are left alone (the dGPU sleeps through them), NVIDIA is always auto (docs/04)
 	case $(cat "$d/class") in 0x0604*) continue ;; esac
-	[ "$(cat "$d/vendor")" = 0x10de ] && continue
+	n=${d##*/}
+	case $dgpu in *" ${n%.*} "*) continue ;; esac
 	[ -w "$d/power/control" ] && echo "$rpm" > "$d/power/control" 2>/dev/null
 done
 install -d -m 0755 /run/vh

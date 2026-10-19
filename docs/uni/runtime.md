@@ -27,3 +27,26 @@ stock kernel builds `mq-deadline` and `bfq` in; `kernel/profiles/perf` names the
 machine kernel keeps them for a disk plugged in later (the GF63 oracle lists the two named
 symbols as accepted differences: its `.config` does not change). `vh-audit performance`
 checks the scheduler of every disk against the same table.
+
+## The power profile: `vh-power`
+
+The profile follows the power source; a machine without a battery (a desktop, a VM) is always
+on AC. Three copies do the same: `rootfs/usr/local/sbin/vh-power` (the udev rule at plug
+events), the native step of `vh-stage1` at boot (`init/src/vhsteps.zig`) and the checks of
+`vh-audit performance`; `tests/init/stage1_test.sh` runs the first two on the same fake
+sysfs and compares them.
+
+| | on AC | on battery |
+|---|---|---|
+| EPP, wherever the CPU's frequency driver offers `energy_performance_preference` (intel_pstate, amd-pstate-epp) and lists the value | `balance_performance` | `balance_power` |
+| the ACPI platform profile, where the firmware offers `/sys/firmware/acpi/platform_profile`: the first of these it lists | `balanced` | `low-power`, `quiet`, `balanced` |
+| the runtime PM of PCI devices | `on` | `auto` |
+
+The platform profiles follow the pairing power-profiles-daemon uses (balanced with
+`balance_performance`, low-power or quiet for saving) and are **[VERIFY by measurement per
+class]**: battery life and the 1 % lows. Two kinds of PCI device keep their runtime PM:
+bridges (the dGPU sleeps through its root port) and every function in the slot of a display
+controller (PCI class `0x03`) that did not bring the console up (`boot_vga`), whatever its
+vendor: the dGPU with its audio or USB functions. Whether the dGPU sleeps is the plan's
+decision (a rule of `hwdb/gpu.zon` sets the tag `dgpu` and selects its udev rule);
+`vh-audit performance` checks that it is suspended only then.

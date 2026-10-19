@@ -144,6 +144,66 @@ chk "cleanup: /var/log/btmp 0600 root:utmp" "$(stat -c '%a %G' $R/var/log/btmp)"
 chk "runit-control: /run/runit/stopit mode 000" "$(stat -c %a $R/run/runit/stopit)" 0
 has "fake root: no errors" "$(grep -c ERROR /tmp/fake.log)" '^0$'
 
+echo "== vh-runtime: the power profile natively and as the vh-power script, on the same fake sysfs"
+# a hybrid laptop: the iGPU brought the console up, the dGPU (a 3D controller) and its audio
+# function did not; EPP offered, the firmware offers platform profiles
+fake_sysfs() { # $1: root, $2: 1 on AC, 0 on battery
+	r=$1/sys
+	mkdir -p "$r/class/power_supply/AC" "$r/class/power_supply/BAT0" "$r/firmware/acpi"
+	echo Mains > "$r/class/power_supply/AC/type"
+	echo "$2" > "$r/class/power_supply/AC/online"
+	echo Battery > "$r/class/power_supply/BAT0/type"
+	for c in policy0 policy1; do
+		mkdir -p "$r/devices/system/cpu/cpufreq/$c"
+		: > "$r/devices/system/cpu/cpufreq/$c/energy_performance_preference"
+		echo "default performance balance_performance balance_power power" > "$r/devices/system/cpu/cpufreq/$c/energy_performance_available_preferences"
+	done
+	: > "$r/firmware/acpi/platform_profile"
+	echo "low-power balanced performance" > "$r/firmware/acpi/platform_profile_choices"
+	fake_pci "$r" 0000:00:02.0 0x030000 1
+	fake_pci "$r" 0000:00:01.0 0x060400
+	fake_pci "$r" 0000:00:14.3 0x028000
+	fake_pci "$r" 0000:01:00.0 0x030200
+	fake_pci "$r" 0000:01:00.1 0x040300
+}
+fake_pci() { # $1: the fake /sys, $2: the PCI name, $3: the class, $4: boot_vga (VGA devices only)
+	mkdir -p "$1/bus/pci/devices/$2/power"
+	echo "$3" > "$1/bus/pci/devices/$2/class"
+	[ -n "${4:-}" ] && echo "$4" > "$1/bus/pci/devices/$2/boot_vga"
+	: > "$1/bus/pci/devices/$2/power/control"
+}
+state() { # $1: root -> EPP, profile, the runtime PM of each PCI function, /run/vh/power
+	r=$1/sys
+	printf '%s ' "$(cat "$r/devices/system/cpu/cpufreq/policy0/energy_performance_preference")" "$(cat "$r/devices/system/cpu/cpufreq/policy1/energy_performance_preference")" "$(cat "$r/firmware/acpi/platform_profile")"
+	for d in "$r"/bus/pci/devices/*; do printf '%s=%s ' "${d##*/}" "$(cat "$d/power/control")"; done
+	cat "$2"
+}
+for ac in 1 0; do
+	N=/tmp/power-native-$ac
+	rm -rf "$N"
+	fake_sysfs "$N" "$ac"
+	mkdir -p "$N/etc"
+	echo 'user:x:1000:1000::/home/user:/bin/sh' > "$N/etc/passwd"
+	echo 'browser:x:990:' > "$N/etc/group"
+	"$S" --root "$N" --step vh-runtime -v > /tmp/runtime-$ac.log 2>&1 || bad "vh-runtime: exit $?"
+	native=$(state "$N" "$N/run/vh/power")
+	W=/tmp/power-script-$ac
+	rm -rf "$W"
+	fake_sysfs "$W" "$ac"
+	if unshare -m sh -c "
+		for x in class/power_supply devices/system/cpu/cpufreq firmware/acpi bus/pci/devices; do mount --bind $W/sys/\$x /sys/\$x || exit 1; done
+		sh $T/vh-power" > /tmp/vh-power-$ac.log 2>&1; then
+		script=$(state "$W" /run/vh/power)
+		chk "vh-power (AC $ac): the script does what stage 1 does" "$script" "$native"
+	else
+		skip "vh-power (AC $ac): the fake sysfs could not be mounted ($(tr '\n' ' ' < /tmp/vh-power-$ac.log))"
+	fi
+	if [ "$ac" = 1 ]; then want="balance_performance balance_performance balanced 0000:00:01.0= 0000:00:02.0=on 0000:00:14.3=on 0000:01:00.0= 0000:01:00.1= ac"
+	else want="balance_power balance_power low-power 0000:00:01.0= 0000:00:02.0=auto 0000:00:14.3=auto 0000:01:00.0= 0000:01:00.1= battery"; fi
+	chk "vh-runtime (AC $ac): EPP, platform profile, runtime PM; the dGPU's slot and the bridge untouched" "$native" "$want"
+	has "vh-runtime (AC $ac): no errors" "$(grep -c ERROR /tmp/runtime-$ac.log)" '^0$'
+done
+
 echo "== vh-suid under a fake root: bits and file capabilities"
 for f in passwd su ping extra; do cp /usr/bin/true $R/usr/bin/$f; done
 chmod u+s $R/usr/bin/passwd

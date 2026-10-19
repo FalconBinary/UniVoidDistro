@@ -16,6 +16,8 @@ rm -rf "$out"
 mkdir -p "$out"
 echo "== building vh-stage1 and its unit tests ($arch-linux)"
 (cd "$repo/init" && zig build install tests -Dtarget="$arch-linux" --prefix "$out")
-# the script goes in with the binaries: the container needs nothing else from the repository
+# the scripts go in with the binaries: the container needs nothing else from the repository
 cp "$repo/tests/init/stage1_test.sh" "$out/"
+# vh-power, the script the udev rule runs, against the native power step of stage 1
+cp "$repo/rootfs/usr/local/sbin/vh-power" "$out/"
 docker run --rm --privileged -v "$out:/t:ro" "$img" sh /t/stage1_test.sh /t

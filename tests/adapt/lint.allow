@@ -3,9 +3,6 @@
 # are upstream code that milestone U2 makes vendor-neutral; the others are where a constant
 # belongs (test data, a file a hwdb rule selects, a runtime rule that names its driver).
 install/00-probe.sh	.	U2: upstream's human report (MSI's EC, the AX201's Bluetooth); its machine knowledge moves to hwdb notes
-init/src/vhsteps.zig	0x10de	U2: the native vh-power of stage 1 skips the NVIDIA dGPU by vendor; it becomes "the display that is not boot_vga"
-rootfs/usr/local/sbin/vh-power	0x10de	U2: the same in the shell vh-power
-rootfs/usr/local/libexec/vh/vh-audit.d/90-performance.sh	0x10de	U2: the audit of the sleeping dGPU, by vendor
 rootfs/etc/udev/rules.d/99-vh-dgpu-off.rules	.	installed only when hwdb's gpu.nvidia.dgpu-off selects it (VH_PLAN_UDEV)
 rootfs/etc/udev/rules.d/99-vh-net.rules	RTL81	a runtime rule by driver (r8169), a no-op on every other machine; the comment names the chips
 kernel/src/hw.zig	GF63|Micro-Star|usb:v8087	test data: the GF63 fixture
