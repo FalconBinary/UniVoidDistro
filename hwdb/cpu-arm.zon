@@ -14,24 +14,26 @@
             .when = .{ .arch = .{"aarch64"} },
             .kconfig = .{"cpu-arm64"},
         },
+        // -mcpu by core on real hardware; a virtual machine gets armv8-a: its CPU is what the
+        // hypervisor shows today (docs/uni/kernel.md)
         .{
             .id = "arm.mcpu.cortex-a76",
             .why = "Cortex-A76 (implementer 0x41, part 0xd0b), the cores of the Raspberry Pi 5: -mcpu=cortex-a76.",
-            .when = .{ .arch = .{"aarch64"}, .arm_implementer = .{"0x41"}, .arm_part = .{"0xd0b"} },
+            .when = .{ .arch = .{"aarch64"}, .arm_implementer = .{"0x41"}, .arm_part = .{"0xd0b"}, .lacks = .{"vm"} },
             .set = .{.{ .key = "march", .value = "cortex-a76" }},
             .priority = 10,
         },
         .{
             .id = "arm.mcpu.cortex-a72",
             .why = "Cortex-A72 (0x41, 0xd08), the cores of the Raspberry Pi 4: -mcpu=cortex-a72. They have no Crypto Extensions: no AES in hardware.",
-            .when = .{ .arch = .{"aarch64"}, .arm_implementer = .{"0x41"}, .arm_part = .{"0xd08"} },
+            .when = .{ .arch = .{"aarch64"}, .arm_implementer = .{"0x41"}, .arm_part = .{"0xd08"}, .lacks = .{"vm"} },
             .set = .{.{ .key = "march", .value = "cortex-a72" }},
             .priority = 10,
         },
         .{
             .id = "arm.mcpu.neoverse-n1",
             .why = "Neoverse N1 (0x41, 0xd0c), the cores of Ampere Altra servers: -mcpu=neoverse-n1.",
-            .when = .{ .arch = .{"aarch64"}, .arm_implementer = .{"0x41"}, .arm_part = .{"0xd0c"} },
+            .when = .{ .arch = .{"aarch64"}, .arm_implementer = .{"0x41"}, .arm_part = .{"0xd0c"}, .lacks = .{"vm"} },
             .set = .{.{ .key = "march", .value = "neoverse-n1" }},
             .priority = 10,
         },

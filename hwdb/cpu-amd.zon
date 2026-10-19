@@ -54,25 +54,26 @@
             .kconfig = .{"cpu-amd-x3d"},
             .note = "Two CCDs with different L3 sizes: latency-sensitive work (games) runs best on the V-Cache CCD [VERIFY on this machine with bench/].",
         },
-        // -march of a kernel built elsewhere, by family and model
+        // -march of a kernel built elsewhere, by family and model; a virtual machine gets its x86-64
+        // level: its CPU is what the hypervisor shows today (docs/uni/kernel.md)
         .{
             .id = "cpu.amd.march.znver4",
             .why = "Zen 4 (family 0x19, models 0x10-0x1F and 0x60-0xAF): -march=znver4.",
-            .when = .{ .cpu_vendor = .{"AuthenticAMD"}, .cpu_family = 25, .cpu_model_min = 96, .cpu_model_max = 175 },
+            .when = .{ .cpu_vendor = .{"AuthenticAMD"}, .cpu_family = 25, .cpu_model_min = 96, .cpu_model_max = 175, .lacks = .{"vm"} },
             .set = .{.{ .key = "march", .value = "znver4" }},
             .priority = 10,
         },
         .{
             .id = "cpu.amd.march.znver4-server",
             .why = "Zen 4 servers (family 0x19, models 0x10-0x1F: Genoa, Bergamo): -march=znver4.",
-            .when = .{ .cpu_vendor = .{"AuthenticAMD"}, .cpu_family = 25, .cpu_model_min = 16, .cpu_model_max = 31 },
+            .when = .{ .cpu_vendor = .{"AuthenticAMD"}, .cpu_family = 25, .cpu_model_min = 16, .cpu_model_max = 31, .lacks = .{"vm"} },
             .set = .{.{ .key = "march", .value = "znver4" }},
             .priority = 10,
         },
         .{
             .id = "cpu.amd.march.znver3",
             .why = "Zen 3 (family 0x19, models 0x00-0x0F, 0x20-0x5F): -march=znver3.",
-            .when = .{ .cpu_vendor = .{"AuthenticAMD"}, .cpu_family = 25, .cpu_model_max = 95 },
+            .when = .{ .cpu_vendor = .{"AuthenticAMD"}, .cpu_family = 25, .cpu_model_max = 95, .lacks = .{"vm"} },
             .unless = .{ .cpu_model_min = 16, .cpu_model_max = 31 },
             .set = .{.{ .key = "march", .value = "znver3" }},
             .priority = 10,
@@ -80,14 +81,14 @@
         .{
             .id = "cpu.amd.march.znver2",
             .why = "Zen 2 (family 0x17, models 0x30 and later): -march=znver2.",
-            .when = .{ .cpu_vendor = .{"AuthenticAMD"}, .cpu_family = 23, .cpu_model_min = 48 },
+            .when = .{ .cpu_vendor = .{"AuthenticAMD"}, .cpu_family = 23, .cpu_model_min = 48, .lacks = .{"vm"} },
             .set = .{.{ .key = "march", .value = "znver2" }},
             .priority = 10,
         },
         .{
             .id = "cpu.amd.march.znver5",
             .why = "Zen 5 (family 0x1A): -march=znver5.",
-            .when = .{ .cpu_vendor = .{"AuthenticAMD"}, .cpu_family = 26 },
+            .when = .{ .cpu_vendor = .{"AuthenticAMD"}, .cpu_family = 26, .lacks = .{"vm"} },
             .set = .{.{ .key = "march", .value = "znver5" }},
             .priority = 10,
         },

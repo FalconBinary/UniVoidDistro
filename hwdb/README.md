@@ -72,8 +72,9 @@ narrowed to these patterns; the rule of the highest `priority` wins for a module
 (a property of the first matched device, for the installer: `.{ .key = "DGPU_VENDOR", .from = "pci_vendor" }`).
 
 Scalars the system reads: `class` (laptop, desktop, server, vm, sbc), `march` (the kernel's
-`-march` when it is built elsewhere), `renderer` (gles2, pixman), `watchdog`, `luks_cipher`,
-`luks_memory`.
+`-march` when it is built elsewhere: the CPU model's on real hardware, the x86-64 level or
+`armv8-a` in a virtual machine, [docs/uni/kernel.md](../docs/uni/kernel.md#-march)),
+`renderer` (gles2, pixman), `watchdog`, `luks_cipher`, `luks_memory`.
 
 The modules of a device are what the running system bound, or, without a driver, what the
 pinned tables of the stock kernel (`kernel/pins`) name for its modalias. The firmware kept is,

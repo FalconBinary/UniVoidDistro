@@ -45,25 +45,27 @@
             .when = .{ .cpu_vendor = .{"GenuineIntel"}, .has = .{"hybrid"} },
             .kconfig = .{"cpu-hybrid"},
         },
-        // -march of a kernel built elsewhere, by model (family 6); a CPU no rule names gets its x86-64 level
+        // -march of a kernel built elsewhere, by model (family 6); a CPU no rule names gets its x86-64 level,
+        // and so does a virtual machine: its CPU is what the hypervisor shows today, and the same
+        // system may boot on another host or after a migration (docs/uni/kernel.md)
         .{
             .id = "cpu.intel.march.skylake",
             .why = "Skylake to Comet Lake (models 0x4E, 0x5E, 0x8E, 0x9E, 0xA5, 0xA6): -march=skylake, as upstream's CI builds the GF63 kernel.",
-            .when = .{ .cpu_vendor = .{"GenuineIntel"}, .cpu_family = 6, .cpu_model = .{ 78, 94, 142, 158, 165, 166 } },
+            .when = .{ .cpu_vendor = .{"GenuineIntel"}, .cpu_family = 6, .cpu_model = .{ 78, 94, 142, 158, 165, 166 }, .lacks = .{"vm"} },
             .set = .{.{ .key = "march", .value = "skylake" }},
             .priority = 10,
         },
         .{
             .id = "cpu.intel.march.tigerlake",
             .why = "Tiger Lake (models 0x8C, 0x8D): -march=tigerlake.",
-            .when = .{ .cpu_vendor = .{"GenuineIntel"}, .cpu_family = 6, .cpu_model = .{ 140, 141 } },
+            .when = .{ .cpu_vendor = .{"GenuineIntel"}, .cpu_family = 6, .cpu_model = .{ 140, 141 }, .lacks = .{"vm"} },
             .set = .{.{ .key = "march", .value = "tigerlake" }},
             .priority = 10,
         },
         .{
             .id = "cpu.intel.march.alderlake",
             .why = "Alder Lake and Raptor Lake (models 0x97, 0x9A, 0xB7, 0xBA, 0xBF): -march=alderlake.",
-            .when = .{ .cpu_vendor = .{"GenuineIntel"}, .cpu_family = 6, .cpu_model = .{ 151, 154, 183, 186, 191 } },
+            .when = .{ .cpu_vendor = .{"GenuineIntel"}, .cpu_family = 6, .cpu_model = .{ 151, 154, 183, 186, 191 }, .lacks = .{"vm"} },
             .set = .{.{ .key = "march", .value = "alderlake" }},
             .priority = 10,
         },

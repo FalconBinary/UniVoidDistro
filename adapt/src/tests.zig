@@ -205,3 +205,25 @@ test "a misspelt condition is an error, not a match" {
     const f = rules.parse(".{ .rules = .{ .{ .id = \"x\", .why = \"y\", .when = .{ .lacks = .{\"vm\"} } } } }", "test");
     try t.expectEqualStrings("vm", f.rules[0].when.lacks[0]);
 }
+
+test "-march: the CPU model's on bare metal, the x86-64 level in a virtual machine (hwdb)" {
+    // the real hwdb and fixtures: tests/adapt/run.sh runs the tests in the repository's root
+    if (!vh.isDir("hwdb") or !vh.pathExists("kernel/hw/amd-desktop.zon")) return error.SkipZigTest;
+    const d = rules.load("hwdb");
+    var cfg: vh.Kv = .{};
+    cfg.read("vh.conf.example", false);
+    const cases = [_][3][]const u8{
+        .{ "gf63", "skylake", "x86-64-v3" },
+        .{ "amd-desktop", "znver4", "x86-64-v4" },
+        .{ "intel-hybrid-laptop", "alderlake", "x86-64-v3" },
+        .{ "qemu-q35", "x86-64-v3", "x86-64-v3" },
+    };
+    for (cases) |c| {
+        var h = hw.load(vh.fmt("kernel/hw/{s}.zon", .{c[0]}));
+        try t.expectEqualStrings(c[1], plan.compute(.{ .hw = h, .db = d, .config = &cfg }).plan.kernel.march);
+        // the same CPU passed through to a virtual machine (QEMU -cpu host): the hypervisor may
+        // show another model on the next host, so the kernel gets the level the CPU has for sure
+        h.cpu.flags = vh.fmt("{s} hypervisor", .{h.cpu.flags});
+        try t.expectEqualStrings(c[2], plan.compute(.{ .hw = h, .db = d, .config = &cfg }).plan.kernel.march);
+    }
+}
