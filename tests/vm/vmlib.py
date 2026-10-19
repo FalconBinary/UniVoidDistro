@@ -127,8 +127,9 @@ def boot(a, extra=None):
             sys.exit("no build/: build the tools and thor first: sh tests/zig/build.sh")
         tar = os.path.join(vm.d, "repo.tar")
         flags = ["--no-xattrs"] + (["--no-fflags", "--no-mac-metadata"] if sys.platform == "darwin" else [])
+        # the rig itself (the disk image, this tar) lives under tests/vm/work by default: never inside the archive
         subprocess.run(["tar", *flags, "-cf", tar, "--exclude", ".git", "--exclude", "__pycache__", "--exclude", ".zig-cache",
-                        "--exclude", "zig-out", *[x for d in VM_SKIP_BUILD for x in ("--exclude", f"build/{d}")],
+                        "--exclude", "zig-out", "--exclude", "tests/vm/work", *[x for d in VM_SKIP_BUILD for x in ("--exclude", f"build/{d}")],
                         "-C", os.path.dirname(vhvm.REPO), os.path.basename(vhvm.REPO)], check=True,
                        env=dict(os.environ, COPYFILE_DISABLE="1"))
         extra += ["-drive", f"file={tar},if=none,id=repo,format=raw,readonly=on",
