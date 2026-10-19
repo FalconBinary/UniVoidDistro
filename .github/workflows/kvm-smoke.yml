@@ -47,6 +47,10 @@ jobs:
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
+          # trigger only queues the event: wait until udev has applied the mode (run 39314915946
+          # tested too early); ls shows whether the runner has /dev/kvm at all
+          sudo udevadm settle
+          ls -l /dev/kvm
           test -r /dev/kvm && test -w /dev/kvm
       - name: qemu, OVMF, swtpm, xorriso, minisign, bsdtar
         run: |
