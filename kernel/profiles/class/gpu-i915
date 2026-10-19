@@ -1,0 +1,9 @@
+# kernel/profiles/class/gpu-i915: Intel graphics up to Gen12 (gpu.i915).
+#
+# A class fragment: vh-kconf resolve applies it when the machine's plan names it
+# (vh-plan, hwdb/); a symbol of it that does not survive olddefconfig is an error, as for
+# mandatory.
+
+# The console moves from the EFI framebuffer to i915 early; built in, so the firmware (DMC,
+# GuC, HuC) is read from the initrd.
+CONFIG_DRM_I915=y

@@ -1,0 +1,7 @@
+# kernel/profiles/class/cpu-arm64-aes: an ARM64 CPU with the Crypto Extensions (arm.aes).
+#
+# A class fragment: vh-kconf resolve applies it when the machine's plan names it
+# (vh-plan, hwdb/); a symbol of it that does not survive olddefconfig is an error, as for
+# mandatory.
+
+# Milestone U5: CRYPTO_AES_ARM64_CE_BLK and its neighbours, with the arm64 pins.

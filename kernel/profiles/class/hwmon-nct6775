@@ -1,0 +1,8 @@
+# kernel/profiles/class/hwmon-nct6775: a board with a Nuvoton Super I/O (board.asus.nct6775).
+#
+# A class fragment: vh-kconf resolve applies it when the machine's plan names it
+# (vh-plan, hwdb/); a symbol of it that does not survive olddefconfig is an error, as for
+# mandatory.
+
+# Fans, voltages and temperatures of the board; a probe cannot see the chip (ISA ports).
+CONFIG_SENSORS_NCT6775=y

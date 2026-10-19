@@ -1,0 +1,15 @@
+# kernel/profiles/class/cpu-amd: an AMD CPU (hwdb/cpu-amd.zon, cpu.amd.kernel).
+#
+# A class fragment: vh-kconf resolve applies it when the machine's plan names it
+# (vh-plan, hwdb/); a symbol of it that does not survive olddefconfig is an error, as for
+# mandatory.
+
+# amd-pstate in active mode (EPP, the CPU's own performance hints; mode 3) [VERIFY by
+# measurement against passive + schedutil, as for Intel]; the power and uncore counters for
+# bench/; k10temp; the FCH watchdog (sp5100_tco) for vh-deadman.
+CONFIG_X86_AMD_PSTATE=y
+CONFIG_X86_AMD_PSTATE_DEFAULT_MODE=3
+CONFIG_PERF_EVENTS_AMD_POWER=y
+CONFIG_PERF_EVENTS_AMD_UNCORE=y
+CONFIG_SENSORS_K10TEMP=y
+CONFIG_SP5100_TCO=y

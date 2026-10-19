@@ -1,7 +1,8 @@
 # kernel-custom: this machine's kernel from a committed hw.zon (track K, docs/ROADMAP.md).
-# vh-kconf resolve turns kernel/hw/NAME.zon, the pinned Void config and the profile fragments
-# into an LSMOD list and a .config; the kernel's own localyesconfig and olddefconfig decide;
-# vh-kconf diff reports what survived. The build is clang/lld, -march=skylake, no modules,
+# vh-plan turns kernel/hw/NAME.zon and hwdb/ into the machine's plan; vh-kconf resolve turns the
+# hw.zon, the plan, the pinned Void config and the profile fragments (universal, then the plan's
+# classes) into an LSMOD list and a .config; the kernel's own localyesconfig and olddefconfig
+# decide; vh-kconf diff reports what survived. The build is clang/lld, the plan's -march, no modules,
 # fixed KBUILD_BUILD_* for reproducibility; the tarball is PGP-verified as in kernel-fat.yml.
 # Results: an artifact, and a release "kernel-custom-NAME-KVER-rRUN" so they can be fetched
 # without GitHub credentials (docs/runbook-gf63.md). Kernels from CI contain no firmware.
@@ -16,8 +17,8 @@ on:
         description: kernel version (6.18.y)
         default: "6.18.57"
       features:
-        description: "features, comma-separated: usb-common bluetooth camera virt game; auto; none"
-        default: usb-common,bluetooth
+        description: "features, comma-separated: usb-common bluetooth camera virt game; auto (the plan's); none"
+        default: auto
       release:
         description: publish the result as a release (tag kernel-custom-NAME-KVER-rRUN)
         type: boolean
@@ -27,7 +28,7 @@ permissions:
 env:
   KVER: ${{ github.event.inputs.kver || '6.18.57' }}
   HW: ${{ github.event.inputs.hw || 'kernel/hw/gf63.zon' }}
-  FEATURES: ${{ github.event.inputs.features || 'usb-common,bluetooth' }}
+  FEATURES: ${{ github.event.inputs.features || 'auto' }}
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -47,11 +48,19 @@ jobs:
           echo "NAME=$name" >> "$GITHUB_ENV"
           head -12 "$HW"
       - uses: ./.github/actions/setup-zig
-      - name: vh-kconf (static PIE, ReleaseSafe)
+      - name: vh-kconf and vh-plan (static PIE, ReleaseSafe)
         run: |
           set -euo pipefail
           (cd kernel && zig build -Dtarget=x86_64-linux -Dcpu=baseline --prefix "$GITHUB_WORKSPACE/build/kt")
+          (cd adapt && zig build -Dtarget=x86_64-linux -Dcpu=baseline --prefix "$GITHUB_WORKSPACE/build/kt")
           build/kt/bin/vh-kconf version
+          build/kt/bin/vh-plan version
+      - name: the plan of the machine (hw.zon + hwdb -> kernel classes, features, deny list, NR_CPUS, -march)
+        run: |
+          set -euo pipefail
+          # tiered: a kernel can be built for a machine the strict gate would refuse to install on
+          build/kt/bin/vh-plan plan --hw "$HW" --hwdb hwdb --pins kernel/pins --config vh.conf.example --security tiered --out dl/plan
+          grep -E '^VH_PLAN_(TIER|KCONFIG|FEATURES|DENY|NR_CPUS|MARCH)=' dl/plan/plan.env
       - name: toolchain
         run: |
           sudo apt-get update -q
@@ -81,7 +90,7 @@ jobs:
       - name: resolve (hw.zon + pins + profiles -> LSMOD, fragment, .config)
         run: |
           set -euo pipefail
-          build/kt/bin/vh-kconf resolve --hw "$HW" --repo "$GITHUB_WORKSPACE" --features "$FEATURES" --out dl/resolve
+          build/kt/bin/vh-kconf resolve --hw "$HW" --plan dl/plan/plan.zon --repo "$GITHUB_WORKSPACE" --features "$FEATURES" --out dl/resolve
           sed -n '1,6p' dl/resolve/resolve-report.txt
           grep -A40 '^Refused' dl/resolve/resolve-report.txt | head -60
           cp dl/resolve/.config "dl/linux-$KVER/.config"
@@ -118,26 +127,31 @@ jobs:
           grep -q '^CONFIG_LOCK_DOWN_KERNEL_FORCE_CONFIDENTIALITY=y' .config
           grep -q '^# CONFIG_IO_URING is not set' .config
           echo "ok"
-      - name: build (clang, lld, -march=skylake, reproducible)
+      - name: build (clang, lld, the plan's -march, reproducible)
         run: |
           set -euo pipefail
+          # the plan's -march for this machine's CPU (hwdb: a model table, else its x86-64 level)
+          KCFLAGS=$(cat "$GITHUB_WORKSPACE/dl/resolve/kcflags")
+          export KCFLAGS
+          echo "KCFLAGS=$KCFLAGS"
           cd "dl/linux-$KVER"
           export KBUILD_BUILD_USER=vh KBUILD_BUILD_HOST=ci KBUILD_BUILD_VERSION=1
           export KBUILD_BUILD_TIMESTAMP="$(git -C "$GITHUB_WORKSPACE" log -1 --format=%cd --date=iso-strict)"
-          # KCFLAGS come last on the compiler line: -march=skylake selects the ISA and tuning of
-          # Comet Lake; the kernel's own -mno-sse/-mno-avx stay in force (clang applies explicit
-          # feature flags on top of the CPU's). On the laptop itself CONFIG_X86_NATIVE_CPU would do.
-          make LLVM=1 KCFLAGS="-march=skylake" -j"$(nproc)" bzImage
+          # KCFLAGS come last on the compiler line: -march selects the ISA and tuning of the
+          # machine's CPU; the kernel's own -mno-sse/-mno-avx stay in force (clang applies explicit
+          # feature flags on top of the CPU's). On the machine itself CONFIG_X86_NATIVE_CPU would do (U3).
+          make LLVM=1 KCFLAGS="$KCFLAGS" -j"$(nproc)" bzImage
           out=../out
           cp arch/x86/boot/bzImage "$out/bzImage-vh-$KVER"
           cp .config "$out/config-vh-$KVER"
           cp System.map "$out/System.map-vh-$KVER"
           llvm-objcopy --dump-section .BTF="$out/vmlinux-vh-$KVER.btf" vmlinux
           cp "$GITHUB_WORKSPACE/dl/resolve/resolve-report.txt" "$GITHUB_WORKSPACE/dl/resolve/fragment.config" "$GITHUB_WORKSPACE/dl/resolve/lsmod" "$out/"
+          cp "$GITHUB_WORKSPACE/dl/plan/plan.zon" "$GITHUB_WORKSPACE/dl/plan/plan-report.txt" "$out/"
           cp "$GITHUB_WORKSPACE/$HW" "$out/"
           {
             echo "kernel-custom $NAME: linux-$KVER, features $FEATURES, commit $GITHUB_SHA, run $GITHUB_RUN_NUMBER"
-            echo "KBUILD_BUILD_TIMESTAMP=$KBUILD_BUILD_TIMESTAMP KCFLAGS=-march=skylake LLVM=1 $(clang --version | head -1)"
+            echo "KBUILD_BUILD_TIMESTAMP=$KBUILD_BUILD_TIMESTAMP KCFLAGS=$KCFLAGS LLVM=1 $(clang --version | head -1)"
             strings arch/x86/boot/bzImage | grep -m1 -E '^Linux version ' || true
           } > "$out/BUILD"
           (cd "$out" && sha256sum * > SHA256SUMS)

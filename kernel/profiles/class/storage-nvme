@@ -1,0 +1,8 @@
+# kernel/profiles/class/storage-nvme: an NVMe disk (storage.nvme).
+#
+# A class fragment: vh-kconf resolve applies it when the machine's plan names it
+# (vh-plan, hwdb/); a symbol of it that does not survive olddefconfig is an error, as for
+# mandatory.
+
+# The root disk is behind it before the initrd could load anything.
+CONFIG_BLK_DEV_NVME=y

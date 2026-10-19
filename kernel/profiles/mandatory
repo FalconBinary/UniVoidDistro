@@ -42,10 +42,6 @@ CONFIG_NFT_LIMIT=y
 # meta (skuid, l4proto, iif), payload (tcp flags, ports, icmp type), sets with intervals and
 # timeouts, verdicts and jumps are part of nf_tables itself.
 
-# The i2c-hid touchpad hangs off the Comet Lake-H pin controller (GPIO interrupt).
-CONFIG_PINCTRL_INTEL=y
-CONFIG_PINCTRL_CANNONLAKE=y
-
 # User namespaces: the browser's bwrap sandbox and Steam's pressure-vessel.
 CONFIG_USER_NS=y
 # The kernel keyring: the LUKS passphrase cache of cryptsetup and the kernel's own keys.
@@ -79,17 +75,13 @@ CONFIG_DEBUG_INFO_DWARF5=y
 CONFIG_DEBUG_INFO_BTF=y
 CONFIG_SCHED_CLASS_EXT=y
 
-# Measurements (bench/): package power through RAPL, core temperatures, firmware boot
-# timing from the ACPI FPDT table.
+# Measurements (bench/): hwmon and the firmware boot timing from the ACPI FPDT table; the CPU's
+# power and temperature sensors are in its class (class/cpu-intel, class/cpu-amd).
 CONFIG_HWMON=y
-CONFIG_INTEL_RAPL=y
-CONFIG_SENSORS_CORETEMP=y
 CONFIG_ACPI_FPDT=y
 
-# vh-deadman uses the chipset watchdog (iTCO).
+# vh-deadman uses the chipset's watchdog: its driver is in the CPU's class.
 CONFIG_WATCHDOG=y
-CONFIG_ITCO_WDT=y
-CONFIG_ITCO_VENDOR_SUPPORT=y
 
 # /proc/sysrq-trigger for root (emergency sync and reboot); the key mask is 0 in hardening.
 CONFIG_MAGIC_SYSRQ=y

@@ -78,6 +78,7 @@
         .{ .value = "wireless-regdb", .rules = .{"net.wifi"} },
     },
     .kconfig = .{
+        .{ .value = "bt-intel", .rules = .{"bt.intel.kernel"} },
         .{ .value = "cpu-intel", .rules = .{"cpu.intel.kernel"} },
         .{ .value = "cpu-x86-aes", .rules = .{"x86.aes"} },
         .{ .value = "gpu-i915", .rules = .{"gpu.i915"} },

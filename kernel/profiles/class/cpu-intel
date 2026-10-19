@@ -1,0 +1,22 @@
+# kernel/profiles/class/cpu-intel: an Intel CPU (hwdb/cpu-intel.zon, cpu.intel.kernel).
+#
+# A class fragment: vh-kconf resolve applies it when the machine's plan names it
+# (vh-plan, hwdb/); a symbol of it that does not survive olddefconfig is an error, as for
+# mandatory.
+
+# intel_pstate (schedutil is the default governor, perf) and intel_idle; the counters bench/ and
+# vh-session-usage read: uncore, RAPL energy, C-states, the package temperature; RAPL and
+# coretemp for the measurements; the chipset watchdog (iTCO) for vh-deadman. The Management
+# Engine interface is not built: AMT is off, the firmware TPM works through tpm_crb.
+CONFIG_X86_INTEL_PSTATE=y
+CONFIG_INTEL_IDLE=y
+CONFIG_PERF_EVENTS_INTEL_UNCORE=y
+CONFIG_PERF_EVENTS_INTEL_RAPL=y
+CONFIG_PERF_EVENTS_INTEL_CSTATE=y
+CONFIG_X86_PKG_TEMP_THERMAL=y
+CONFIG_INTEL_RAPL=y
+CONFIG_SENSORS_CORETEMP=y
+CONFIG_ITCO_WDT=y
+CONFIG_ITCO_VENDOR_SUPPORT=y
+# CONFIG_INTEL_MEI is not set
+# CONFIG_INTEL_MEI_ME is not set

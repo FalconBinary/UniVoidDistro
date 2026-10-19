@@ -1,0 +1,11 @@
+# kernel/profiles/class/bt-intel: Intel Bluetooth, with the bluetooth feature (bt.intel.kernel).
+#
+# A class fragment: vh-kconf resolve applies it when the machine's plan names it
+# (vh-plan, hwdb/); a symbol of it that does not survive olddefconfig is an error, as for
+# mandatory.
+
+# btusb with only the Intel vendor code; the other vendors' helpers are left out.
+CONFIG_BT_INTEL=y
+# CONFIG_BT_HCIBTUSB_BCM is not set
+# CONFIG_BT_HCIBTUSB_MTK is not set
+# CONFIG_BT_HCIBTUSB_RTL is not set

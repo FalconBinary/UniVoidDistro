@@ -1,0 +1,8 @@
+# kernel/profiles/class/storage-ahci: a disk on SATA (storage.ahci).
+#
+# A class fragment: vh-kconf resolve applies it when the machine's plan names it
+# (vh-plan, hwdb/); a symbol of it that does not survive olddefconfig is an error, as for
+# mandatory.
+
+CONFIG_ATA=y
+CONFIG_SATA_AHCI=y

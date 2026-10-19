@@ -92,6 +92,24 @@
             .deny = .{ "bluetooth", "btusb", "btintel", "btrtl", "btbcm", "btmtk" },
         },
         .{
+            .id = "bt.intel.kernel",
+            .why = "Intel Bluetooth with the bluetooth feature: btusb with the Intel vendor code only.",
+            .when = .{ .has = .{"bluetooth"}, .device = .{ .usb_vendor = .{"8087"}, .usb_class = .{"e0"} }, .config = .{.{ .key = "VH_BLUETOOTH", .any = .{ "optional", "on" } }} },
+            .kconfig = .{"bt-intel"},
+        },
+        .{
+            .id = "bt.realtek.kernel",
+            .why = "Realtek Bluetooth with the bluetooth feature: btusb with the Realtek vendor code.",
+            .when = .{ .has = .{"bluetooth"}, .device = .{ .usb_vendor = .{"0bda"}, .usb_class = .{"e0"} }, .config = .{.{ .key = "VH_BLUETOOTH", .any = .{ "optional", "on" } }} },
+            .kconfig = .{"bt-realtek"},
+        },
+        .{
+            .id = "bt.mediatek.kernel",
+            .why = "MediaTek Bluetooth (the half of a MediaTek Wi-Fi card) with the bluetooth feature: btusb with the MediaTek vendor code.",
+            .when = .{ .has = .{"bluetooth"}, .device = .{ .module = .{ "mt7921e", "mt7925e" } }, .config = .{.{ .key = "VH_BLUETOOTH", .any = .{ "optional", "on" } }} },
+            .kconfig = .{"bt-mediatek"},
+        },
+        .{
             .id = "bt.intel",
             .why = "Intel Bluetooth (USB vendor 8087): btintel picks its ibt- firmware at run time.",
             .when = .{ .device = .{ .usb_vendor = .{"8087"}, .usb_class = .{"e0"} } },

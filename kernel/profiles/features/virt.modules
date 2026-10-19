@@ -1,6 +1,7 @@
 # Modules of the stock kernel that features/virt stands for (see usb-common.modules).
 kvm
 kvm_intel
+kvm_amd
 tun
 bridge
 vhost_net

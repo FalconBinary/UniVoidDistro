@@ -71,7 +71,9 @@ pub fn diff(o: Opts) Result {
             continue;
         }
         r.failed += 1;
-        const mandatory = vh.eql(from, "mandatory");
+        // the plan's classes and the machine fragment are as binding as mandatory: they carry
+        // the drivers of this machine's disk, GPU and CPU
+        const mandatory = vh.eql(from, "mandatory") or vh.startsWith(from, "class/") or vh.eql(from, "machine");
         if (mandatory) r.mandatory_failed += 1;
         const why = kconfig.explain(if (tree) |*t| t else null, &final, kv.name);
         failures.print(vh.gpa, "  {s}CONFIG_{s}: requested {s} ({s}), final {s}: {s}\n", .{ if (mandatory) "MANDATORY " else "", kv.name, kv.value, from, kconfig.show(got), why }) catch vh.oom();

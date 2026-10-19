@@ -1,0 +1,10 @@
+# kernel/profiles/class/tpm-crb: a firmware TPM on the CRB interface: Intel PTT, AMD fTPM (tpm.crb).
+#
+# A class fragment: vh-kconf resolve applies it when the machine's plan names it
+# (vh-plan, hwdb/); a symbol of it that does not survive olddefconfig is an error, as for
+# mandatory.
+
+# tpm2-totp and the measurement log; the TPM also feeds the kernel's random number generator.
+CONFIG_TCG_TPM=y
+CONFIG_TCG_CRB=y
+CONFIG_HW_RANDOM_TPM=y

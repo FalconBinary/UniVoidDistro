@@ -1,0 +1,5 @@
+# The differences from void-hardperf-light that the GF63 oracle accepts, each with its reason
+# (docs/uni/principles.md, rule 9): FILE, then -LINE (in upstream's output, not in ours) or
+# +LINE (the other way round), then the reason after "#".
+lsmod -rtsx_pci         # VH_CARDREADER=no: upstream refuses the card reader on the stock kernel (install/lib.sh) yet builds it into the machine kernel; the plan refuses it in both
+lsmod -rtsx_pci_sdmmc   # the same, its SD host driver

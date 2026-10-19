@@ -1,0 +1,8 @@
+# kernel/profiles/class/cpu-amd-x3d: an AMD CPU with two CCDs of different cache sizes (cpu.amd.x3d).
+#
+# A class fragment: vh-kconf resolve applies it when the machine's plan names it
+# (vh-plan, hwdb/); a symbol of it that does not survive olddefconfig is an error, as for
+# mandatory.
+
+# amd_3d_vcache: which CCD the scheduler prefers (the 3D V-Cache one, or the faster one).
+CONFIG_AMD_3D_VCACHE=y

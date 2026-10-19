@@ -12,11 +12,15 @@ kernel/
   src/                 main (the commands), probe, resolve, diff, hw (hw.zon), alias
                        (modules.alias, fnmatch), kconfig (.config, the Kconfig tree, Kbuild)
   profiles/            Kconfig fragments, every option with its reason: base, mandatory,
-                       hardening, perf, features/{usb-common,bluetooth,camera,virt,game}
+                       hardening, perf (what every machine gets), class/ (what a hardware
+                       class needs: cpu-intel, gpu-amdgpu, storage-nvme, ...; the machine's plan
+                       names them), features/{usb-common,bluetooth,camera,virt,game}
                        (+ NAME.modules: the stock modules a feature stands for), modules.deny
-  pins/                the Void linux6.18 .config and its modules.alias / modules.builtin*,
-                       with the void-packages commit and hashes; kernel.org PGP fingerprints
-  hw/                  hw.zon files that CI builds from (gf63.zon)
+  pins/                the Void linux6.18 .config and its modules.alias / modules.builtin* /
+                       modules.firmware, with the void-packages commit and hashes; kernel.org
+                       PGP fingerprints
+  hw/                  hw.zon files of the known machines, which CI builds from (gf63,
+                       amd-desktop, intel-hybrid-laptop, qemu-q35, aarch64-virt, rpi5)
 tests/kernel/          the GF63 sysfs/procfs fixture (mkfixture.py writes it), run.sh
 .github/workflows/kernel-custom.yml   the build
 ```
@@ -25,7 +29,7 @@ tests/kernel/          the GF63 sysfs/procfs fixture (mkfixture.py writes it), r
 
 ```sh
 vh-kconf probe [--from DIR] [--save DIR] [-o FILE|--stdout]
-vh-kconf resolve --hw FILE --out DIR --repo DIR [--features LIST|auto|none] [--alias F ...]
+vh-kconf resolve --hw FILE --plan FILE --out DIR --repo DIR [--features LIST|auto|none] [--alias F ...]
 vh-kconf diff --config .config --requested fragment.config [--lsmod FILE] [--kernel DIR]
 ```
 
@@ -37,20 +41,28 @@ vh-kconf diff --config .config --requested fragment.config [--lsmod FILE] [--ker
   shape of sysfs; `--from DIR` replays one (the fixture, or a snapshot from the laptop).
 - **resolve** (v1, not a Kconfig solver): every modalias goes through the stock kernel's
   `modules.alias` and `modules.builtin.modinfo`; the module the running system bound wins
-  over other matches; `modules.deny` and the modules of unselected features are refused;
-  what `/proc/modules` had is kept; the selected features add their modules. The result is
-  the LSMOD list for `make localyesconfig`, the merged fragment (base, mandatory, hardening,
-  perf, features, with the origin of every symbol and the conflicts), the pinned `.config`
-  with the fragment applied, and `resolve-report.txt` with every decision.
+  over other matches; `modules.deny`, the plan's deny list and the modules of unselected
+  features are refused; what `/proc/modules` had is kept; the selected features (by default
+  the plan's) add their modules. The fragments are applied in order: base, mandatory,
+  hardening, perf, the plan's classes (`class/NAME`), the features, and the machine
+  (`NR_CPUS` = the plan's possible CPUs). The result is the LSMOD list for
+  `make localyesconfig`, the merged fragment (with the origin of every symbol and the
+  conflicts), the pinned `.config` with the fragment applied, `kcflags` (the plan's `-march`),
+  and `resolve-report.txt` with every decision. The plan is required: without it the kernel
+  would have no driver for the machine's disk, GPU or CPU.
 - **diff** reads the `.config` the kernel produced after `localyesconfig olddefconfig` and
   says, for every requested symbol, whether it survived and if not why: the unmet
   dependency (from the Kconfig tree, evaluated against the final config), a missing prompt,
   a choice, a symbol this version does not have; and for every LSMOD module whether its
-  `obj-$(CONFIG_*)` symbol is `=y`. A lost symbol from `mandatory` is exit code 2.
+  `obj-$(CONFIG_*)` symbol is `=y`. A lost symbol from `mandatory`, from a class or from the
+  machine fragment is exit code 2.
 
-The workflow does the rest in this order: PGP-verify the tarball, resolve, copy `.config`,
-`yes "" | make LLVM=1 localyesconfig LSMOD=lsmod`, `make LLVM=1 olddefconfig`, diff, check the
-invariants, `make LLVM=1 KCFLAGS=-march=skylake bzImage` with fixed `KBUILD_BUILD_*`, upload.
+The workflow does the rest in this order: PGP-verify the tarball, `vh-plan plan`, resolve,
+copy `.config`, `yes "" | make LLVM=1 localyesconfig LSMOD=lsmod`, `make LLVM=1 olddefconfig`,
+diff, check the invariants, `make LLVM=1 KCFLAGS=<the plan's -march> bzImage` with fixed
+`KBUILD_BUILD_*`, upload. The GF63 oracle (`sh tests/kernel/oracle.sh`) holds the result to
+upstream's for that laptop: the classes reassemble exactly the symbols the universal profiles
+had for it.
 
 Tests: `sh tests/kernel/run.sh` builds the unit tests for Linux and runs them in a container
 (Zig cannot run Linux binaries on the Mac); `zig build test` does the same on a Linux host.

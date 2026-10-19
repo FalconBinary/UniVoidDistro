@@ -4,7 +4,7 @@ module tables: the pinned stock kernel's
 security: strict; tier: full
 tags: acpi backlight battery bluetooth camera dgpu disk disk-discard disk-nvme disk-on-nvme display displays-2 efi efi64 epp iommu iommu-active keyboard keyboard-i8042 laptop lid mains mor power-button secure-boot secure-boot-on smt sound tpm tpm2 wifi wired x86-64-v2 x86-64-v3
 
-Rules that apply (50):
+Rules that apply (51):
   x86.level.v2 [arch.zon]: x86-64-v2: CMPXCHG16B, LAHF/SAHF, POPCNT, SSE3 to SSE4.2 (Nehalem, Bulldozer and later).
   x86.level.v3 [arch.zon]: x86-64-v3: AVX, AVX2, BMI1/2, F16C, FMA, LZCNT, MOVBE, XSAVE (Haswell, Excavator and later).
   x86.march.v2 [arch.zon]: A kernel built elsewhere (CI) for a CPU no model rule names: the instruction set it has for sure.
@@ -33,6 +33,7 @@ Rules that apply (50):
   net.r8169 [net.zon]: Realtek Ethernet (RTL8111/8168, RTL8125): r8169 loads the PHY and MAC patches of rtl_nic.
   bt.usb [net.zon]: A Bluetooth controller on USB (interface class E0).
   bt.bluez [net.zon]: Bluetooth present and allowed (VH_BLUETOOTH optional or on): bluez, off until started with vh-bluetooth on (optional) or always running (on).
+  bt.intel.kernel [net.zon]: Intel Bluetooth with the bluetooth feature: btusb with the Intel vendor code only.
   bt.intel [net.zon]: Intel Bluetooth (USB vendor 8087): btintel picks its ibt- firmware at run time.
   class.laptop.chassis [platform.zon]: DMI chassis 8 (portable), 9 (laptop), 10 (notebook), 14 (sub-notebook), 30 (tablet), 31 (convertible), 32 (detachable).
   class.laptop.battery [platform.zon]: A battery of the system (not of a peripheral) in a machine that is not virtual.
@@ -68,7 +69,8 @@ packages (10):
   tpm2-tools  <- tpm.tools
   wireless-regdb  <- net.wifi
 
-kernel class fragments (8):
+kernel class fragments (9):
+  bt-intel  <- bt.intel.kernel
   cpu-intel  <- cpu.intel.kernel
   cpu-x86-aes  <- x86.aes
   gpu-i915  <- gpu.i915

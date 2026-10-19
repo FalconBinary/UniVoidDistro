@@ -1,0 +1,8 @@
+# kernel/profiles/class/storage-virtio: the virtio disks of a virtual machine (storage.virtio).
+#
+# A class fragment: vh-kconf resolve applies it when the machine's plan names it
+# (vh-plan, hwdb/); a symbol of it that does not survive olddefconfig is an error, as for
+# mandatory.
+
+CONFIG_VIRTIO_PCI=y
+CONFIG_VIRTIO_BLK=y

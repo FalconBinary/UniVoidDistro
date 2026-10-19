@@ -8,8 +8,9 @@
 # module of the same name was loaded.
 #
 # What this file deliberately does not do: RANDSTRUCT (it breaks the BTF-based type
-# information vh-sched relies on), GCC plugins (the build is clang), X86_USER_SHADOW_STACK
-# (Comet Lake has no CET; Void's value is kept).
+# information vh-sched relies on), GCC plugins (the build is clang). CET comes from Void's
+# config (X86_USER_SHADOW_STACK and X86_KERNEL_IBT are y): the kernel enables it where the CPU
+# has it.
 
 # lockdown=confidentiality: forced at build time; no cmdline can lower it.
 CONFIG_SECURITY_LOCKDOWN_LSM=y
@@ -64,11 +65,9 @@ CONFIG_SECURITY_DMESG_RESTRICT=y
 CONFIG_CFI=y
 # CONFIG_CFI_PERMISSIVE is not set
 
-# intel_iommu=on iommu.strict=1 iommu.passthrough=0 efi=disable_early_pci_dma: DMA protection
-# as build defaults.
+# iommu.strict=1 iommu.passthrough=0 efi=disable_early_pci_dma: DMA protection as build
+# defaults; the IOMMU's driver comes with its table (class/iommu-vtd, class/iommu-amd).
 CONFIG_IOMMU_SUPPORT=y
-CONFIG_INTEL_IOMMU=y
-CONFIG_INTEL_IOMMU_DEFAULT_ON=y
 CONFIG_IOMMU_DEFAULT_DMA_STRICT=y
 CONFIG_EFI_DISABLE_PCI_DMA=y
 
@@ -134,9 +133,6 @@ CONFIG_EXPERT=y
 # CONFIG_FIREWIRE is not set
 # CONFIG_USB4 is not set
 # CONFIG_USBIP_CORE is not set
-# The Intel ME interface: AMT is off, the fTPM works through tpm_crb.
-# CONFIG_INTEL_MEI is not set
-# CONFIG_INTEL_MEI_ME is not set
 # Rare network protocols reachable through socket() without privileges.
 # CONFIG_IP_SCTP is not set
 # CONFIG_RDS is not set

@@ -36,11 +36,10 @@ CONFIG_EFIVAR_FS=y
 # The initrd is zstd (dracut compress= in rootfs/etc/dracut.conf.d/10-vh.conf.in).
 CONFIG_RD_ZSTD=y
 
-# The boot path: NVMe -> LUKS2 (dm-crypt, aes-xts, AES-NI) -> XFS root; the ESP is vfat.
-CONFIG_BLK_DEV_NVME=y
+# The boot path: the disk's controller (class/storage-*) -> LUKS2 (dm-crypt, aes-xts; AES-NI
+# is class/cpu-x86-aes) -> XFS root; the ESP is vfat.
 CONFIG_BLK_DEV_DM=y
 CONFIG_DM_CRYPT=y
-CONFIG_CRYPTO_AES_NI_INTEL=y
 CONFIG_CRYPTO_XTS=y
 CONFIG_CRYPTO_SHA256=y
 CONFIG_XFS_FS=y
@@ -50,27 +49,23 @@ CONFIG_NLS_CODEPAGE_437=y
 CONFIG_NLS_ISO8859_1=y
 CONFIG_NLS_UTF8=y
 
-# The LUKS passphrase is typed on the internal keyboard (i8042/atkbd) or a USB keyboard
-# (xHCI, usbhid): the same set dracut's add_drivers names.
-CONFIG_SERIO_I8042=y
-CONFIG_KEYBOARD_ATKBD=y
+# The LUKS passphrase is typed on a USB keyboard (xHCI, usbhid) or the internal one: the
+# PS/2 controller is class/input-i8042, chosen with the plan; dracut's add_drivers takes the
+# keyboard's driver chain from the plan too.
 CONFIG_USB_XHCI_HCD=y
 CONFIG_USB_XHCI_PCI=y
 CONFIG_USB_HID=y
 CONFIG_HID_GENERIC=y
 CONFIG_INPUT_EVDEV=y
 
-# The console: EFI framebuffer until i915 takes over, then the DRM fbdev console (tty1-tty3).
+# The console: the EFI framebuffer until the GPU's driver (class/gpu-*) takes over, then the DRM
+# fbdev console (tty1-tty3).
 CONFIG_VT=y
 CONFIG_FRAMEBUFFER_CONSOLE=y
 CONFIG_FB_EFI=y
-CONFIG_DRM_I915=y
 CONFIG_DRM_FBDEV_EMULATION=y
 
-# The fTPM (Intel PTT) over the CRB interface: tpm2-totp and the measurement log.
-CONFIG_TCG_TPM=y
-CONFIG_TCG_CRB=y
-CONFIG_HW_RANDOM_TPM=y
+# The TPM, by its interface: class/tpm-crb or class/tpm-tis.
 
 # Swap is zram only (rootfs/etc/runit/core-services/05-vh-zram.sh.in); the backends are in mandatory.
 CONFIG_SWAP=y

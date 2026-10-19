@@ -1,0 +1,7 @@
+# kernel/profiles/class/gpu-radeon: AMD graphics before GCN 1.2 (gpu.radeon).
+#
+# A class fragment: vh-kconf resolve applies it when the machine's plan names it
+# (vh-plan, hwdb/); a symbol of it that does not survive olddefconfig is an error, as for
+# mandatory.
+
+CONFIG_DRM_RADEON=y

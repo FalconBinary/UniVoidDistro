@@ -1,0 +1,7 @@
+# kernel/profiles/class/storage-vmd: NVMe disks behind Intel VMD (storage.vmd).
+#
+# A class fragment: vh-kconf resolve applies it when the machine's plan names it
+# (vh-plan, hwdb/); a symbol of it that does not survive olddefconfig is an error, as for
+# mandatory.
+
+CONFIG_VMD=y

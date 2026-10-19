@@ -1,0 +1,8 @@
+# kernel/profiles/class/cpu-x86-aes: an x86 CPU with AES-NI (x86.aes).
+#
+# A class fragment: vh-kconf resolve applies it when the machine's plan names it
+# (vh-plan, hwdb/); a symbol of it that does not survive olddefconfig is an error, as for
+# mandatory.
+
+# The disk is AES-XTS: the AES-NI driver built in, the same speed from the first sector.
+CONFIG_CRYPTO_AES_NI_INTEL=y

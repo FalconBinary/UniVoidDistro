@@ -1,0 +1,7 @@
+# kernel/profiles/class/gpu-vc4: the Raspberry Pi's VideoCore (gpu.vc4).
+#
+# A class fragment: vh-kconf resolve applies it when the machine's plan names it
+# (vh-plan, hwdb/); a symbol of it that does not survive olddefconfig is an error, as for
+# mandatory.
+
+# Milestone U5: DRM_VC4 and DRM_V3D, with the arm64 pins.

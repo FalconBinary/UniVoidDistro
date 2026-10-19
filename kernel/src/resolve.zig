@@ -12,6 +12,8 @@ const mem = std.mem;
 pub const Opts = struct {
     hw: []const u8,
     out: []const u8,
+    /// the machine's plan (vh-plan): its kernel classes, features, deny list, NR_CPUS, -march
+    plan: ?[]const u8 = null,
     /// the stock kernel's tables; by default those of the kernel the probe ran under
     alias: ?[]const u8 = null,
     builtin: ?[]const u8 = null,
@@ -20,9 +22,33 @@ pub const Opts = struct {
     base: ?[]const u8 = null,
     profiles: ?[]const u8 = null,
     repo: ?[]const u8 = null,
-    /// comma-separated feature names, "auto" (from hw.zon), "none"
-    features: []const u8 = "usb-common,bluetooth",
+    /// comma-separated feature names, "auto" (the plan's), "none"
+    features: []const u8 = "auto",
 };
+
+/// what resolve reads of plan.zon (vh-plan writes more; the rest is ignored)
+const PlanItem = struct { value: []const u8 };
+const PlanView = struct {
+    kconfig: []const PlanItem = &.{},
+    features: []const PlanItem = &.{},
+    deny: []const PlanItem = &.{},
+    kernel: struct { nr_cpus: u32 = 0, march: []const u8 = "" } = .{},
+};
+
+fn loadPlan(path: []const u8) PlanView {
+    const text = readOrDie(path);
+    var diag: std.zon.parse.Diagnostics = undefined;
+    return std.zon.parse.fromSlice(PlanView, .{
+        .gpa = vh.gpa,
+        .arena = vh.gpa,
+        .source = vh.z(text),
+        .diagnostics = &diag,
+        .ignore_unknown_fields = true,
+    }) catch |e| switch (e) {
+        error.OutOfMemory => vh.oom(),
+        error.ParseZon => vh.die("{f}", .{diag.fmt(path)}),
+    };
+}
 
 /// the fragments in the order they are applied; the features follow
 const fixed_fragments = [_][]const u8{ "base", "mandatory", "hardening", "perf" };
@@ -40,6 +66,8 @@ pub const Result = struct {
     features: vh.Strv = .{},
     denied: vh.Strv = .{},
     unmatched: usize = 0,
+    /// the compiler flags for a kernel built elsewhere: -march of the plan, "" without one
+    kcflags: []const u8 = "",
 };
 
 pub fn run(o: Opts) u8 {
@@ -50,6 +78,7 @@ pub fn run(o: Opts) u8 {
     vh.writeAtomic(vh.fmt("{s}/fragment.config", .{o.out}), renderFragment(&r), 0o644);
     vh.writeAtomic(vh.fmt("{s}/.config", .{o.out}), r.config.render(), 0o644);
     vh.writeAtomic(vh.fmt("{s}/resolve-report.txt", .{o.out}), r.report.items, 0o644);
+    vh.writeAtomic(vh.fmt("{s}/kcflags", .{o.out}), vh.fmt("{s}\n", .{r.kcflags}), 0o644);
     vh.out("{s}: {d} modules in LSMOD, {d} fragment symbols ({d} conflicts), {d} refused; report in {s}/resolve-report.txt\n", .{ o.hw, r.lsmod.len(), r.fragment.count(), r.conflicts.items.len, r.denied.len(), o.out });
     return 0;
 }
@@ -77,8 +106,12 @@ pub fn resolve(h: hw.Hw, o: Opts) Result {
     table.loadBuiltinModinfo(readOrDie(builtin_path));
     if (vh.readFile(builtin_list_path)) |t| table.loadBuiltinList(t) else |_| {}
 
-    // features: explicit, auto-detected from the probe, or none
-    r.features = features(h, o.features);
+    // the plan: kernel classes, features, deny list, NR_CPUS, -march; without one the kernel
+    // has no driver of its disk or its GPU, so it is required
+    const plan_path = o.plan orelse vh.die("resolve needs the machine's plan: vh-plan plan --hw FILE --hwdb hwdb --pins kernel/pins --out DIR, then --plan DIR/plan.zon", .{});
+    const plan = loadPlan(plan_path);
+    // features: explicit, the plan's, or none
+    r.features = features(plan, o.features);
     for (r.features.slice()) |f| {
         var known = false;
         for (all_features) |k| if (vh.eql(k, f)) {
@@ -92,6 +125,12 @@ pub fn resolve(h: hw.Hw, o: Opts) Result {
     var deny_why: std.StringHashMapUnmanaged([]const u8) = .empty;
     loadNames(&deny, vh.fmt("{s}/modules.deny", .{profiles}), true);
     for (deny.slice()) |m| deny_why.put(vh.gpa, m, "modules.deny") catch vh.oom();
+    for (plan.deny) |x| {
+        const m = alias.normalize(x.value);
+        if (deny.has(m)) continue;
+        deny.add(m);
+        deny_why.put(vh.gpa, m, "the plan") catch vh.oom();
+    }
     for (all_features) |f| {
         if (r.features.has(f)) continue;
         var list: vh.Strv = .{};
@@ -105,6 +144,7 @@ pub fn resolve(h: hw.Hw, o: Opts) Result {
     rep.print(vh.gpa, "vh-kconf resolve report\n", .{}) catch vh.oom();
     rep.print(vh.gpa, "hw: {s} (probe source {s}, kernel {s}; {s} {s}, {s}, {d} devices, {d} loaded modules)\n", .{ o.hw, h.probe.source, h.probe.kernel, h.machine.sys_vendor, h.machine.product_name, h.cpu.model_name, h.devices.len, h.modules.len }) catch vh.oom();
     rep.print(vh.gpa, "tables: {s}, {s}\n", .{ alias_path, builtin_path }) catch vh.oom();
+    rep.print(vh.gpa, "plan: {s}: {d} kernel classes, {d} refused modules, NR_CPUS {d}, -march {s}\n", .{ plan_path, plan.kconfig.len, plan.deny.len, plan.kernel.nr_cpus, if (plan.kernel.march.len > 0) plan.kernel.march else "(none)" }) catch vh.oom();
     rep.print(vh.gpa, "features: {s}\n\n", .{if (r.features.len() > 0) r.features.join(" ") else "(none)"}) catch vh.oom();
 
     // 1. modalias -> module. The module the running system bound wins over the other
@@ -221,7 +261,12 @@ pub fn resolve(h: hw.Hw, o: Opts) Result {
     // 5. the fragments in order; a later value wins and the conflict is recorded
     rep.print(vh.gpa, "\nFragments:\n", .{}) catch vh.oom();
     for (fixed_fragments) |f| applyFragment(&r, vh.fmt("{s}/{s}", .{ profiles, f }), f);
+    for (plan.kconfig) |c| applyFragment(&r, vh.fmt("{s}/class/{s}", .{ profiles, c.value }), vh.fmt("class/{s}", .{c.value}));
     for (r.features.slice()) |f| applyFragment(&r, vh.fmt("{s}/features/{s}", .{ profiles, f }), vh.fmt("features/{s}", .{f}));
+    // the machine: its possible CPUs (hotplug included), from the plan, else the probe
+    const nr_cpus = if (plan.kernel.nr_cpus > 0) plan.kernel.nr_cpus else if (h.cpu.possible > 0) h.cpu.possible else h.cpu.threads;
+    if (nr_cpus > 0) applyText(&r, vh.fmt("CONFIG_NR_CPUS={d}\n", .{@max(nr_cpus, 2)}), "machine");
+    if (plan.kernel.march.len > 0) r.kcflags = vh.fmt("-march={s}", .{plan.kernel.march});
     rep.print(vh.gpa, "Fragment conflicts ({d}): the later fragment wins\n", .{r.conflicts.items.len}) catch vh.oom();
     for (r.conflicts.items) |c| rep.print(vh.gpa, "  CONFIG_{s}: {s}={s}, {s}={s}\n", .{ c.name, c.first_src, c.first, c.src, c.value }) catch vh.oom();
 
@@ -242,7 +287,10 @@ pub fn resolve(h: hw.Hw, o: Opts) Result {
 }
 
 fn applyFragment(r: *Result, path: []const u8, src: []const u8) void {
-    const text = readOrDie(path);
+    applyText(r, readOrDie(path), src);
+}
+
+fn applyText(r: *Result, text: []const u8, src: []const u8) void {
     var n: usize = 0;
     var lines = mem.tokenizeScalar(u8, text, '\n');
     while (lines.next()) |raw| {
@@ -260,7 +308,7 @@ fn applyFragment(r: *Result, path: []const u8, src: []const u8) void {
 /// the merged fragment with the origin of every symbol ("# from: NAME" before each line)
 pub fn renderFragment(r: *const Result) []u8 {
     var out: std.ArrayList(u8) = .empty;
-    out.appendSlice(vh.gpa, "# merged by vh-kconf resolve: base, mandatory, hardening, perf, then the features\n") catch vh.oom();
+    out.appendSlice(vh.gpa, "# merged by vh-kconf resolve: base, mandatory, hardening, perf, the plan's classes, the features, the machine\n") catch vh.oom();
     for (r.fragment.map.keys(), r.fragment.map.values()) |k, v| {
         out.print(vh.gpa, "# from: {s}\n", .{r.sources.get(k) orelse "?"}) catch vh.oom();
         if (vh.eql(v, "n")) out.print(vh.gpa, "# CONFIG_{s} is not set\n", .{k}) catch vh.oom() else out.print(vh.gpa, "CONFIG_{s}={s}\n", .{ k, v }) catch vh.oom();
@@ -268,39 +316,20 @@ pub fn renderFragment(r: *const Result) []u8 {
     return out.items;
 }
 
-/// "a,b", "auto", "none", "auto,game"
-fn features(h: hw.Hw, spec: []const u8) vh.Strv {
+/// "a,b", "auto" (the plan's features), "none", "auto,game"
+fn features(plan: PlanView, spec: []const u8) vh.Strv {
     var out: vh.Strv = .{};
     var it = mem.tokenizeScalar(u8, spec, ',');
     while (it.next()) |raw| {
         const f = vh.strip(raw);
         if (f.len == 0 or vh.eql(f, "none")) continue;
         if (vh.eql(f, "auto")) {
-            if (!out.has("usb-common")) out.add("usb-common");
-            if (detect(h, "bluetooth") and !out.has("bluetooth")) out.add("bluetooth");
-            if (detect(h, "camera") and !out.has("camera")) out.add("camera");
-            if (detect(h, "virt") and !out.has("virt")) out.add("virt");
+            for (plan.features) |x| if (!out.has(x.value)) out.add(x.value);
             continue;
         }
         if (!out.has(f)) out.add(f);
     }
     return out;
-}
-
-/// what the probe shows: the AX201 Bluetooth, a UVC camera, KVM loaded
-pub fn detect(h: hw.Hw, feature: []const u8) bool {
-    if (vh.eql(feature, "bluetooth")) {
-        if (h.hasModule("btusb") or h.hasModule("bluetooth")) return true;
-        for (h.devices) |d| if (vh.startsWith(d.modalias, "usb:v8087p0026")) return true;
-        return false;
-    }
-    if (vh.eql(feature, "camera")) {
-        if (h.hasModule("uvcvideo")) return true;
-        for (h.devices) |d| if (vh.eql(d.bus, "usb") and mem.indexOf(u8, d.modalias, "ic0Eisc01") != null) return true;
-        return false;
-    }
-    if (vh.eql(feature, "virt")) return h.hasModule("kvm_intel") or h.hasModule("kvm");
-    return false;
 }
 
 /// names from a list file, one per line, "#" comments; normalised
@@ -326,13 +355,14 @@ fn readOrDie(path: []const u8) []const u8 {
 
 // ---------------------------------------------------------------- tests
 
-test "resolve: the GF63 fixture against the pinned tables" {
+test "resolve: the GF63 fixture against the pinned tables and its plan" {
     const probe = @import("probe.zig");
     const dir = probe.repoPath("tests/kernel/fixtures/gf63") orelse return error.SkipZigTest;
+    const plan_path = probe.repoPath("tests/adapt/golden/gf63/strict/plan.zon") orelse return error.SkipZigTest;
     const repo = probe.repoRoot() orelse return error.SkipZigTest;
     const src: probe.Src = .{ .root = dir };
     const h = probe.run(&src);
-    const r = resolve(h, .{ .hw = "fixture", .out = "", .repo = repo, .features = "usb-common,bluetooth" });
+    const r = resolve(h, .{ .hw = "fixture", .out = "", .repo = repo, .plan = plan_path, .features = "usb-common,bluetooth" });
     // the Wi-Fi, the Ethernet, the Bluetooth, the touchpad and what was loaded are in LSMOD
     for ([_][]const u8{ "iwlwifi", "iwlmvm", "r8169", "btusb", "i2c_hid_acpi", "hid_multitouch", "dm_crypt", "xfs", "nft_ct", "zram", "snd_hda_codec_alc269", "usb_storage", "exfat" }) |m|
         try std.testing.expect(r.lsmod.has(m));
@@ -340,23 +370,31 @@ test "resolve: the GF63 fixture against the pinned tables" {
     try std.testing.expect(!r.lsmod.has("nvme"));
     try std.testing.expect(!r.lsmod.has("i8042"));
     try std.testing.expect(!r.lsmod.has("atkbd"));
-    // refused: nouveau for the dGPU, mei_me for the ME, the tiny power button, the camera
-    // (feature not selected), the sysfs-bound alternatives of the audio controller not taken
-    for ([_][]const u8{ "nouveau", "mei_me", "tiny_power_button", "uvcvideo", "kvm_intel" }) |m|
+    // refused: nouveau and the ME by the plan, the tiny power button by modules.deny, the
+    // camera and the card reader by the plan (VH_CAMERA=no, VH_CARDREADER=no), KVM
+    for ([_][]const u8{ "nouveau", "mei_me", "tiny_power_button", "uvcvideo", "kvm_intel", "rtsx_pci" }) |m|
         try std.testing.expect(!r.lsmod.has(m));
     try std.testing.expect(r.denied.has("nouveau"));
     try std.testing.expect(r.denied.has("tiny_power_button"));
     try std.testing.expect(r.denied.has("uvcvideo"));
+    try std.testing.expect(r.denied.has("rtsx_pci"));
     try std.testing.expect(!r.lsmod.has("snd_sof_pci_intel_cnl"));
     try std.testing.expect(r.lsmod.has("snd_hda_intel"));
     try std.testing.expect(r.lsmod.has("tpm_crb"));
     try std.testing.expect(!r.lsmod.has("tpm_tis"));
-    // the fragments: base + mandatory + hardening + perf + 2 features, no modules, BTF on
+    // the fragments: base, mandatory, hardening, perf, the plan's classes, two features, the machine
     try std.testing.expectEqualStrings("n", r.fragment.get("MODULES").?);
     try std.testing.expectEqualStrings("y", r.fragment.get("SCHED_CLASS_EXT").?);
     try std.testing.expectEqualStrings("y", r.fragment.get("BT_HCIBTUSB").?);
     try std.testing.expect(r.fragment.get("USB_VIDEO_CLASS") == null);
     try std.testing.expectEqualStrings("mandatory", r.sources.get("RTC_HCTOSYS").?);
+    try std.testing.expectEqualStrings("class/gpu-i915", r.sources.get("DRM_I915").?);
+    try std.testing.expectEqualStrings("class/storage-nvme", r.sources.get("BLK_DEV_NVME").?);
+    try std.testing.expectEqualStrings("class/cpu-intel", r.sources.get("X86_INTEL_PSTATE").?);
+    try std.testing.expectEqualStrings("class/bt-intel", r.sources.get("BT_INTEL").?);
+    try std.testing.expectEqualStrings("12", r.fragment.get("NR_CPUS").?);
+    try std.testing.expectEqualStrings("machine", r.sources.get("NR_CPUS").?);
+    try std.testing.expectEqualStrings("-march=skylake", r.kcflags);
     // symbols named in two fragments with the same value are not conflicts
     for (r.conflicts.items) |c| try std.testing.expect(!vh.eql(c.first, c.value));
     try std.testing.expectEqual(@as(usize, 0), r.conflicts.items.len);
@@ -378,15 +416,12 @@ test "resolve: the GF63 fixture against the pinned tables" {
     try std.testing.expect(mem.indexOf(u8, renderFragment(&r), "# from: hardening\n# CONFIG_IO_URING is not set\n") != null);
 
     // the game feature conflicts with hardening on purpose, and says so
-    const g = resolve(h, .{ .hw = "fixture", .out = "", .repo = repo, .features = "usb-common,game" });
+    const g = resolve(h, .{ .hw = "fixture", .out = "", .repo = repo, .plan = plan_path, .features = "usb-common,game" });
     try std.testing.expectEqualStrings("y", g.fragment.get("MODULES").?);
     try std.testing.expectEqualStrings("y", g.fragment.get("IA32_EMULATION").?);
     try std.testing.expect(g.conflicts.items.len >= 3);
     try std.testing.expect(g.denied.has("btusb"));
-    // auto detection sees the AX201 Bluetooth and the camera
-    try std.testing.expect(detect(h, "bluetooth"));
-    try std.testing.expect(detect(h, "camera"));
-    try std.testing.expect(!detect(h, "virt"));
-    const a = features(h, "auto");
-    try std.testing.expect(a.has("bluetooth") and a.has("camera") and a.has("usb-common") and !a.has("game"));
+    // "auto" takes the plan's features
+    const a = resolve(h, .{ .hw = "fixture", .out = "", .repo = repo, .plan = plan_path });
+    try std.testing.expect(a.features.has("bluetooth") and a.features.has("usb-common") and !a.features.has("game") and !a.features.has("camera"));
 }

@@ -12,19 +12,18 @@ CONFIG_HZ=1000
 # against lazy, bench/ 1 % lows].
 CONFIG_PREEMPT=y
 CONFIG_PREEMPT_DYNAMIC=y
-# One machine: 6 cores, 12 threads. Smaller per-CPU arrays and bitmaps.
-CONFIG_NR_CPUS=12
+# NR_CPUS: the machine's possible CPUs, written by resolve from the plan (smaller per-CPU arrays
+# and bitmaps than the distribution's 8192).
 # Thin LTO with clang (LLVM=1 in CI): cross-module inlining; kCFI from hardening works with it.
 CONFIG_LTO_CLANG_THIN=y
 # CONFIG_X86_NATIVE_CPU only when building on the machine itself (clang's -march=native);
 # in CI the workflow passes KCFLAGS=-march=skylake instead (Comet Lake is Skylake-class).
 # CONFIG_X86_NATIVE_CPU is not set
 
-# The CPU: intel_pstate with schedutil as the default governor (sched_ext's cpuperf hooks
-# act only with schedutil, docs/ROADMAP.md), intel_idle, SMT and multi-core aware scheduling.
-CONFIG_X86_INTEL_PSTATE=y
+# The CPU: schedutil as the default governor (sched_ext's cpuperf hooks act only with
+# schedutil, docs/ROADMAP.md), SMT and multi-core aware scheduling; the frequency and idle
+# drivers of the CPU are in its class (class/cpu-intel, class/cpu-amd).
 CONFIG_CPU_FREQ_DEFAULT_GOV_SCHEDUTIL=y
-CONFIG_INTEL_IDLE=y
 CONFIG_SCHED_MC=y
 CONFIG_SCHED_MC_PRIO=y
 CONFIG_SCHED_SMT=y
@@ -38,13 +37,8 @@ CONFIG_TRANSPARENT_HUGEPAGE_MADVISE=y
 CONFIG_KERNEL_ZSTD=y
 # CONFIG_KERNEL_GZIP is not set
 
-# Counters for bench/ and vh-session-usage: uncore, RAPL energy and C-state events, package
-# temperature.
+# Counters for bench/ and vh-session-usage; the CPU's own (uncore, RAPL, C-states) are in its class.
 CONFIG_PERF_EVENTS=y
-CONFIG_PERF_EVENTS_INTEL_UNCORE=y
-CONFIG_PERF_EVENTS_INTEL_RAPL=y
-CONFIG_PERF_EVENTS_INTEL_CSTATE=y
-CONFIG_X86_PKG_TEMP_THERMAL=y
 
 # Network: BBR and fq are set by rootfs/etc/sysctl.d/50-vh-performance.conf and preloaded
 # today (tcp_bbr, sch_fq in install/30-lock.sh); built in here.

@@ -81,6 +81,7 @@
     },
     .kconfig = .{
         .{ .value = "audio-sof-intel", .rules = .{"audio.sof.intel"} },
+        .{ .value = "bt-intel", .rules = .{"bt.intel.kernel"} },
         .{ .value = "cpu-hybrid", .rules = .{"cpu.intel.hybrid"} },
         .{ .value = "cpu-intel", .rules = .{"cpu.intel.kernel"} },
         .{ .value = "cpu-x86-aes", .rules = .{"x86.aes"} },

@@ -1,0 +1,11 @@
+# kernel/profiles/class/audio-sof-intel: the audio DSP of Intel laptops (audio.sof.intel).
+#
+# A class fragment: vh-kconf resolve applies it when the machine's plan names it
+# (vh-plan, hwdb/); a symbol of it that does not survive olddefconfig is an error, as for
+# mandatory.
+
+# The SOF menus; the platform driver itself (SND_SOC_SOF_INTEL_TGL and the like) comes from
+# the LSMOD list like any driver the probe saw.
+CONFIG_SND_SOC_SOF_TOPLEVEL=y
+CONFIG_SND_SOC_SOF_PCI=y
+CONFIG_SND_SOC_SOF_INTEL_TOPLEVEL=y

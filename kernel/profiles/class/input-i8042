@@ -1,0 +1,9 @@
+# kernel/profiles/class/input-i8042: a PS/2 keyboard (input.i8042).
+#
+# A class fragment: vh-kconf resolve applies it when the machine's plan names it
+# (vh-plan, hwdb/); a symbol of it that does not survive olddefconfig is an error, as for
+# mandatory.
+
+# The LUKS passphrase is typed on it: the controller and atkbd built in.
+CONFIG_SERIO_I8042=y
+CONFIG_KEYBOARD_ATKBD=y

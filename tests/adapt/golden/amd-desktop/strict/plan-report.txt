@@ -4,7 +4,7 @@ module tables: the pinned stock kernel's
 security: strict; tier: full
 tags: acpi bluetooth disk disk-ata disk-discard disk-nvme disk-on-ahci disk-on-nvme disk-on-sd_mod disk-rotational display displays-2 efi efi64 epp iommu iommu-active keyboard keyboard-usb mor multi-llc power-button secure-boot secure-boot-on smt sound tpm tpm2 wifi wired x86-64-v2 x86-64-v3 x86-64-v4
 
-Rules that apply (45):
+Rules that apply (46):
   x86.level.v2 [arch.zon]: x86-64-v2: CMPXCHG16B, LAHF/SAHF, POPCNT, SSE3 to SSE4.2 (Nehalem, Bulldozer and later).
   x86.level.v3 [arch.zon]: x86-64-v3: AVX, AVX2, BMI1/2, F16C, FMA, LZCNT, MOVBE, XSAVE (Haswell, Excavator and later).
   x86.level.v4 [arch.zon]: x86-64-v4: AVX-512 F, BW, CD, DQ, VL (Skylake-SP, Ice Lake, Zen 4 and later).
@@ -35,6 +35,7 @@ Rules that apply (45):
   net.r8169 [net.zon]: Realtek Ethernet (RTL8111/8168, RTL8125): r8169 loads the PHY and MAC patches of rtl_nic.
   bt.usb [net.zon]: A Bluetooth controller on USB (interface class E0).
   bt.bluez [net.zon]: Bluetooth present and allowed (VH_BLUETOOTH optional or on): bluez, off until started with vh-bluetooth on (optional) or always running (on).
+  bt.mediatek.kernel [net.zon]: MediaTek Bluetooth (the half of a MediaTek Wi-Fi card) with the bluetooth feature: btusb with the MediaTek vendor code.
   bt.mediatek [net.zon]: The Bluetooth half of a MediaTek Wi-Fi card (MT7921, MT7922, MT7925): its USB id is the card maker's, so the Wi-Fi module tells; btmtk loads BT_RAM_CODE [VERIFY on hardware].
   class.desktop [platform.zon]: Every other machine.
   iommu.ivrs [platform.zon]: AMD-Vi is described by the IVRS table; the kernel turns it on by itself, and iommu.strict=1 iommu.passthrough=0 (every machine) keep every device translated.
@@ -63,7 +64,8 @@ packages (10):
   tpm2-tools  <- tpm.tools
   wireless-regdb  <- net.wifi
 
-kernel class fragments (10):
+kernel class fragments (11):
+  bt-mediatek  <- bt.mediatek.kernel
   cpu-amd  <- cpu.amd.kernel
   cpu-amd-x3d  <- cpu.amd.x3d
   cpu-x86-aes  <- x86.aes

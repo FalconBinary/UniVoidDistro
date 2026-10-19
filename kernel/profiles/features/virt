@@ -5,7 +5,7 @@
 
 CONFIG_VIRTUALIZATION=y
 CONFIG_KVM=y
-CONFIG_KVM_INTEL=y
+# the CPU's KVM (KVM_INTEL, KVM_AMD) is a class the plan adds (class/virt-*)
 # Guest networking: tap devices behind a bridge, vhost for virtio-net.
 CONFIG_TUN=y
 CONFIG_BRIDGE=y

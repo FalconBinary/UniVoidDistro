@@ -1,0 +1,7 @@
+# kernel/profiles/class/iommu-amd: AMD-Vi, described by the IVRS table (iommu.ivrs).
+#
+# A class fragment: vh-kconf resolve applies it when the machine's plan names it
+# (vh-plan, hwdb/); a symbol of it that does not survive olddefconfig is an error, as for
+# mandatory.
+
+CONFIG_AMD_IOMMU=y

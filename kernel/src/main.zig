@@ -2,10 +2,11 @@
 //!
 //!   vh-kconf probe [--from DIR] [--save DIR] [-o FILE|--stdout]
 //!       sysfs and procfs -> /etc/vh/hw.zon (stdout with --from); no serial numbers
-//!   vh-kconf resolve --hw FILE --out DIR [--repo DIR] [--features LIST] [--alias F]
-//!                    [--builtin F] [--builtin-list F] [--base .config] [--profiles DIR]
-//!       hw.zon + the stock kernel's alias tables + the profile fragments -> DIR/lsmod,
-//!       DIR/fragment.config, DIR/.config, DIR/resolve-report.txt
+//!   vh-kconf resolve --hw FILE --plan FILE --out DIR [--repo DIR] [--features LIST|auto|none]
+//!                    [--alias F] [--builtin F] [--builtin-list F] [--base .config] [--profiles DIR]
+//!       hw.zon + the machine's plan (vh-plan) + the stock kernel's alias tables + the profile
+//!       fragments -> DIR/lsmod, DIR/fragment.config, DIR/.config, DIR/kcflags,
+//!       DIR/resolve-report.txt
 //!   vh-kconf diff --config .config --requested fragment.config [--lsmod FILE]
 //!                 [--kernel DIR] [--oracle localyesconfig|localmodconfig]
 //!       after the kernel's olddefconfig: which requests survived and why the others did not
@@ -22,7 +23,7 @@ const diff = @import("diff.zig");
 
 const usage =
     \\usage: vh-kconf probe [--from DIR] [--save DIR] [-o FILE|--stdout]
-    \\       vh-kconf resolve --hw FILE --out DIR [--repo DIR] [--features LIST|auto|none] [--alias F] [--builtin F] [--builtin-list F] [--base .config] [--profiles DIR]
+    \\       vh-kconf resolve --hw FILE --plan FILE --out DIR [--repo DIR] [--features LIST|auto|none] [--alias F] [--builtin F] [--builtin-list F] [--base .config] [--profiles DIR]
     \\       vh-kconf diff --config .config --requested fragment.config [--lsmod FILE] [--kernel DIR] [--oracle localyesconfig|localmodconfig]
     \\       vh-kconf version
     \\
@@ -111,6 +112,8 @@ fn cmdResolve(argv: []const [:0]const u8) u8 {
             o.out = v;
         } else if (a.value(arg, "--repo")) |v| {
             o.repo = v;
+        } else if (a.value(arg, "--plan")) |v| {
+            o.plan = v;
         } else if (a.value(arg, "--features")) |v| {
             o.features = v;
         } else if (a.value(arg, "--alias")) |v| {

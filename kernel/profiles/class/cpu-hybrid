@@ -1,0 +1,9 @@
+# kernel/profiles/class/cpu-hybrid: a CPU with P and E cores (cpu.intel.hybrid).
+#
+# A class fragment: vh-kconf resolve applies it when the machine's plan names it
+# (vh-plan, hwdb/); a symbol of it that does not survive olddefconfig is an error, as for
+# mandatory.
+
+# Scheduling domains for the E-core clusters (four E-cores share an L2); ITMT, which prefers
+# the faster cores, comes with SCHED_MC_PRIO in perf.
+CONFIG_SCHED_CLUSTER=y

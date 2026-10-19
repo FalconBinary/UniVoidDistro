@@ -1,0 +1,7 @@
+# kernel/profiles/class/pinctrl-amd: the AMD GPIO controller (cpu.amd.pinctrl).
+#
+# A class fragment: vh-kconf resolve applies it when the machine's plan names it
+# (vh-plan, hwdb/); a symbol of it that does not survive olddefconfig is an error, as for
+# mandatory.
+
+CONFIG_PINCTRL_AMD=y

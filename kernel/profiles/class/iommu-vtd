@@ -1,0 +1,9 @@
+# kernel/profiles/class/iommu-vtd: VT-d, described by the DMAR table (iommu.dmar).
+#
+# A class fragment: vh-kconf resolve applies it when the machine's plan names it
+# (vh-plan, hwdb/); a symbol of it that does not survive olddefconfig is an error, as for
+# mandatory.
+
+# intel_iommu=on as the build default; iommu.strict=1 iommu.passthrough=0 are in hardening.
+CONFIG_INTEL_IOMMU=y
+CONFIG_INTEL_IOMMU_DEFAULT_ON=y
