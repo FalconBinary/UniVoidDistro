@@ -11,6 +11,7 @@ verified against a value here, so that two runs with the same `hw.zon` produce t
 | `modules.alias` | modalias pattern -> module, as `depmod` wrote it for the stock kernel | `linux6.18-6.18.57_1.x86_64.xbps`, `/usr/lib/modules/6.18.57_1/modules.alias` |
 | `modules.builtin.modinfo` | the aliases of the drivers that are already built into the stock kernel | the same package, `modules.builtin.modinfo` |
 | `modules.builtin` | the list of built-in modules of the stock kernel | the same package, `modules.builtin` |
+| `modules.firmware` | module -> the firmware files it names (`MODULE_FIRMWARE`), what vh-plan keeps for a machine's modules | the same package: the `.modinfo` section of every `.ko.zst` and the firmware records of `modules.builtin.modinfo`, read by `mkfirmware.py` (nothing is loaded or run) |
 
 SHA-256 of the pinned files and of the package they were taken from (2026-10-19,
 `https://repo-default.voidlinux.org/current/linux6.18-6.18.57_1.x86_64.xbps`, 182479259 bytes):
@@ -21,6 +22,7 @@ SHA-256 of the pinned files and of the package they were taken from (2026-10-19,
 b956aaf438f041267aa6d327f5ae8427c542d6bc69e465f58b4a856ef5d74925  modules.alias
 0bc2e66986e720b6ee7e929d4459c2b26d546c5631b3a36daf521b60dadc0344  modules.builtin.modinfo
 3e6aaf55fd4973a5de9be0b2c4aa55bcbf0dc37d89bc0255444b2544676ac4f8  modules.builtin
+6a00177cc06fdd4e544a386607385bf41d818ac0e8c0a6db398a79e836ee6f23  modules.firmware
 5bd9acdc82ec5efc3790ae840e5aaa40dfde7efff261cf6dde902dc570acf98c  linux-6.18.57.tar.xz (kernel.org)
 ```
 
@@ -30,5 +32,10 @@ b956aaf438f041267aa6d327f5ae8427c542d6bc69e465f58b4a856ef5d74925  modules.alias
 
 Updating the pins (a new Void kernel): download the package, extract the three `modules.*`
 files and `/boot/config-*`, replace the files here, record the void-packages commit of the
-dotconfig and the hashes above, and run `vh-kconf resolve` on `kernel/hw/gf63.zon` to see
-what changed in the report.
+dotconfig and the hashes above, regenerate `modules.firmware` with
+`python3 -I kernel/pins/mkfirmware.py PACKAGE.xbps kernel/pins/modules.builtin.modinfo > kernel/pins/modules.firmware`
+(after updating its `PINNED_SHA256`), and run `vh-kconf resolve` on `kernel/hw/gf63.zon` and
+`sh tests/adapt/run.sh` to see what changed.
+
+Some drivers name their firmware only at run time and list nothing here: the SOF audio DSP
+(`intel/sof*`), Intel Bluetooth (`intel/ibt-*`). Their files come from rules in `hwdb/`.
