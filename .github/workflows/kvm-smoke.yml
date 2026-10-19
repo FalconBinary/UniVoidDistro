@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       step:
-        description: check.py step after the installation
+        description: "check.py step after the installation (base; assess: the boot assessment of a machine UKI, docs/uni/kernel.md)"
         default: base
   schedule:
     - cron: "17 4 * * 1"

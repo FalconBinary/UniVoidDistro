@@ -117,7 +117,10 @@ VM_SKIP_BUILD = ["docker-ctx", "zig-dl", "xbps-dl", "devimg", "zig-test", "zt", 
                  "thor-work", "thor-dest", "*.log"]
 
 
-def boot(a, extra=None):
+def boot(a, extra=None, on_prompt=None):
+    """Boot the installed system to a root shell. on_prompt(vm, ser) runs when the first
+    passphrase prompt appears: a step that interrupts that boot (steps/kernel.py resets a trial
+    there) waits for the prompt of the boot after it, and this one goes on from there."""
     vm = vhvm.VM(a.dir, a.mem, a.smp)
     extra = list(extra or [])
     if getattr(a, "repo", False):
@@ -139,6 +142,8 @@ def boot(a, extra=None):
                   "-device", "nvme,serial=VHREPO,drive=repo"]
     ser = vm.start(extra)
     ser.expect(r"[Pp]assword|[Pp]assphrase", 1800)
+    if on_prompt:
+        on_prompt(vm, ser)
     time.sleep(2)
     ser.send(vhvm.LUKS_PASS)
     # an initramfs with optional/tpm2-totp may ask for the recovery password (generation by flag)
