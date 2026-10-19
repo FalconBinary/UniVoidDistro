@@ -6,7 +6,7 @@
 const std = @import("std");
 
 /// shared modules: name -> lib/NAME.zig
-const libs = [_][]const u8{ "vh", "hash", "seccomp" };
+const libs = [_][]const u8{ "vh", "hash", "seccomp", "input" };
 
 /// programs: tools/NAME.zig; libc lists the system libraries a program needs (OpenSSL, libxcrypt)
 const Tool = struct { name: []const u8, libc: []const []const u8 = &.{} };

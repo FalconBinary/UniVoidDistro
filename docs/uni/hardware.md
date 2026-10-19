@@ -117,7 +117,8 @@ plan puts that chain into dracut's `add_drivers`:
 
 The probe also records where each keyboard sits and, on USB, whether the kernel calls its
 USB device built in (`fixed`): a built-in keyboard on USB or SPI becomes the physical input of
-`vh-acpid`'s idle watchdog ([runtime](runtime.md#built-in-input-for-vh-acpid)).
+`vh-acpid`'s idle watchdog and a keyboard of `optional/deadman`'s alarm combination
+([runtime](runtime.md#built-in-input-vh-acpid-and-vh-deadman)).
 
 ## Motherboards and chipsets
 

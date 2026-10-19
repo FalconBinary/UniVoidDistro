@@ -72,8 +72,9 @@ render /root/vh/rootfs/etc/sysctl.d/40-vh-network.conf.cin /etc/sysctl.d/40-vh-n
 for f in ${VH_PLAN_UDEV_KNOWN:-}; do
 	case " ${VH_PLAN_UDEV:-} " in *" $f "*) ;; *) rm -f "/etc/udev/rules.d/$f" ;; esac
 done
-# vh-acpid's idle watchdog counts built-in input only; the probe's keyboards that it cannot
-# tell by their bus (on internal USB, SPI) are named by their place (VH_PLAN_INTERNAL_INPUT)
+# vh-acpid's idle watchdog and vh-deadman's alarm combination count built-in input only; the
+# probe's keyboards they cannot tell by their bus (on internal USB, SPI) are named by their
+# place (VH_PLAN_INTERNAL_INPUT)
 sed -i "s|^INTERNAL_INPUT=.*|INTERNAL_INPUT=\"${VH_PLAN_INTERNAL_INPUT:-}\"|" /etc/vh/acpi.conf
 
 ESP_DEV="UUID=$VH_ESP_UUID"

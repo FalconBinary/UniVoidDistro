@@ -23,6 +23,7 @@
 //! Settings: /etc/vh/acpi.conf. Waiting is a blocking poll(): not a single wakeup at idle.
 const std = @import("std");
 const vh = @import("vh");
+const input = @import("input");
 const linux = std.os.linux;
 const mem = std.mem;
 
@@ -49,17 +50,13 @@ fn now() f64 {
 }
 
 /// What kind of input device this is: the lid, the power button (ACPI only), built-in input
-/// for the idle watchdog (i8042, I2C-HID and explicitly named sysfs path parts), or nothing.
+/// for the idle watchdog (i8042, I2C-HID and explicitly named sysfs path parts: the rule
+/// vh-deadman's alarm combination shares, zig/lib/input.zig), or nothing.
 pub fn classify(name: []const u8, phys: []const u8, real: []const u8, extra: []const []const u8) ?Kind {
     const first = phys[0 .. mem.indexOfScalar(u8, phys, '/') orelse phys.len];
-    var ext = false;
-    for (extra) |e| ext = ext or mem.indexOf(u8, real, e) != null;
     if (vh.eql(name, "Lid Switch") and vh.startsWith(phys, "PNP0C0D/")) return .lid;
     if (vh.eql(name, "Power Button") and (vh.eql(first, "LNXPWRBN") or vh.eql(first, "PNP0C0C"))) return .power;
-    if (mem.indexOf(u8, real, "/virtual/") != null) return null; // uinput and the like: not physical input
-    if (vh.startsWith(phys, "isa0060/serio") or
-        (mem.indexOf(u8, real, "/i2c-") != null and mem.indexOf(u8, real, "/usb") == null) or ext)
-        return .input;
+    if (input.isBuiltin(phys, real, extra)) return .input;
     return null;
 }
 

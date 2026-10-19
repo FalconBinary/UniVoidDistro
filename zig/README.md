@@ -14,6 +14,7 @@ between releases, so building with another version is not supported.
 | `lib/vh.zig` | shared code: messages, system calls, files, `KEY=VALUE` configs, running programs without a shell |
 | `lib/hash.zig` | SHA-256 and BLAKE2b-512 (`std.crypto`) |
 | `lib/seccomp.zig` | classic BPF assembler, the sandbox filters and an interpreter for the self-test |
+| `lib/input.zig` | the input devices built into the machine: vh-acpid's idle watchdog and vh-deadman's alarm combination listen to these only |
 
 Code rules (the full list, with the reasons, is in `docs/principles.md`):
 

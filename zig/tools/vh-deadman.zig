@@ -2,7 +2,7 @@
 //!
 //! Two shutdown modes:
 //!   alarm    -- the tag (a USB device) is removed or the key combination is pressed on the
-//!               internal keyboard: the volume key is wiped within a fraction of a second,
+//!               built-in keyboard: the volume key is wiped within a fraction of a second,
 //!               the data of the last seconds is not saved;
 //!   regular  -- runit stage 3 (power button, lid, idle, doas poweroff): the services are
 //!               stopped, the data is flushed, the root is read-only; then the same wipe
@@ -26,10 +26,13 @@
 //!   vh-deadman test     -- show what was found, changing nothing
 const std = @import("std");
 const vh = @import("vh");
+const input = @import("input");
 const linux = std.os.linux;
 const mem = std.mem;
 
 const CONF = "/etc/vh/deadman.conf";
+/// INTERNAL_INPUT: the built-in keyboards the installer named from the probe (vh-acpid's too)
+const ACPI_CONF = "/etc/vh/acpi.conf";
 /// GUID LINUX_EFI_CRASH_GUID: efivarfs creates variables with it as deletable, so the
 /// initramfs removes the flag without chattr. The name does not start with dump-, so
 /// efi-pstore leaves it alone.
@@ -272,17 +275,63 @@ const KEY_RIGHTCTRL = 97;
 const KEY_RIGHTALT = 100;
 const KEY_END = 107;
 const InputEvent = extern struct { sec: i64, usec: i64, type: u16, code: u16, value: i32 };
+/// the most input devices the combination listens to
+const MAX_KBD = 16;
+
+/// Does the alarm combination listen to this input device: built into the machine, by the
+/// rule of vh-acpid's idle watchdog (zig/lib/input.zig: PS/2, I2C, the places of
+/// INTERNAL_INPUT, never uinput), and with a key of the combination in its bitmap (sysfs
+/// capabilities/key), so that a touchpad never wakes the daemon. One key is enough: a keyboard
+/// may send its modifiers and its other keys through two input devices, and the keys held at
+/// once count across all of them.
+pub fn comboKeyboard(phys: []const u8, real: []const u8, keys: []const u8, places: []const []const u8) bool {
+    if (!input.isBuiltin(phys, real, places)) return false;
+    for ([_]u16{ KEY_RIGHTCTRL, KEY_RIGHTALT, KEY_END }) |k| if (input.hasKey(keys, k)) return true;
+    return false;
+}
+
+/// the places of INTERNAL_INPUT in /etc/vh/acpi.conf
+fn internalInput() []const []const u8 {
+    var acpi: vh.Kv = .{};
+    acpi.read(ACPI_CONF, true);
+    var places: vh.Strv = .{};
+    var it = mem.tokenizeAny(u8, acpi.get("INTERNAL_INPUT", ""), " \t");
+    while (it.next()) |t| places.add(t);
+    return places.slice();
+}
+
+/// the input devices the combination listens to, by their names in /sys/class/input (event0 ...)
+fn comboKeyboards() []const []const u8 {
+    const places = internalInput();
+    var found: vh.Strv = .{};
+    for (globDir("/sys/class/input", "event")) |e| {
+        const d = vh.fmt("/sys/class/input/{s}/device", .{e});
+        const real = vh.realpath(d) catch continue;
+        if (comboKeyboard(vh.rd(vh.fmt("{s}/phys", .{d})), real, vh.rd(vh.fmt("{s}/capabilities/key", .{d})), places)) found.add(e);
+    }
+    return found.slice();
+}
+
+/// "event0 (AT Translated Set 2 keyboard), event5 (...)": the log and the test mode
+fn keyboardsText(names: []const []const u8) []const u8 {
+    if (names.len == 0) return "no built-in keyboard";
+    var s: std.ArrayList(u8) = .empty;
+    for (names, 0..) |e, i| s.print(vh.gpa, "{s}{s} ({s})", .{ if (i > 0) ", " else "", e, vh.rd(vh.fmt("/sys/class/input/{s}/device/name", .{e})) }) catch vh.oom();
+    return s.items;
+}
 
 fn daemonLoop(conf: *const vh.Kv) noreturn {
     const tag = conf.get("TAG", "");
+    const combo = vh.eql(conf.get("COMBO", "no"), "yes");
     var armed: [512]u8 = undefined;
     var armed_len: usize = 0;
     var prod_buf: [32]u8 = undefined;
     var prod: []const u8 = "";
-    var pfd: [2]linux.pollfd = undefined;
+    // the uevent socket, then the keyboards of the combination (kbd_name: their event names)
+    var pfd: [1 + MAX_KBD]linux.pollfd = undefined;
+    var kbd_name: [1 + MAX_KBD][]const u8 = undefined;
     var np: usize = 0;
     var nl: vh.fd_t = -1;
-    var kbd: vh.fd_t = -1;
     var wd: vh.fd_t = -1;
     if (tag.len > 0) {
         const vp = parseTagOrDie(tag);
@@ -300,16 +349,19 @@ fn daemonLoop(conf: *const vh.Kv) noreturn {
             @memcpy(armed[0..armed_len], p[0..armed_len]);
         }
     }
-    if (vh.eql(conf.get("COMBO", "no"), "yes")) {
-        for (globDir("/sys/class/input", "event")) |e| {
-            // only the internal i8042 keyboard
-            if (!vh.startsWith(vh.rd(vh.fmt("/sys/class/input/{s}/device/phys", .{e})), "isa0060/serio0")) continue;
-            kbd = vh.openFd(vh.fmt("/dev/input/{s}", .{e}), .{ .ACCMODE = .RDONLY }, 0) catch -1;
-            if (kbd >= 0) break;
-        }
-        if (kbd >= 0) {
-            pfd[np] = .{ .fd = kbd, .events = linux.POLL.IN, .revents = 0 };
+    var kbds: vh.Strv = .{};
+    if (combo) {
+        for (comboKeyboards()) |e| {
+            if (kbds.len() >= MAX_KBD) break;
+            const node = vh.fmt("/dev/input/{s}", .{e});
+            const fd = vh.openFd(node, .{ .ACCMODE = .RDONLY }, 0) catch {
+                vh.log("{s}: {s}", .{ node, vh.serr() });
+                continue;
+            };
+            pfd[np] = .{ .fd = fd, .events = linux.POLL.IN, .revents = 0 };
+            kbd_name[np] = e;
             np += 1;
+            kbds.add(e);
         }
     }
     var pet_s: u32 = 10;
@@ -325,7 +377,7 @@ fn daemonLoop(conf: *const vh.Kv) noreturn {
     status(if (armed_len > 0) "armed" else "disarmed");
     vh.log("{s}; tag {s}: {s}; combination: {s}; watchdog: {s}", .{
         describe(),                              if (tag.len > 0) tag else "-",
-        if (armed_len > 0) "inserted" else "absent", if (kbd >= 0) "yes" else "no",
+        if (armed_len > 0) "inserted" else "absent", if (combo) keyboardsText(kbds.slice()) else "no",
         if (wd < 0) "no" else if (wd_timeout) |t| vh.fmt("timeout {d} s, petted every {d} s", .{ t, pet_s }) else vh.fmt("petted every {d} s", .{pet_s}),
     });
     var rctrl = false;
@@ -346,7 +398,7 @@ fn daemonLoop(conf: *const vh.Kv) noreturn {
             vh.die("poll: {s}", .{vh.serr()});
         }
         if (pe != .SUCCESS) continue;
-        for (pfd[0..np]) |p| {
+        for (pfd[0..np], 0..) |*p, i| {
             if (p.revents == 0) continue;
             if (p.fd == nl) {
                 var from: linux.sockaddr.nl = undefined;
@@ -366,10 +418,22 @@ fn daemonLoop(conf: *const vh.Kv) noreturn {
                     vh.log("tag removed: alarm shutdown", .{});
                     wipe(false);
                 }
-            } else if (p.fd == kbd) {
+            } else {
                 var ev: [64]InputEvent = undefined;
-                const n = linux.read(kbd, @ptrCast(&ev), @sizeOf(@TypeOf(ev)));
-                if (linux.errno(n) != .SUCCESS or n == 0) continue;
+                const n = linux.read(p.fd, @ptrCast(&ev), @sizeOf(@TypeOf(ev)));
+                const e = linux.errno(n);
+                if (e == .INTR or e == .AGAIN) continue;
+                if (e != .SUCCESS or n == 0) {
+                    // the keyboard is gone (unplugged, its USB device reset): poll skips a
+                    // negative descriptor, and the keys it held no longer count
+                    vh.log("{s}: {s}: the combination no longer listens to it", .{ kbd_name[i], if (e != .SUCCESS) vh.strerror(e) else "end of input" });
+                    vh.close(p.fd);
+                    p.fd = -1;
+                    rctrl = false;
+                    ralt = false;
+                    end = false;
+                    continue;
+                }
                 for (ev[0 .. n / @sizeOf(InputEvent)]) |x| {
                     if (x.type != EV_KEY or x.value == 2) continue;
                     const down = x.value == 1;
@@ -403,6 +467,7 @@ pub fn main(init: std.process.Init.Minimal) void {
         const tag = conf.get("TAG", "");
         const armed: ?[]const u8 = if (tag.len > 0) tagPresent(parseTagOrDie(tag)) else null;
         vh.out("{s} | tag: {s} {s}\n", .{ describe(), if (tag.len > 0) tag else "-", if (armed != null) "inserted" else "" });
+        if (vh.eql(conf.get("COMBO", "no"), "yes")) vh.out("combination: {s}\n", .{keyboardsText(comboKeyboards())});
     } else if (vh.eql(mode, "final")) {
         wiperInit();
         if (vh.eql(conf.get("WATCHDOG", "no"), "yes")) {
@@ -441,4 +506,24 @@ test "parseTag and uev" {
     const m = "add@/devices/x\x00ACTION=add\x00DEVPATH=/devices/pci/usb1/1-2\x00SUBSYSTEM=usb\x00";
     try std.testing.expectEqualStrings("/devices/pci/usb1/1-2", uev(m, "DEVPATH"));
     try std.testing.expectEqualStrings("", uev(m, "PRODUCT"));
+}
+
+test "the combination listens to the built-in keyboards: not a touchpad, a keyboard from outside or uinput" {
+    const keyboard = "402000000 3803078f800d001 feffffdfffefffff fffffffffffffffe";
+    const none: []const []const u8 = &.{};
+    try std.testing.expect(comboKeyboard("isa0060/serio0/input0", "/sys/devices/platform/i8042/serio0/input/input0", keyboard, none));
+    // the touchpad on the PS/2 controller is built in, but has none of the keys
+    try std.testing.expect(!comboKeyboard("isa0060/serio1/input0", "/sys/devices/platform/i8042/serio1/input/input4", "e520 10000 0 0 0 0", none));
+    try std.testing.expect(comboKeyboard("i2c-XYZ0001:00", "/sys/devices/platform/soc/a90000.i2c/i2c-2/2-003a/0018:1234:5678.0001/input/input3", keyboard, none));
+    // a keyboard on internal USB, by the place the probe recorded (INTERNAL_INPUT)
+    const places: []const []const u8 = &.{"/pci0000:00/0000:00:14.0/usb1/1-8/"};
+    const usb = "/sys/devices/pci0000:00/0000:00:14.0/usb1/1-8/1-8:1.0/0003:1234:5678.0002/input/input5";
+    try std.testing.expect(!comboKeyboard("usb-0000:00:14.0-8/input0", usb, keyboard, none));
+    try std.testing.expect(comboKeyboard("usb-0000:00:14.0-8/input0", usb, keyboard, places));
+    // its input device with End but without the modifiers counts; the volume keys' one does not
+    try std.testing.expect(comboKeyboard("usb-0000:00:14.0-8/input1", "/sys/devices/pci0000:00/0000:00:14.0/usb1/1-8/1-8:1.1/0003:1234:5678.0003/input/input6", "80000000000 0", places));
+    try std.testing.expect(!comboKeyboard("usb-0000:00:14.0-8/input2", "/sys/devices/pci0000:00/0000:00:14.0/usb1/1-8/1-8:1.2/0003:1234:5678.0004/input/input7", "e000000000000 0", places));
+    // a keyboard plugged in from outside, and uinput that claims the PS/2 controller
+    try std.testing.expect(!comboKeyboard("usb-0000:00:14.0-2/input0", "/sys/devices/pci0000:00/0000:00:14.0/usb1/1-2/1-2:1.0/0003:1234:9abc.0005/input/input8", keyboard, places));
+    try std.testing.expect(!comboKeyboard("isa0060/serio0/input0", "/sys/devices/virtual/input/input12", keyboard, places));
 }

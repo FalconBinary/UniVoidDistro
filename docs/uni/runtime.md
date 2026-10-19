@@ -78,7 +78,7 @@ for, and last a raw interface whose DRM connector is not connected (the GPU the 
 wired to). `VH_BACKLIGHT=NAME vh-backlight +5` picks one by hand. `tests/init/stage1_test.sh`
 checks the choice on a fake `/sys/class/backlight`.
 
-## Built-in input for `vh-acpid`
+## Built-in input: `vh-acpid` and `vh-deadman`
 
 The idle watchdog of `vh-acpid` (lock and power off without physical input,
 `optional/deadman`) counts only built-in keyboards and touchpads. It knows the PS/2 (i8042)
@@ -90,6 +90,18 @@ the place of every built-in keyboard vh-acpid cannot tell (`internal_input`, in
 `/etc/vh/acpi.conf` as `INTERNAL_INPUT`. A keyboard whose USB device the kernel calls
 `unknown` (no ACPI description of the port) is not counted [VERIFY on hardware with an
 internal USB keyboard].
+
+The alarm combination of `optional/deadman` (Right Ctrl + Right Alt + End, `COMBO=yes` in
+`/etc/vh/deadman.conf`) works on the same built-in keyboards, not only on a PS/2 one:
+`vh-deadman` applies the same rule (`zig/lib/input.zig`, which `vh-acpid` uses too) and reads
+the same `INTERNAL_INPUT`. Of those devices it listens to the ones whose key bitmap
+(`capabilities/key`) has a key of the combination, so a touchpad never wakes it; the three
+keys count when they are held at once on any of them, since a keyboard may send its modifiers
+and its other keys through two input devices. A keyboard plugged in from outside and a
+virtual one (uinput) never trigger the alarm. `vh-deadman test` lists the keyboards the
+combination listens to. A keyboard that disappears (unplugged, its USB device reset) is
+dropped with a line in the log; one that appears after the service started counts only after
+`sv restart vh-deadman` [VERIFY on hardware with a keyboard on internal USB, I2C or SPI].
 
 ## `vh-kconf check`
 

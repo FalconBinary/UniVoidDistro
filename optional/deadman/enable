@@ -43,14 +43,16 @@ if [ "$a" != none ]; then
 	tag="$(cat "$d/idVendor"):$(cat "$d/idProduct")"
 	echo "tag: $tag ($(cat "$d/manufacturer" 2>/dev/null) $(cat "$d/product" 2>/dev/null))"
 fi
-printf 'Alarm combination Right Ctrl + Right Alt + End on the internal keyboard? [y/N] '
+printf 'Alarm combination Right Ctrl + Right Alt + End on the built-in keyboard? [y/N] '
 read -r a; combo=no; case $a in y|Y) combo=yes ;; esac
 
 cat > /etc/vh/deadman.conf <<EOT
 # void-hardperf-light: dead man's switch (optional/deadman, docs/13)
 # Tag: VID:PID of a USB device (lsusb). Removal = alarm shutdown.
 TAG="$tag"
-# Right Ctrl + Right Alt + End on the internal keyboard (i8042) = alarm shutdown
+# Right Ctrl + Right Alt + End on the built-in keyboard = alarm shutdown: a PS/2 or I2C one by
+# its bus, one on internal USB, SPI or the host bus by INTERNAL_INPUT in /etc/vh/acpi.conf (the
+# installer's probe); never a keyboard plugged in from outside or a virtual one (uinput)
 COMBO=$combo
 # the watchdog of the board ($wdm, from the plan): the daemon pets it; a dead or hung daemon
 # = reset (a hardware one resets through the firmware, and MOR wipes RAM), failing towards the safe side
