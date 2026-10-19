@@ -93,6 +93,163 @@ fragment (a lost symbol there fails the build, as for `NR_CPUS`) and writes no `
 `kcflags`; on a virtual machine (`class` vm) it keeps the level, for the reason above. In CI it
 would be wrong: `native` would be the runner's CPU, not the machine's.
 
+## The boot assessment
+
+`vh-limine-update` knows two series of UKIs on the ESP: the stock one, `linux-A.B.C_D.efi`
+(Void's signed kernel package through dracut-uefi), and the machine one, `linux-A.B.C-vh_N.efi`
+(`vh-kconf install`, [kernel/README.md](../../kernel/README.md) "install"; `uname -r` is
+`A.B.C-vh`). A new machine UKI becomes Limine's default only after it has booted successfully
+`MACHINE_BOOTS` times (3 by default, `/etc/vh/boot.conf`). Until then the default stays what it
+was: the newest stock UKI, or a machine UKI that has passed. A trial that hangs or fails never
+becomes the only way to boot: the boot after it reaches that default with no choice in the menu.
+
+### What Limine 12.9.3 offers
+
+The project pins no Limine version: the installer and thor take Void's `limine` package, 12.9.3
+on 2026-10-19 (`srcpkgs/limine/template` of void-packages). Read in that version's source
+(`common/menu.c`, `common/lib/bli.c`), its `CONFIG.md` and its ChangeLog:
+
+- **No boot counting**: no tries counter on an entry, no boot-once-then-fall-back of its own.
+- **systemd's Boot Loader Interface**, variables of the vendor GUID
+  `4a67b082-0a4c-41cf-b6c7-440b29bb8c4f` (first support in 9.2.0, entry and timeout control in
+  11.4.0, systemd-style entry identifiers in 12.7.0):
+  - `LoaderEntryOneShot`: the menu code reads it before anything else and erases it as soon as
+    it has read it, before any entry boots. It takes precedence over `remember_last_entry`,
+    `default_entry` and `LoaderEntryDefault`; a value that names no entry falls through to the
+    normal default.
+  - `LoaderEntryDefault`: read and never erased; consulted only when the config sets neither
+    `remember_last_entry` nor `default_entry` (`default_entry` wins over it since 12.9.0). A value
+    that names no entry leaves the first entry the default.
+  - `LoaderEntrySelected`: the identifier of the entry this boot started. `LoaderEntries`: the
+    identifiers of the menu. `LoaderFeatures`: bit 3 says one-shot entries work. `LoaderInfo`:
+    `Limine 12.9.3`. All four are volatile: a boot without Limine has none of them.
+  - An entry's identifier is its name mapped onto `[A-Za-z0-9+_.@-]`: `/` (a parent directory)
+    becomes `.`, every other byte `-`; a later duplicate gains `-2`, `-3`, ... The entry
+    `Void Linux 6.18.57-vh_2 (machine kernel)` is `Void-Linux-6.18.57-vh_2--machine-kernel-`.
+  - None of it depends on Secure Boot or the enrolled config hash. The variables only choose
+    among the entries of the hashed config, each pinned by its BLAKE2B; the editor stays off.
+
+### The mechanism
+
+- **A trial is a one-shot entry.** `vh-limine-update --new A.B.C-vh_N` writes the menu with the
+  new entry (after the stock entries) and sets `LoaderEntryOneShot` to its identifier. The next
+  boot goes through the same Limine, the same hashed config and the same BLAKE2B check of the UKI
+  as any boot, and Limine erases the variable before the kernel starts. If the kernel hangs,
+  panics (`panic=10` reboots), fails in the initramfs (`rd.emergency=poweroff`) or never
+  reaches the end of the boot, nothing sets the variable again, so the next boot is the default.
+  After each good boot of the trial, the late-boot service sets it again for the next one.
+- **Promotion is the persistent default entry.** After `MACHINE_BOOTS` good boots in a row the
+  service sets `LoaderEntryDefault` to the UKI's identifier. limine.conf does not change: no
+  signing at boot (so it works with `KEYS_OFFLINE=yes`), no write to the ESP at boot, and PCR 4
+  stays what the trial boots measured. The menu is unchanged as well: the stock entries stay at
+  its head, so when the variable is lost (an NVRAM reset), deleted (`--demote`) or names an
+  entry the config no longer has, Limine boots the newest stock UKI.
+- **The stock series is never removed or demoted.** It keeps upstream's rotation (`KEEP`, plus
+  the running kernel), its names and its place at the head of the menu, and it takes no part in
+  trials. The machine series is rotated on its own (`KEEP_MACHINE`, 2 by default, plus the
+  default, the trial and the running one; newest first after the stock entries) and never
+  deletes a stock UKI. With stock UKIs only, limine.conf is byte for byte upstream's.
+
+### What a good boot is
+
+The runit service `vh-boot-assess` runs `vh-limine-update --booted` once a boot, with the other
+services, after the root file system is read-write (it works with either stage 1). For a boot of
+the trial, or of the default machine kernel, it waits up to 120 s for the verdict of
+`vh-kconf check` (the vh-check service, 5 s after the services start). The boot is good when
+`/run/vh/check.done` says `machine=same lost=0`: the same machine, and no device that had a
+driver at installation is without one now. Neither the firmware failures (iwlwifi logs a failed
+load for every newer firmware API it tries first, on any kernel) nor new devices without a
+driver (a phone on USB has none on any kernel) decide it.
+
+On a machine kernel (release `*-vh`) `vh-kconf check` counts as refused the modules its build
+left out on purpose: `kernel/profiles/modules.deny`, the plan's deny list and the modules of the
+features the plan does not select, as `module_blacklist=` says on the stock kernel. Otherwise
+the GF63's camera and card reader, bound by their drivers when the installer probed and refused
+by its plan, would look lost.
+
+### The state machine
+
+The state is `/var/lib/vh/boot-assess` (root, 0600): the default machine UKI and its BLAKE2B
+(none: the stock UKI); the UKI on trial, its BLAKE2B, its state (trying or failed), its good
+boots so far, the boot that set the one-shot entry, the last boot judged
+(`/proc/sys/kernel/random/boot_id`) and the reason of a failure. At every boot `--booted` decides:
+
+| This boot | Then |
+|---|---|
+| started the trial's entry, and the verdict is good | one more good boot; at `MACHINE_BOOTS` the trial becomes the default (`LoaderEntryDefault`), else the one-shot entry is set again |
+| started the trial's entry, and the verdict is bad, or there is none | failed, with the verdict as the reason |
+| started another entry, after a one-shot entry set in an earlier boot that Limine consumed | failed: the trial did not reach the end of the boot (it failed, was interrupted, or another entry was chosen in the menu: the three look the same) |
+| as above, but this boot's `LoaderEntries` lacks the trial's identifier | failed: Limine did not know the entry, so the trial was never attempted |
+| a boot through Limine, and the one-shot entry is still set | failed: this Limine did not erase the variable, so trials are not safe with it |
+| no Limine (no `LoaderInfo`) | nothing: the trial waits |
+| no one-shot entry set yet (the boot loader of the install's boot could not take one) | set now, if this Limine supports one-shot entries and lists the trial |
+| already judged (the service ran twice) | nothing |
+
+A good boot of the trial's entry chosen by hand in the menu counts as well. A boot of the
+default machine kernel with a bad verdict is reported, not acted on; so is a boot of another
+entry while a machine UKI is the default. `LoaderEntryDefault` belongs to the tool: when it names
+another entry than the state's default, `--booted` sets it back. Every run that writes
+limine.conf compares the state with the ESP: a default or a trial whose UKI is gone is forgotten
+and its variable deleted; one whose BLAKE2B changed is another kernel and starts its assessment
+anew. A new trial passing makes the previous default machine UKI an ordinary entry, which the
+rotation removes in time.
+
+### Commands and settings
+
+```sh
+vh-limine-update --new 6.18.57-vh_1   # (the hook of vh-kconf install) the menu, then the trial
+vh-limine-update --booted             # the vh-boot-assess service, once a boot
+vh-limine-update --status             # the default, the trial, and this boot as Limine reports it
+vh-limine-update --retry [NAME]       # assess the failed trial again, or the machine UKI NAME
+vh-limine-update --demote             # the stock UKI is the default again (no key needed)
+```
+
+`/etc/vh/boot.conf`: `MACHINE_BOOTS=3` (1-10), `KEEP_MACHINE=2` (1-5). The admin's login on
+tty2 shows `/run/vh/boot-assess` when the service has news: a trial in progress, a failure and
+its reason, a promotion, a default machine kernel that lost drivers or was not the one booted.
+
+### tpm2-totp
+
+Every change of limine.conf changes `BOOTX64.EFI` (the enrolled hash is inside it) and with it
+PCR 4, and a UKI is measured into PCR 4 too: the code matches only the boot path it was sealed
+on. The install of a machine UKI asks for one reseal at the next boot, which is the first trial
+(the initramfs shows `/proc/version`: the machine kernel's). The promotion measures nothing new:
+no second reseal. A failed trial leaves the code sealed on the trial's path: the boot after it
+shows one mismatch, which its admin login then explains, and the service asks for a reseal at
+the boot after that. `--demote` asks for one as well.
+
+### What it protects, and what it does not
+
+| Protects | Residual risk | Speed cost | Convenience cost |
+|---|---|---|---|
+| a machine kernel that does not boot, or boots without a driver of the machine, never becomes the default; the boot after a failed trial reaches the default by itself | a default machine kernel that fails later (after a firmware update, with new hardware) is booted again until the stock entry is chosen in the menu and `--demote` is run; the boot after a failed trial shows one TOTP mismatch that cannot be told from tampering on that boot; an interrupted trial counts as failed; a Limine that stopped erasing `LoaderEntryOneShot` before it boots would retry a hanging trial at every boot, and the first trial with such a Limine is not protected [VERIFY with each Limine update: the tests/vm step `assess`] | none at boot: the service runs beside the others | `MACHINE_BOOTS` boots before the default changes; `--retry` after an interrupted trial |
+
+A hang without a panic needs a power cycle (or the deadman's watchdog, once that service runs);
+a panic reboots by itself; a failure in the initramfs powers the machine off.
+
+### Rejected
+
+- UEFI `BootNext` with a `Boot####` entry per UKI: the firmware deletes `BootNext` before it
+  boots the option, but the trial would bypass Limine (no BLAKE2B pin, no menu), PCR 4 would
+  differ from the Limine path, and `BootNext` and `BootCurrent` are as good as each firmware.
+- A second signed Limine in `\EFI\vh-trial\` with its own config (Limine reads the config next to
+  its executable first since 10.3.0): two loaders to sign and enroll, and `BootNext` to reach it.
+- `remember_last_entry`, or `LoaderEntryDefault` for the trial: not one-shot, so a kernel that
+  hangs would be booted again and again.
+- Rewriting limine.conf for the trial or the promotion: each rewrite needs the db key (offline
+  keys), a new enrollment, an ESP write at boot and a new PCR 4.
+- systemd-boot's boot counting: another boot loader; the project chose Limine
+  ([upstream docs/ru/03-boot.md](../ru/03-boot.md)).
+
+### Not yet
+
+`vh-kconf install` (the UKI from a CI bzImage: dracut `--no-kernel`, the firmware and the
+microcode in the initrd, the cmdline without module parameters) is still the next piece of
+track K: until it exists a machine UKI reaches the ESP only by hand. With it come two
+follow-ups: `vh-uki-verify` (offline keys) compares `.cmdline` with the stock UKI's reference,
+so the machine series needs a reference of its own; and `vh-audit`'s boot area expects
+`module.sig_enforce=1` and the module lock, which a kernel without modules has no use for.
+
 ## The local build, later
 
 Not written yet: it waits for upstream v0.3, which brings the kbuild root and thor's policy
@@ -117,6 +274,7 @@ directory; `vh-sched` built against the new kernel's BTF in the same step):
    smallest machine of the corpus], and never at boot.
 4. **The result goes the way of a CI kernel**: `vh-kconf install` (the UKI, signed;
    [kernel/README.md](../../kernel/README.md), "install"), then `vh-limine-update --new`, and
-   it becomes the default only after its boot assessment, as a kernel from CI does.
+   it becomes the default only after its [boot assessment](#the-boot-assessment), as a kernel
+   from CI does.
 5. **When**: on request, and after an update of the stock kernel, whose version the machine
    kernel follows (the stock series carries the security fixes and is the fallback).
