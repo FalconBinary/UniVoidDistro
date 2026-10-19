@@ -191,8 +191,10 @@ entry while a machine UKI is the default. `LoaderEntryDefault` belongs to the to
 another entry than the state's default, `--booted` sets it back. Every run that writes
 limine.conf compares the state with the ESP: a default or a trial whose UKI is gone is forgotten
 and its variable deleted; one whose BLAKE2B changed is another kernel and starts its assessment
-anew. A new trial passing makes the previous default machine UKI an ordinary entry, which the
-rotation removes in time.
+anew. The BLAKE2B is the one limine.conf pins, taken after signing: this relies on `sbctl sign`
+leaving a file it has signed as it is ("already signed"), as the hash pins of every kernel update
+already do [VERIFY with the system's sbctl]. A new trial passing makes the previous default
+machine UKI an ordinary entry, which the rotation removes in time.
 
 ### Commands and settings
 

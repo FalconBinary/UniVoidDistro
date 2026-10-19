@@ -128,16 +128,22 @@ the LUKS passphrase needs 2 GiB, because cryptsetup gives the PBKDF at most half
   is an error, as for `mandatory`. `hardening` gains CET (`X86_USER_SHADOW_STACK`,
   `X86_KERNEL_IBT`): the kernel checks CPUID itself.
 - **`resolve --plan`**: class fragments from the plan, `NR_CPUS` from `cpu.possible`, `KCFLAGS`
-  from the plan (in CI: a model -> `-march` table, else `-march=x86-64-vN`; on the machine:
-  `CONFIG_X86_NATIVE_CPU`).
+  from the plan (in CI: a model -> `-march` table, else `-march=x86-64-vN`, and always the
+  level in a virtual machine; on the machine: `CONFIG_X86_NATIVE_CPU`,
+  [kernel.md](kernel.md#-march)). Every x86_64 machine of `kernel/hw` is resolved on every
+  push and built on request ([kernel.md](kernel.md#the-ci-matrix)).
 - **The GF63 oracle.** `resolve` on `kernel/hw/gf63.zon` gives the same `lsmod` and `.config`
   before and after the split; the golden files are in `tests/kernel/golden/gf63/`.
 - **Where the kernel is built (U3).** Locally in `/var/lib/vh/roots/kbuild` (already allowed
   by the upstream principles: compilers only there, 0700 root): namespaces, no network,
   Landlock on the build directory, `SCHED_IDLE`, `-j` by cores and memory, ThinLTO only with
   enough memory [VERIFY]. Or in CI from a committed `hw.zon`, as upstream does for the GF63.
+  The local build is designed ([kernel.md](kernel.md#the-local-build-later)) and waits for
+  upstream v0.3.
 - **Boot assessment (U3).** `vh-limine-update` makes a new machine UKI the default only after
-  it has booted successfully N times; the stock UKI is never removed or demoted.
+  it has booted successfully N times; the stock UKI is never removed or demoted. Through
+  Limine's Boot Loader Interface: the trials are one-shot entries, the default is
+  `LoaderEntryDefault`, limine.conf does not change at boot ([kernel.md](kernel.md#the-boot-assessment)).
 - **ARM64 (U5).** The pins of Void's arm64 `linux6.18` (`.config`, `modules.*`), the arm64
   profiles, `-mcpu` by core.
 
@@ -201,7 +207,38 @@ hardware enters: N shows the plan and the tier and runs the gate; G is GPU-vendo
 
 ### State (2026-10-19)
 
-M0, U1 and U2 are done.
+M0, U1 and U2 are done. U3 is done but for what waits: the local build in the kbuild root
+(upstream v0.3; designed in [kernel.md](kernel.md#the-local-build-later)) and `vh-kconf install`,
+the UKI from a CI kernel (the next piece of track K, kernel/README.md "install").
+
+U3 verified, in containers on the Mac: `tests/kernel/matrix.sh` plans every x86_64 machine of
+`kernel/hw` (gf63, amd-desktop, intel-hybrid-laptop, qemu-q35) in tiered mode and resolves it,
+twice, with the same bytes, every class symbol known to the pinned config, no conflict with a
+class, the build's invariants, `NR_CPUS` and the plan's `-march` (accepted by the Mac's clang);
+it fails on a class symbol the pins do not have and on two classes in conflict. `-march`: a unit
+test on the real hwdb (each fixture's model, and the x86-64 level for the same CPUs in a virtual
+machine); every golden plan unchanged. `vh-kconf check`: `lost=N`, and on a machine kernel the
+modules its build left out count as refused (the GF63's camera and card reader are not lost);
+the GF63 oracle holds with resolve's deny list factored out. The boot assessment: Limine's
+behaviour read in the source of 12.9.3, the version Void ships; unit tests of the identifiers,
+the variables, the verdict, the state file and every transition; end to end on a tmpfs ESP and
+a tmpfs in place of efivarfs through simulated Limine boots (44 checks: three good boots to the
+default with limine.conf unchanged, a lost driver, a hang, another entry chosen, a Limine that
+does not erase, an unknown identifier, `--demote`, the rotation, a rebuilt trial, no stock UKI);
+stock-only ESPs exactly as upstream's `vh-limine-update` (`limine_diff.sh` against a build of
+`upstream/main`: no difference in 24 cases); `vh-audit`'s new lines by hand on a mock ESP.
+
+U3 not verified: no GitHub run (gh is not logged in here): the adapt workflow with the matrix,
+`kernel-custom` with `hw=all` (no kernel has been built yet for amd-desktop,
+intel-hybrid-laptop or qemu-q35, so whether their class symbols survive olddefconfig is open),
+and whether the runner's clang knows every `-march`; the workflows were parsed and their shell
+checked, not linted with actionlint (not installed). The tests/vm step `assess` is written but
+not run (the rig needs an installation: hours under TCG on the Mac; kvm-smoke runs it with
+`step=assess`). No machine kernel has booted anywhere: a kvm-smoke run that boots the q35
+machine kernel of the matrix needs `vh-kconf install`, so it was not written. Nothing on real
+hardware. [VERIFY]: Limine erasing the one-shot entry on each firmware (the `assess` step checks
+OVMF), `sbctl sign` leaving a signed file unchanged, clang 19 for `znver5`, the speed of each
+`-march` by class.
 
 U2 verified, in containers on the Mac (aarch64; the `adapt` workflow repeats it on x86_64 once
 the repository is on GitHub): the unit tests of `kernel/` (30), `adapt/` (12), `init/` (27) and
@@ -259,7 +296,7 @@ The upstream method applies (`bench/`, alternating runs, medians and p95, bootst
 |---|---|
 | probe | round trip of format 2; probe on every fixture; `--save` then `--from` gives the same `hw.zon` |
 | plan | golden plans of every fixture; determinism; strict on a reduced fixture exits 3; tiered lists the acknowledgements; `explain` |
-| kernel | the GF63 oracle; `resolve --plan` on every x86_64 fixture; `diff` reports no lost class symbol; CI builds (U3) |
+| kernel | the GF63 oracle; `resolve --plan` on every x86_64 fixture (`tests/kernel/matrix.sh`); `diff` reports no lost class symbol; CI builds of every x86_64 machine (`kernel-custom` with `hw=all`) |
 | installer | the package, firmware, blacklist and command-line functions against golden output per fixture; for the GF63 against the current upstream output; `bash -n`; `10-install.sh --dry-run` with a fixture plan |
 | lint | no hardware constant outside `hwdb/`, `kernel/profiles/class/`, the fixtures and the pins |
 | VM matrix (V) | q35 x {nvme, ahci, virtio-blk, virtio-scsi} x {virtio-net, e1000e, igb} x {virtio-gpu, bochs, qxl} x CPU {Skylake-Client, Icelake-Server, EPYC-Genoa, x86-64-v2} x {tpm-crb, tpm-tis, none} x {SB on, off} x RAM {2G, 8G}: installs and boots, or is refused exactly as expected; SeaBIOS: refused; aarch64 virt |
