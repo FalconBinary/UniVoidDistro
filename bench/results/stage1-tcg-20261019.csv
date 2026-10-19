@@ -1,0 +1,23 @@
+boot,variant,warmup,init_s,start_s,done_s,stage1_ms,init_ms,self_ms,steps
+0,zig,1,5.121811,15.214901,20.207677,4992.8,15085.9,4999,pseudofs=255 static-devnodes=2583 kmods=3 udev-start=103 udev-trigger=178 udev-settle=643 console=6 remount-root=7 mount-all=5 swap=0 vh-mounts=2 misc=45 vh-zram=90 vh-nftables=802 vh-mm=1 sysctl=74 vh-apparmor=166 runit-control=0 vh-runtime=7 vh-suid=5 dmesg=12 sbin-merge=0 cleanup=3 vh-modlock=0
+1,zig,0,4.900108,14.173837,18.825421,4651.6,13925.3,4657,pseudofs=204 static-devnodes=2526 kmods=3 udev-start=86 udev-trigger=156 udev-settle=564 console=6 remount-root=6 mount-all=5 swap=0 vh-mounts=2 misc=42 vh-zram=80 vh-nftables=720 vh-mm=1 sysctl=78 vh-apparmor=148 runit-control=1 vh-runtime=6 vh-suid=4 dmesg=11 sbin-merge=0 cleanup=2 vh-modlock=0
+2,shell,1,4.918766,14.446424,20.100138,5653.7,15181.4,,
+3,zig,0,3.386005,13.278903,18.188598,4909.7,14802.6,4916,pseudofs=252 static-devnodes=2567 kmods=2 udev-start=99 udev-trigger=178 udev-settle=578 console=6 remount-root=7 mount-all=5 swap=0 vh-mounts=2 misc=44 vh-zram=90 vh-nftables=804 vh-mm=1 sysctl=83 vh-apparmor=163 runit-control=0 vh-runtime=7 vh-suid=5 dmesg=12 sbin-merge=1 cleanup=1 vh-modlock=0
+4,shell,0,5.136981,15.004548,21.053048,6048.5,15916.1,,
+5,shell,0,3.404691,13.276251,19.296049,6019.8,15891.4,,
+6,shell,0,4.968154,14.21635,19.954695,5738.3,14986.5,,
+7,zig,0,5.177382,15.05875,20.222824,5164.1,15045.4,5170,pseudofs=265 static-devnodes=2584 kmods=3 udev-start=102 udev-trigger=181 udev-settle=723 console=6 remount-root=7 mount-all=6 swap=0 vh-mounts=2 misc=44 vh-zram=92 vh-nftables=845 vh-mm=1 sysctl=81 vh-apparmor=192 runit-control=1 vh-runtime=8 vh-suid=5 dmesg=13 sbin-merge=0 cleanup=2 vh-modlock=0
+8,shell,0,3.276773,12.631923,18.300868,5668.9,15024.1,,
+9,zig,0,3.408515,13.257991,18.200072,4942.1,14791.6,4948,pseudofs=257 static-devnodes=2568 kmods=3 udev-start=100 udev-trigger=177 udev-settle=615 console=6 remount-root=7 mount-all=5 swap=0 vh-mounts=2 misc=43 vh-zram=88 vh-nftables=791 vh-mm=1 sysctl=83 vh-apparmor=165 runit-control=0 vh-runtime=7 vh-suid=5 dmesg=12 sbin-merge=0 cleanup=3 vh-modlock=0
+10,zig,0,5.111275,15.078983,20.093981,5015.0,14982.7,5021,pseudofs=254 static-devnodes=2584 kmods=3 udev-start=103 udev-trigger=178 udev-settle=649 console=6 remount-root=7 mount-all=5 swap=0 vh-mounts=3 misc=43 vh-zram=91 vh-nftables=803 vh-mm=1 sysctl=86 vh-apparmor=165 runit-control=1 vh-runtime=8 vh-suid=5 dmesg=16 sbin-merge=1 cleanup=2 vh-modlock=0
+11,shell,0,3.238643,12.45803,18.161501,5703.5,14922.9,,
+12,zig,0,5.138258,15.025598,20.082033,5056.4,14943.8,5063,pseudofs=254 static-devnodes=2594 kmods=3 udev-start=102 udev-trigger=179 udev-settle=702 console=6 remount-root=8 mount-all=6 swap=1 vh-mounts=2 misc=45 vh-zram=91 vh-nftables=791 vh-mm=1 sysctl=77 vh-apparmor=168 runit-control=1 vh-runtime=7 vh-suid=5 dmesg=12 sbin-merge=0 cleanup=3 vh-modlock=0
+13,shell,0,3.23279,12.63431,18.296711,5662.4,15063.9,,
+14,zig,0,3.397249,13.16795,18.20721,5039.3,14810.0,5045,pseudofs=254 static-devnodes=2572 kmods=2 udev-start=100 udev-trigger=179 udev-settle=688 console=7 remount-root=7 mount-all=5 swap=0 vh-mounts=2 misc=45 vh-zram=89 vh-nftables=810 vh-mm=1 sysctl=82 vh-apparmor=166 runit-control=1 vh-runtime=7 vh-suid=5 dmesg=12 sbin-merge=0 cleanup=3 vh-modlock=0
+15,shell,0,3.423566,13.480243,19.693991,6213.7,16270.4,,
+16,zig,0,3.419777,13.25063,18.29597,5045.3,14876.2,5052,pseudofs=254 static-devnodes=2561 kmods=3 udev-start=101 udev-trigger=177 udev-settle=699 console=6 remount-root=7 mount-all=5 swap=1 vh-mounts=3 misc=44 vh-zram=89 vh-nftables=822 vh-mm=1 sysctl=79 vh-apparmor=165 runit-control=0 vh-runtime=7 vh-suid=4 dmesg=13 sbin-merge=0 cleanup=3 vh-modlock=0
+17,zig,0,5.104366,15.052479,20.095711,5043.2,14991.3,5049,pseudofs=252 static-devnodes=2574 kmods=2 udev-start=101 udev-trigger=176 udev-settle=715 console=6 remount-root=8 mount-all=5 swap=0 vh-mounts=3 misc=43 vh-zram=91 vh-nftables=791 vh-mm=1 sysctl=80 vh-apparmor=166 runit-control=0 vh-runtime=7 vh-suid=5 dmesg=14 sbin-merge=0 cleanup=2 vh-modlock=0
+18,shell,0,5.094047,14.995871,21.12988,6134.0,16035.8,,
+19,zig,0,5.081794,14.92731,19.975429,5048.1,14893.6,5054,pseudofs=253 static-devnodes=2595 kmods=2 udev-start=101 udev-trigger=180 udev-settle=686 console=6 remount-root=8 mount-all=5 swap=0 vh-mounts=2 misc=43 vh-zram=90 vh-nftables=800 vh-mm=1 sysctl=79 vh-apparmor=169 runit-control=0 vh-runtime=7 vh-suid=5 dmesg=12 sbin-merge=0 cleanup=3 vh-modlock=0
+20,shell,0,5.138274,15.088224,21.214357,6126.1,16076.1,,
+21,shell,0,5.090001,14.901788,21.0529,6151.1,15962.9,,
