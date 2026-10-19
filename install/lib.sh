@@ -12,10 +12,36 @@ else
 	C_B="" C_R="" C_G="" C_Y="" C_0=""
 fi
 
-say()  { printf '%s==>%s %s\n' "$C_B" "$C_0" "$*"; }
+say()  { printf '%s==>%s %s%s\n' "$C_B" "$C_0" "$*" "$(say_mem)"; }
 ok()   { printf '%s  ok%s %s\n' "$C_G" "$C_0" "$*"; }
 warn() { printf '%s  !!%s %s\n' "$C_Y" "$C_0" "$*" >&2; }
 die()  { printf '%sERROR:%s %s\n' "$C_R" "$C_0" "$*" >&2; exit 1; }
+
+# With VH_SAY_MEM=1 (10-install.sh: the live environment builds everything in its RAM) every
+# heading also shows the RAM: MemAvailable now, what tmpfs holds (Shmem), and the lowest
+# MemAvailable mem_sampler saw since the previous heading, which is where a build peaks
+VH_MEM_LOW=/tmp/vh-mem.low
+say_mem() {
+	[ "${VH_SAY_MEM:-0}" = 1 ] && [ -r /proc/meminfo ] || return 0
+	local low=
+	if [ -s "$VH_MEM_LOW" ]; then low=$(cat "$VH_MEM_LOW"); : > "$VH_MEM_LOW"; fi
+	awk -v low="$low" '/^MemAvailable:/ { a = $2 } /^Shmem:/ { s = $2 }
+		END {
+			if (a == "") exit
+			printf "   [RAM: %d MiB available, %d MiB in tmpfs", a / 1024, s / 1024
+			if (low != "") printf "; lowest since the previous step %d MiB", low / 1024
+			printf "]"
+		}' /proc/meminfo
+}
+# every 2 s, the lowest MemAvailable into $VH_MEM_LOW (say_mem empties it at each heading)
+mem_sampler() {
+	local a l
+	while sleep 2; do
+		a=$(awk '/^MemAvailable:/ { print $2 }' /proc/meminfo) || continue
+		l=$(cat "$VH_MEM_LOW" 2>/dev/null) || l=
+		if [ -z "$l" ] || [ "$a" -lt "$l" ]; then echo "$a" > "$VH_MEM_LOW"; fi
+	done
+}
 
 # In --dry-run mode commands are printed instead of executed.
 DRY_RUN=${DRY_RUN:-0}

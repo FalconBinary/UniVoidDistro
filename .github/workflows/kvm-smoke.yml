@@ -13,6 +13,11 @@ on:
     - cron: "17 4 * * 1"
 permissions:
   contents: read
+env:
+  # the VM's RAM in MiB: 4 GiB for now, since the RefursWM build ran out of memory in vhvm.py's
+  # default 3 GiB (run 39297735098); back to 3072 once the installer fits (it prints its RAM at
+  # every heading)
+  VH_MEM: "4096"
 jobs:
   smoke:
     runs-on: ubuntu-latest
@@ -51,16 +56,16 @@ jobs:
       - name: install
         env:
           VH_ACCEL: kvm
-        run: python3 tests/vm/vhvm.py install --iso "iso/$(. tests/vm/void-live.pins; echo $ISO)" --timeout 10800
+        run: python3 tests/vm/vhvm.py install --iso "iso/$(. tests/vm/void-live.pins; echo $ISO)" --mem "$VH_MEM" --timeout 10800
       - name: check
         env:
           VH_ACCEL: kvm
-        run: python3 tests/vm/check.py "${{ github.event.inputs.step || 'base' }}" --repo
+        run: python3 tests/vm/check.py "${{ github.event.inputs.step || 'base' }}" --repo --mem "$VH_MEM"
       - name: the rig's real hw.zon and plan (they replace the synthesised qemu-q35 fixture)
         env:
           VH_ACCEL: kvm
         run: |
-          python3 tests/vm/vhvm.py boot --timeout 1800 \
+          python3 tests/vm/vhvm.py boot --mem "$VH_MEM" --timeout 1800 \
             --run "doas /usr/local/sbin/vh-kconf probe --stdout" \
             --run "cat /etc/vh/plan-report.txt" | tee build-vm-probe.log
       - uses: actions/upload-artifact@v4

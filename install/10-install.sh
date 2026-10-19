@@ -37,6 +37,13 @@ done
 
 need_root
 load_config "$CFG"
+# the RAM at every heading (lib.sh: say_mem): the installation builds in the live environment's RAM
+if [ "$DRY_RUN" = 0 ] && [ -r /proc/meminfo ]; then
+	export VH_SAY_MEM=1
+	: > "$VH_MEM_LOW"
+	mem_sampler &
+	trap 'kill '"$!"' 2>/dev/null' EXIT
+fi
 MNT=/mnt
 REPO=$VH_MIRROR/current
 NONFREE=$VH_MIRROR/current/nonfree
