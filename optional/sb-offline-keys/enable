@@ -39,10 +39,17 @@ install -d -m 0700 /run/vh-keys/sbctl /run/vh-keys/ref
 cp -a /var/lib/sbctl/keys/. /run/vh-keys/sbctl/
 
 say "UKI reference values"
-cur=$(ls -t /boot/efi/EFI/void/linux-*.efi 2>/dev/null | head -1 || true)
-if [ -z "$cur" ]; then mount /boot/efi && trap 'umount /boot/efi' EXIT; cur=$(ls -t /boot/efi/EFI/void/linux-*.efi | head -1); fi
+# the newest stock UKI (linux-A.B.C_D.efi); a machine UKI (linux-A.B.C-vh_N.efi, vh-kconf install)
+# has references of its own (docs/uni/kernel.md)
+# shellcheck disable=SC2010 # UKI names are linux-VERSION.efi; ls -t orders them by time
+newest() { ls -t /boot/efi/EFI/void/linux-*.efi 2>/dev/null | grep "$@" -e '-vh_[0-9]*\.efi$' | head -1 || true; }
+cur=$(newest -v)
+if [ -z "$cur" ]; then mount /boot/efi && trap 'umount /boot/efi' EXIT; cur=$(newest -v); fi
+[ -n "$cur" ] || die "no stock UKI in /boot/efi/EFI/void"
 cp -a "$cur" /run/vh-keys/ref/  # a copy of the current UKI, for comparison during recovery
 /usr/local/sbin/vh-uki-verify --init "$cur"
+machine=$(newest)
+[ -z "$machine" ] || /usr/local/sbin/vh-uki-verify --init "$machine"
 sync
 
 say "deleting the keys from the root file system"

@@ -16,11 +16,18 @@
 //! the running system cannot rewrite them without the media. Residual risk: a rootkit that
 //! hijacked the check itself or sbctl bypasses it; only signing from the live USB closes that fully.
 //!
+//! UniVoidDistro: a machine UKI (linux-A.B.C-vh_N.efi of vh-kconf install, docs/uni/kernel.md) has
+//! references of its own, cmdline-machine and initrd-machine.sha256: its command line is the
+//! stock one without the module parameters, its initrd holds firmware and no modules. The first
+//! one is shown against the stock reference and confirmed by hand; its kernel comes from no
+//! package, so its SHA-256 is shown to be compared with the release's SHA256SUMS on another device.
+//!
 //! PE, cpio and the compressed initramfs are untrusted data: every size is checked, and the
 //! ReleaseSafe bounds checks apply on top.
 //!
 //!   vh-uki-verify UKI VERSION    -- check (called by vh-limine-update before signing)
-//!   vh-uki-verify --init [UKI]   -- record the reference values from the current system (after a clean install)
+//!   vh-uki-verify --init [UKI]   -- record the reference values from the current system (after a clean
+//!                                   install); a machine UKI records the machine series' references
 const std = @import("std");
 const vh = @import("vh");
 const hash = @import("hash");
@@ -37,12 +44,45 @@ const inputs = [_][]const u8{
     "/etc/dracut.conf",              "/etc/dracut.conf.d",             "/etc/default/dracut-uefi-hook",
     "/etc/kernel.d",                 "/etc/vh/boot.conf",              "/etc/vh/vh.env",
     "/usr/local/sbin/vh-limine-update", "/usr/local/sbin/vh-uki-verify", "/usr/local/lib/dracut",
-    "/etc/modprobe.d",
+    "/etc/modprobe.d",                  "/usr/local/sbin/vh-kconf",
 };
+
+/// the reference files of a series: the stock UKI's, or the machine UKI's (vh-kconf install)
+const Refs = struct { cmdline: []const u8, initrd: []const u8 };
+
+fn refsOf(machine: bool) Refs {
+    return if (machine)
+        .{ .cmdline = REF ++ "/cmdline-machine", .initrd = REF ++ "/initrd-machine.sha256" }
+    else
+        .{ .cmdline = REF ++ "/cmdline", .initrd = REF ++ "/initrd.sha256" };
+}
+
+/// a version of the machine series, A.B.C-vh_N, or the file name of such a UKI
+pub fn isMachine(name: []const u8) bool {
+    return mem.indexOf(u8, name, "-vh_") != null;
+}
+
+/// the parameters of one command line not in the other, in its order (white space separates them)
+pub fn missingFrom(a: []const u8, b: []const u8) []const []const u8 {
+    var out: vh.Strv = .{};
+    var it = mem.tokenizeAny(u8, a, " \t\n");
+    outer: while (it.next()) |p| {
+        var jt = mem.tokenizeAny(u8, b, " \t\n");
+        while (jt.next()) |q| if (vh.eql(p, q)) continue :outer;
+        out.add(p);
+    }
+    return out.slice();
+}
+
+fn showDiff(was: []const u8, now: []const u8) void {
+    for (missingFrom(was, now)) |p| vh.out("     - {s}\n", .{p});
+    for (missingFrom(now, was)) |p| vh.out("     + {s}\n", .{p});
+}
 
 const usage_text =
     \\vh-uki-verify UKI VERSION    -- check (called by vh-limine-update before signing)
     \\vh-uki-verify --init [UKI]   -- record the reference values from the current system (after a clean install)
+    \\                               (a machine UKI linux-A.B.C-vh_N.efi: the references of the machine series)
     \\
 ;
 
@@ -276,14 +316,15 @@ fn init(uki: ?[]const u8) void {
     inputHashes(&in);
     writeList(REF ++ "/inputs.sha256", &in);
     if (uki) |u| {
+        const refs = refsOf(isMachine(u[if (mem.lastIndexOfScalar(u8, u, '/')) |j| j + 1 else 0..]));
         const s = readUki(u);
         const c = section(s, ".cmdline");
         const i = section(s, ".initrd");
         if (c == null or i == null) vh.die("{s}: no .cmdline and .initrd sections", .{u});
-        vh.writeAtomic(REF ++ "/cmdline", rstrip0(c.?.p), 0o600);
+        vh.writeAtomic(refs.cmdline, rstrip0(c.?.p), 0o600);
         var ir: List = .{};
         initrdFiles(i.?.p, &ir);
-        writeList(REF ++ "/initrd.sha256", &ir);
+        writeList(refs.initrd, &ir);
     }
     vh.outs("reference values written to " ++ REF ++ "\n");
 }
@@ -342,12 +383,28 @@ fn verify(uki: []const u8, version: []const u8) void {
         }
     }
     const s = readUki(uki);
-    vh.outs("3. .cmdline and .uname of the new UKI\n");
-    const want = vh.readFile(REF ++ "/cmdline") catch vh.die(REF ++ "/cmdline: {s}", .{vh.serr()});
+    const machine = isMachine(version);
+    const refs = refsOf(machine);
+    var new_cmdline_ref = false;
+    vh.out("3. .cmdline and .uname of the new UKI{s}\n", .{if (machine) " (the machine series)" else ""});
     const got: []const u8 = if (section(s, ".cmdline")) |c| rstrip0(c.p) else "";
-    if (!vh.eql(got, want)) {
-        vh.out("   x the cmdline differs from the reference:\n     was: {s}\n     now: {s}\n", .{ mem.sliceTo(want, 0), got });
-        bad += 1;
+    if (machine and !vh.pathExists(refs.cmdline)) {
+        // the first machine UKI under offline keys: against the stock reference, by hand
+        const stock = vh.readFile(REF ++ "/cmdline") catch vh.die(REF ++ "/cmdline: {s}", .{vh.serr()});
+        vh.outs("   the first machine UKI: its command line against the stock UKI's reference\n");
+        showDiff(mem.sliceTo(stock, 0), got);
+        vh.flush();
+        if (!confirm("Are these the changes vh-kconf install reported (module parameters only)?")) {
+            vh.outs("   x the machine command line was not confirmed\n");
+            bad += 1;
+        } else new_cmdline_ref = true;
+    } else {
+        const want = vh.readFile(refs.cmdline) catch vh.die("{s}: {s}", .{ refs.cmdline, vh.serr() });
+        if (!vh.eql(got, want)) {
+            vh.out("   x the cmdline differs from the reference:\n     was: {s}\n     now: {s}\n", .{ mem.sliceTo(want, 0), got });
+            showDiff(mem.sliceTo(want, 0), got);
+            bad += 1;
+        }
     }
     const uname: []const u8 = if (section(s, ".uname")) |u| rstrip0(u.p) else "";
     const ubase = uname[0 .. mem.indexOfScalar(u8, uname, '_') orelse uname.len];
@@ -358,11 +415,19 @@ fn verify(uki: []const u8, version: []const u8) void {
     }
     if (bad > 0) vh.die("{d} discrepancies. If the changes are yours and deliberate, refresh the reference values: " ++
         "doas vh-uki-verify --init (with the media attached)", .{bad});
-    vh.outs("4. initramfs content against the previously approved UKI\n");
+    if (machine) {
+        // the kernel of a machine UKI is no package's file: its hash against the release, elsewhere
+        const k = section(s, ".linux") orelse vh.die("{s}: no .linux section", .{uki});
+        vh.out("   the machine kernel (.linux): sha256 {s}\n" ++
+            "   compare it with bzImage-vh-* in the release's SHA256SUMS, read on another device (the release page)\n", .{hash.sha256Hex(k.p)});
+        vh.flush();
+        if (!confirm("Is it the hash of the release's bzImage?")) vh.die("the machine kernel was not confirmed: signing cancelled", .{});
+    }
+    vh.out("4. initramfs content against the previously approved UKI{s}\n", .{if (machine) " of the machine series" else ""});
     const ir = section(s, ".initrd") orelse vh.die("{s}: no .initrd section", .{uki});
     var old: List = .{};
     var now: List = .{};
-    readList(REF ++ "/initrd.sha256", &old);
+    readList(refs.initrd, &old);
     initrdFiles(ir.p, &now);
     var added: vh.Strv = .{};
     var removed: vh.Strv = .{};
@@ -392,8 +457,12 @@ fn verify(uki: []const u8, version: []const u8) void {
     if ((added.len() > 0 or removed.len() > 0 or changed.len() > 0) and
         !confirm("Are the initramfs changes expected for this update (new kernel, microcode, dracut)?"))
         vh.die("the initramfs changes were not confirmed: signing cancelled", .{});
-    writeList(REF ++ "/initrd.sha256", &now);
+    writeList(refs.initrd, &now);
     vh.outs("   initramfs reference refreshed\n");
+    if (new_cmdline_ref) {
+        vh.writeAtomic(refs.cmdline, got, 0o600);
+        vh.outs("   the command line reference of the machine series recorded\n");
+    }
 }
 
 pub fn main(init_: std.process.Init.Minimal) void {
@@ -417,4 +486,18 @@ test "cpio: a truncated archive stays within bounds" {
     _ = parseCpio(hdr ++ "a.txt\x00\x00\x00hello", 0, &l, "");
     try std.testing.expectEqual(@as(usize, 1), l.e.items.len);
     try std.testing.expectEqualStrings("a.txt", l.e.items[0].name);
+}
+
+test "the machine series: its references, the difference of two command lines" {
+    try std.testing.expect(isMachine("6.18.57-vh_2") and isMachine("linux-6.18.57-vh_2.efi") and !isMachine("6.18.57_1"));
+    try std.testing.expectEqualStrings(REF ++ "/cmdline-machine", refsOf(true).cmdline);
+    try std.testing.expectEqualStrings(REF ++ "/initrd.sha256", refsOf(false).initrd);
+    const stock = "root=UUID=x module.sig_enforce=1 quiet module_blacklist=a,b";
+    const mach = "root=UUID=x quiet iwlwifi.power_save=0";
+    const gone = missingFrom(stock, mach);
+    try std.testing.expectEqual(@as(usize, 2), gone.len);
+    try std.testing.expectEqualStrings("module.sig_enforce=1", gone[0]);
+    const added = missingFrom(mach, stock);
+    try std.testing.expectEqual(@as(usize, 1), added.len);
+    try std.testing.expectEqualStrings("iwlwifi.power_save=0", added[0]);
 }
