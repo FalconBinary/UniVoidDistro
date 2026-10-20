@@ -1,8 +1,8 @@
 vh-plan report
-machine: qemu-q35 (QEMU Standard PC (Q35 + ICH9, 2009); QEMU TCG CPU version 2.5+), arch x86_64, 2927 MiB, 4 CPUs
+machine: qemu-q35 (QEMU Standard PC (Q35 + ICH9, 2009); AMD EPYC-Milan Processor), arch x86_64, 3880 MiB, 4 CPUs
 module tables: the pinned stock kernel's
 security: strict; tier: full
-tags: acpi disk disk-discard disk-nvme disk-on-nvme display efi efi64 iommu iommu-active keyboard keyboard-i8042 mor power-button secure-boot setup-mode tpm tpm2 vm wired x86-64-v2 x86-64-v3
+tags: acpi disk disk-discard disk-nvme display efi efi64 iommu iommu-active keyboard keyboard-i8042 power-button secure-boot setup-mode tpm tpm2 vm wired x86-64-v2 x86-64-v3
 
 Rules that apply (28):
   x86.level.v2 [arch.zon]: x86-64-v2: CMPXCHG16B, LAHF/SAHF, POPCNT, SSE3 to SSE4.2 (Nehalem, Bulldozer and later).
@@ -70,9 +70,7 @@ denied modules (5):
   rtsx_pci_sdmmc  <- cardreader.off
   uvcvideo  <- camera.off
 
-initrd drivers (2):
-  atkbd  <- keyboard i8042
-  i8042  <- keyboard i8042
+initrd drivers (0):
 
 internal input (vh-acpid) (0):
 
@@ -86,7 +84,38 @@ scalars (4):
 
 LUKS: aes-xts-plain64, 512-bit key, Argon2id 1048576 KiB, 4 threads
 kernel: NR_CPUS 4, -march x86-64-v3
-modules of the devices (19): aesni_intel ahci atkbd button e1000 ghash_clmulni_intel i2c_i801 i8042 intel_agp lpc_ich nvme polyval_clmulni psmouse qemu_fw_cfg rtc_cmos tiny_power_button tpm_crb virtio_gpu virtio_pci
+modules of the devices (25): 8250 ahci atkbd button e1000 efi_pstore i2c_i801 i8042 iTCO_wdt intel_agp intel_rapl_msr lpc_ich nvme parport_pc pcspkr processor psmouse qemu_fw_cfg rtc_cmos serio_raw sr_mod tpm_crb tpm_tis virtio_gpu virtio_pci
 
-Devices no driver, table or rule knows (1):
-  dmi id dmi:bvnEDKII:bvrunknown:bd02/02/2022:br0.0:svnQEMU:pnStandardPC(Q35+ICH9,2009):pvrpc-q35-11.1:cvnQEMU:ct1:cvrpc-q35-11.1:sku:
+Devices no driver, table or rule knows (32):
+  acpi ACPI0010:00 acpi:ACPI0010:PNP0A05:
+  acpi LNXSYBUS:00 acpi:LNXSYBUS:
+  acpi LNXSYBUS:01 acpi:LNXSYBUS:
+  acpi LNXSYSTM:00 acpi:LNXSYSTM:
+  acpi PNP0103:00 acpi:PNP0103:
+  acpi PNP0A06:00 acpi:PNP0A06:
+  acpi PNP0A06:01 acpi:PNP0A06:
+  acpi PNP0A06:02 acpi:PNP0A06:
+  acpi PNP0A06:03 acpi:PNP0A06:
+  acpi PNP0A08:00 acpi:PNP0A08:PNP0A03:
+  acpi PNP0C01:00 acpi:PNP0C01:
+  acpi PNP0C0F:00 acpi:PNP0C0F:
+  acpi PNP0C0F:01 acpi:PNP0C0F:
+  acpi PNP0C0F:02 acpi:PNP0C0F:
+  acpi PNP0C0F:03 acpi:PNP0C0F:
+  acpi PNP0C0F:04 acpi:PNP0C0F:
+  acpi PNP0C0F:05 acpi:PNP0C0F:
+  acpi PNP0C0F:06 acpi:PNP0C0F:
+  acpi PNP0C0F:07 acpi:PNP0C0F:
+  acpi PNP0C0F:08 acpi:PNP0C0F:
+  acpi PNP0C0F:09 acpi:PNP0C0F:
+  acpi PNP0C0F:0a acpi:PNP0C0F:
+  acpi PNP0C0F:0b acpi:PNP0C0F:
+  acpi PNP0C0F:0c acpi:PNP0C0F:
+  acpi PNP0C0F:0d acpi:PNP0C0F:
+  acpi PNP0C0F:0e acpi:PNP0C0F:
+  acpi PNP0C0F:0f acpi:PNP0C0F:
+  dmi id dmi:bvnUbuntudistributionofEDKII:bvr2024.02-2ubuntu0.10:bd09/23/2026:br0.0:svnQEMU:pnStandardPC(Q35+ICH9,2009):pvrpc-q35-8.2:cvnQEMU:ct1:cvrpc-q35-8.2:sku:
+  platform Fixed MDIO bus.0 platform:Fixed MDIO bus
+  platform PNP0103:00 acpi:PNP0103:
+  platform regulatory.0 platform:regulatory
+  platform rtc-efi.0 platform:rtc-efi

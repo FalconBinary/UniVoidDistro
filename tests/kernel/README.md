@@ -33,15 +33,15 @@ Uniq lines, ACPI tables as empty files named by signature).
 | `gf63` | MSI GF63 Thin 10SCXR: i5-10500H, UHD 630 + GTX 1650 (no driver), AX201, RTL8111, NVMe, fTPM | synthesised, `machines/gf63.py` |
 | `amd-desktop` | ASUS TUF GAMING B650-PLUS WIFI: Ryzen 9 7950X3D (two CCDs, 96 + 32 MB L3), Raphael iGPU + RX 7600 (boot VGA), RTL8125, MT7922, NVMe + SATA HDD, USB keyboard, fTPM, IVRS | synthesised, `machines/amd_desktop.py` |
 | `intel-hybrid-laptop` | Dell XPS 13 9320: i7-1260P (4P + 8E), Iris Xe, AX211, SOF audio, Thunderbolt 4, NVMe behind VMD, PTT, DMAR | synthesised, `machines/intel_hybrid_laptop.py` |
-| `qemu-q35` | the rig of `tests/vm` at installation time: q35, OVMF in Setup Mode, swtpm CRB, intel-iommu, TCG "max" CPU, 3 GiB, NVMe, e1000, virtio-vga | synthesised, `machines/qemu_q35.py` |
+| `qemu-q35` | the rig of `tests/vm` at installation time: q35, OVMF in Setup Mode, swtpm CRB, intel-iommu, the EPYC-Milan CPU that `vhvm.py` pins, 4 GiB, NVMe, e1000, virtio-vga | `kernel/hw/qemu-q35.zon` **real**: the rig's own `/etc/vh/hw.zon` from `kvm-smoke` (run 39342292948, 2026-10-20, under KVM); the tree for the probe tests is still synthesised, `machines/qemu_q35.py` |
 | `aarch64-virt` | a Linux VM on Apple's Virtualization framework (colima): Apple CPU cores, UEFI without Secure Boot, no TPM, no IOMMU, virtio disks and network | **real**: `vh-kconf probe --save` in the colima VM, 2026-10-19 |
 | `rpi5` | Raspberry Pi 5 Model B: BCM2712 (Cortex-A76 with crypto), RP1, CYW43455 on SDIO, v3d + vc4, SD card, no UEFI, no ACPI, no TPM | synthesised, `machines/rpi5.py` |
 
 Every synthesised fixture is **[VERIFY]**: its IDs are public ones of that hardware and its
 drivers those of the stock kernel (`kernel/pins`), but nothing was read from the machine.
 `doas vh-kconf probe --save DIR` on a real one gives the snapshot that replaces it (and its
-module in `machines/`); the GF63's is a step of `docs/runbook-gf63.md`, the rig's is saved by
-the `kvm-smoke` workflow. A machine of your own: [docs/uni/hardware.md](../../docs/uni/hardware.md#adding-a-machine).
+module in `machines/`); the GF63's is a step of `docs/runbook-gf63.md`; the rig's hw.zon at
+installation is printed by the `kvm-smoke` workflow (`build-vm-probe.log`, `/etc/vh/hw.zon`). A machine of your own: [docs/uni/hardware.md](../../docs/uni/hardware.md#adding-a-machine).
 
 ## What the tests assert
 

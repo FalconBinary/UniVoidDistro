@@ -110,9 +110,9 @@ def step_machine(a):
     files in build/kernel-custom) becomes a machine UKI on trial; it boots, vh-kconf check finds
     the rig with every driver, three good boots make it Limine's default, vh-audit's boot and plan
     areas have no FAIL about modules on it, --demote and the removal of the UKI give the stock UKI
-    back. The run's kernel is built from the synthesised kernel/hw/qemu-q35.zon, not from this
-    rig's probe: --hw names that file, and the boot assessment judges the kernel against the rig's
-    own /etc/vh/hw.zon, which is what the step is for."""
+    back. The run's kernel is built from kernel/hw/qemu-q35.zon, the rig's /etc/vh/hw.zon of a
+    kvm-smoke run (vhvm.py pins the CPU, so it is this rig's too): --hw names that file, and the
+    boot assessment judges the kernel against this installation's own /etc/vh/hw.zon."""
     if not os.path.isfile(os.path.join(ART, "SHA256SUMS")):
         sys.exit(f"no run's files in {ART}: the artifact kernel-custom-qemu-q35-KVER of a kernel-custom run "
                  "(kvm-smoke: the input kernel_run; by hand: gh run download RUN -n kernel-custom-qemu-q35-KVER -D build/kernel-custom)")
