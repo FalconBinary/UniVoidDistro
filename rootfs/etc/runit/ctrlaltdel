@@ -1,0 +1,26 @@
+#!/bin/sh
+# /etc/runit/ctrlaltdel, UniVoidDistro's (an update of runit-void does not replace it:
+# /etc/xbps.d/30-vh-noextract.conf). runit runs it on SIGINT: Ctrl+Alt+Del on a text console,
+# and the power button of a machine whose fixed ACPI button only tiny_power_button drives (hwdb
+# rule acpi.power-button.fixed, which also sets tiny_power_button.power_signal=2). While
+# tiny_power_button drives a button, SIGINT is the power button: vh-acpid takes SIGUSR1 as a press
+# and does POWER_KEY of /etc/vh/acpi.conf. Otherwise this is Void's ctrlaltdel: a reboot.
+
+PATH=/usr/bin:/usr/sbin
+
+if ls /sys/bus/acpi/drivers/tiny_power_button 2>/dev/null | grep -q ':'; then
+	sv 1 vh-acpid >/dev/null 2>&1 && exit 0
+	# vh-acpid is not running: POWER_KEY without it (lock needs vh-acpid; ignore is nothing)
+	key=$(sed -n 's/^POWER_KEY=//p' /etc/vh/acpi.conf 2>/dev/null | tr -d '"')
+	if [ "${key:-poweroff}" = poweroff ]; then
+		chmod 100 /run/runit/stopit
+		chmod 000 /run/runit/reboot
+		echo "The power button: the system is going down..." | wall
+	fi
+	exit 0
+fi
+
+# Void's ctrlaltdel: on to stage 3, which reboots
+chmod 100 /run/runit/stopit
+chmod 100 /run/runit/reboot
+echo "System is going down..." | wall

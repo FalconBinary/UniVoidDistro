@@ -18,6 +18,7 @@
         "keyboard",
         "keyboard-i8042",
         "power-button",
+        "power-button-fixed",
         "secure-boot",
         "setup-mode",
         "tpm",
@@ -53,6 +54,7 @@
     },
     .packages = .{ .{ .value = "dhcpcd", .rules = .{"net.wired.dhcp"} }, .{ .value = "tpm2-tools", .rules = .{"tpm.tools"} } },
     .kconfig = .{
+        .{ .value = "acpi-tiny-power-button", .rules = .{"acpi.power-button.fixed"} },
         .{ .value = "cpu-x86-aes", .rules = .{"x86.aes"} },
         .{ .value = "gpu-virtio", .rules = .{"gpu.virtio"} },
         .{ .value = "input-i8042", .rules = .{"input.i8042"} },
@@ -66,6 +68,7 @@
         .{ .value = "efi=disable_early_pci_dma", .rules = .{"x86.efi.early-dma"} },
         .{ .value = "ia32_emulation=0", .rules = .{"x86.ia32-off"} },
         .{ .value = "intel_iommu=on", .rules = .{"iommu.dmar"} },
+        .{ .value = "tiny_power_button.power_signal=2", .rules = .{"acpi.power-button.fixed"} },
     },
     .services = .{
         .{ .value = "dhcpcd-eth0", .rules = .{"net.wired.dhcp"} },

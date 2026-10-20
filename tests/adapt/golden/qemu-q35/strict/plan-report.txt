@@ -2,9 +2,9 @@ vh-plan report
 machine: qemu-q35 (QEMU Standard PC (Q35 + ICH9, 2009); AMD EPYC-Milan Processor), arch x86_64, 3880 MiB, 4 CPUs
 module tables: the pinned stock kernel's
 security: strict; tier: full
-tags: acpi disk disk-discard disk-nvme display efi efi64 iommu iommu-active keyboard keyboard-i8042 power-button secure-boot setup-mode tpm tpm2 vm wired x86-64-v2 x86-64-v3
+tags: acpi disk disk-discard disk-nvme display efi efi64 iommu iommu-active keyboard keyboard-i8042 power-button power-button-fixed secure-boot setup-mode tpm tpm2 vm wired x86-64-v2 x86-64-v3
 
-Rules that apply (28):
+Rules that apply (29):
   x86.level.v2 [arch.zon]: x86-64-v2: CMPXCHG16B, LAHF/SAHF, POPCNT, SSE3 to SSE4.2 (Nehalem, Bulldozer and later).
   x86.level.v3 [arch.zon]: x86-64-v3: AVX, AVX2, BMI1/2, F16C, FMA, LZCNT, MOVBE, XSAVE (Haswell, Excavator and later).
   x86.march.v2 [arch.zon]: A kernel built elsewhere (CI) for a CPU no model rule names: the instruction set it has for sure.
@@ -23,6 +23,7 @@ Rules that apply (28):
   class.vm [platform.zon]: The virtual machine class: no microcode, no power management.
   iommu.dmar [platform.zon]: VT-d is described by the DMAR table; intel_iommu=on turns it on (Void's kernel leaves it off by default) so that every device's DMA is translated.
   acpi.power-button [platform.zon]: An ACPI power button (PNP0C0C, or the fixed LNXPWRBN).
+  acpi.power-button.fixed [platform.zon]: Only the fixed ACPI power button (LNXPWRBN, no PNP0C0C; QEMU's q35, some PCs). Between kernels 6.12 and 6.18 the button driver became a platform driver, and the kernel makes no platform device for the fixed button: only tiny_power_button drives it. It signals init, SIGINT here (Void builds it with 38, which runit ignores), and /etc/runit/ctrlaltdel hands that to vh-acpid as the power button (POWER_KEY of /etc/vh/acpi.conf); a hypervisor's shutdown request is this button too. Ctrl+Alt+Del on a text console is then the power button as well.
   acpid.button [platform.zon]: vh-acpid handles the power button (a regular poweroff by default).
   input.i8042 [platform.zon]: A PS/2 keyboard (most laptops, virtual machines): the i8042 controller and atkbd built into the machine kernel, so the LUKS passphrase can be typed.
   tpm.tools [platform.zon]: A TPM 2.0: tpm2-tools reads the measurement log (the Option ROM check before key enrolment) and serves tpm2-totp.
@@ -38,7 +39,8 @@ packages (2):
   dhcpcd  <- net.wired.dhcp
   tpm2-tools  <- tpm.tools
 
-kernel class fragments (6):
+kernel class fragments (7):
+  acpi-tiny-power-button  <- acpi.power-button.fixed
   cpu-x86-aes  <- x86.aes
   gpu-virtio  <- gpu.virtio
   input-i8042  <- input.i8042
@@ -51,10 +53,11 @@ kernel features (1):
 
 firmware kept (0):
 
-command line (3):
+command line (4):
   efi=disable_early_pci_dma  <- x86.efi.early-dma
   ia32_emulation=0  <- x86.ia32-off
   intel_iommu=on  <- iommu.dmar
+  tiny_power_button.power_signal=2  <- acpi.power-button.fixed
 
 services (3):
   dhcpcd-eth0  <- net.wired.dhcp

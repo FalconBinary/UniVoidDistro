@@ -16,6 +16,11 @@
 //! On a machine kernel (release *-vh) the modules its build left out on purpose count as
 //! refused, as module_blacklist= does on the stock kernel: modules.deny, the plan's deny list,
 //! the modules of the features the plan does not select (resolve.denyList).
+//! The stock kernel writes its own view of the machine at each boot (/var/lib/vh/check/stock.zon,
+//! when the machine is the same), and a machine kernel's devices are judged against that view:
+//! the probe of the installation was made by the live image's kernel, another version, and a
+//! driver that moved between them is no loss of the machine kernel's (kernel 6.18 drives the
+//! fixed ACPI power button with tiny_power_button, the live image's 6.12 with button).
 const std = @import("std");
 const vh = @import("vh");
 const hw = @import("hw.zig");
@@ -44,6 +49,8 @@ pub const Opts = struct {
     /// the running kernel's modules.alias and modules.builtin.modinfo
     alias: ?[]const u8 = null,
     builtin: ?[]const u8 = null,
+    /// the stock kernel's view of the machine: written on a stock kernel, read on a machine one
+    stock: ?[]const u8 = null,
 };
 
 /// buses into which hardware is plugged: a new device there without a driver is news even
@@ -139,7 +146,8 @@ pub const Driverless = struct {
 /// The devices without a driver that are news: one that had a driver at installation and has
 /// none now (lost), a new one on a bus hardware is plugged into, a new one elsewhere that a
 /// module of this kernel would drive. A module the kernel refuses explains its device: not listed.
-pub fn driverless(was: hw.Hw, now: hw.Hw, refused: []const []const u8, table: ?*const alias.Table) Driverless {
+/// `at` says where `was` comes from: "at installation", or the stock kernel's view.
+pub fn driverless(was: hw.Hw, now: hw.Hw, refused: []const []const u8, table: ?*const alias.Table, at: []const u8) Driverless {
     var out: vh.Strv = .{};
     var lost: usize = 0;
     for (now.devices) |d| {
@@ -149,7 +157,7 @@ pub fn driverless(was: hw.Hw, now: hw.Hw, refused: []const []const u8, table: ?*
             if (w.driver.len == 0) continue;
             const m = alias.normalize(if (w.module.len > 0) w.module else w.driver);
             if (has(refused, m)) continue;
-            out.add(vh.fmt("{s}: had the driver {s} at installation, has none now", .{ what, printable(w.driver) }));
+            out.add(vh.fmt("{s}: had the driver {s} {s}, has none now", .{ what, printable(w.driver), at }));
             lost += 1;
             continue;
         }
@@ -320,12 +328,14 @@ pub fn message(r: Result, hw_path: []const u8, plan: []const u8) []const u8 {
     return t.items;
 }
 
-pub fn compare(was: hw.Hw, now: hw.Hw, refused: []const []const u8, table: ?*const alias.Table, log: []const u8, keep: ?[]const []const u8, fwdir: []const u8) Result {
+/// `was` is the installation's probe, which tells the machine; `base` the view the devices are
+/// judged against (the same, or the stock kernel's on a machine kernel), `at` names it.
+pub fn compare(was: hw.Hw, base: hw.Hw, at: []const u8, now: hw.Hw, refused: []const []const u8, table: ?*const alias.Table, log: []const u8, keep: ?[]const []const u8, fwdir: []const u8) Result {
     const machine = machineDiff(was, now);
     var fw: vh.Strv = .{};
     for (firmwareFailures(log)) |f| fw.add(firmwareLine(f, keep, fwdir));
     // another machine has other devices: listing them all would hide the point
-    const dl: Driverless = if (machine.len > 0) .{ .lines = &.{}, .lost = 0 } else driverless(was, now, refused, table);
+    const dl: Driverless = if (machine.len > 0) .{ .lines = &.{}, .lost = 0 } else driverless(base, now, refused, table, at);
     return .{
         .machine = machine,
         .devices = dl.lines,
@@ -387,7 +397,17 @@ pub fn run(o: Opts) u8 {
     } else |_| {}
     const log = if (o.kmsg) |f| (vh.readFile(f) catch vh.die("{s}: {s}", .{ f, vh.serr() })) else readKmsg();
     const keep = keepPatterns(vh.readFile(vh.fmt("{s}/etc/xbps.d/40-vh-firmware.conf", .{root})) catch null);
-    const r = compare(was, now, refused, if (have_table) &table else null, log, keep, vh.fmt("{s}/usr/lib/firmware", .{root}));
+    // a machine kernel's devices against the stock kernel's view, when that kernel has booted
+    const stock_path = o.stock orelse vh.fmt("{s}/var/lib/vh/check/stock.zon", .{root});
+    const machine_kernel = isMachineKernel(now.probe.kernel);
+    const on_stock = machine_kernel and vh.pathExists(stock_path);
+    const base = if (on_stock) hw.load(stock_path) else was;
+    const at = if (on_stock) vh.fmt("on the stock kernel ({s})", .{base.probe.kernel}) else "at installation";
+    const r = compare(was, base, at, now, refused, if (have_table) &table else null, log, keep, vh.fmt("{s}/usr/lib/firmware", .{root}));
+    if (!machine_kernel and r.machine.len == 0) {
+        vh.mkdirs(std.fs.path.dirname(stock_path) orelse ".", 0o700);
+        vh.writeAtomic(stock_path, hw.render(now), 0o600);
+    }
 
     vh.mkdirs(out, 0o755);
     vh.writeAtomic(vh.fmt("{s}/check.done", .{out}), r.summary(), 0o644);
@@ -480,7 +500,7 @@ test "check: devices without a driver" {
     var table: alias.Table = .{};
     table.loadAliases(vh.readFile(at) catch return error.SkipZigTest);
     // the installed system's view of the same machine: nothing new
-    try testing.expectEqual(@as(usize, 0), driverless(gf63, gf63, &.{}, &table).lines.len);
+    try testing.expectEqual(@as(usize, 0), driverless(gf63, gf63, &.{}, &table, "at installation").lines.len);
     var devs: std.ArrayList(hw.Device) = .empty;
     for (gf63.devices) |d| {
         var x = d;
@@ -501,7 +521,7 @@ test "check: devices without a driver" {
     }) catch vh.oom();
     var now = gf63;
     now.devices = devs.items;
-    const dl = driverless(gf63, now, &.{ "mei_me", "thunderbolt" }, &table);
+    const dl = driverless(gf63, now, &.{ "mei_me", "thunderbolt" }, &table, "at installation");
     const r = dl.lines;
     try testing.expectEqual(@as(usize, 3), r.len);
     try testing.expect(mem.indexOf(u8, r[0], "0000:00:14.3") != null and mem.indexOf(u8, r[0], "had the driver iwlwifi") != null);
@@ -509,6 +529,52 @@ test "check: devices without a driver" {
     try testing.expect(mem.indexOf(u8, r[2], "0000:05:00.0") != null and mem.indexOf(u8, r[2], "no driver of this kernel") != null);
     // of the three only the Wi-Fi had a driver at installation: the verdict of a boot assessment
     try testing.expectEqual(@as(usize, 1), dl.lost);
+}
+
+test "check: a machine kernel against the stock kernel's view" {
+    const q35 = fixtureHw("qemu-q35") orelse return error.SkipZigTest;
+    // the rig at installation: the live image's 6.12 drove the fixed power button with button;
+    // 6.18, the stock kernel and the machine one, leaves the ACPI device without a driver
+    var devs: std.ArrayList(hw.Device) = .empty;
+    var had = false;
+    for (q35.devices) |d| {
+        var x = d;
+        if (vh.eql(x.name, "LNXPWRBN:00")) {
+            had = vh.eql(x.driver, "button");
+            x.driver = "";
+            x.module = "";
+        }
+        devs.append(vh.gpa, x) catch vh.oom();
+    }
+    try testing.expect(had);
+    var stock = q35;
+    stock.devices = devs.items;
+    stock.probe.kernel = "6.18.57_1";
+    var now = stock;
+    now.probe.kernel = "6.18.57-vh";
+    // against the installation's probe the machine kernel lost the button ...
+    const a = compare(q35, q35, "at installation", now, &.{}, null, "", null, "/nonexistent");
+    try testing.expectEqual(@as(usize, 1), a.lost);
+    try testing.expect(mem.indexOf(u8, a.devices[0], "LNXPWRBN:00") != null and mem.indexOf(u8, a.devices[0], "at installation") != null);
+    // ... against the stock kernel's view it lost nothing, and it is still the same machine
+    const b = compare(q35, stock, "on the stock kernel (6.18.57_1)", now, &.{}, null, "", null, "/nonexistent");
+    try testing.expectEqual(@as(usize, 0), b.lost);
+    try testing.expectEqual(@as(usize, 0), b.machine.len);
+    // a device the stock kernel drives and the machine kernel does not is a loss, named so
+    var lost_nic = std.ArrayList(hw.Device).empty;
+    for (now.devices) |d| {
+        var x = d;
+        if (vh.eql(x.driver, "e1000")) {
+            x.driver = "";
+            x.module = "";
+        }
+        lost_nic.append(vh.gpa, x) catch vh.oom();
+    }
+    var now2 = now;
+    now2.devices = lost_nic.items;
+    const c = compare(q35, stock, "on the stock kernel (6.18.57_1)", now2, &.{}, null, "", null, "/nonexistent");
+    try testing.expectEqual(@as(usize, 1), c.lost);
+    try testing.expect(mem.indexOf(u8, c.devices[0], "had the driver e1000 on the stock kernel (6.18.57_1)") != null);
 }
 
 test "check: a machine kernel refuses what its build left out" {
@@ -532,13 +598,13 @@ test "check: a machine kernel refuses what its build left out" {
     now.devices = devs.items;
     now.probe.kernel = "6.18.57-vh";
     // read as the stock kernel would read it: three devices lost their drivers
-    try testing.expectEqual(@as(usize, 3), driverless(gf63, now, &.{}, null).lost);
+    try testing.expectEqual(@as(usize, 3), driverless(gf63, now, &.{}, null, "at installation").lost);
     // the machine kernel's refused modules: modules.deny, the plan's, the unselected features'
     const refused = machineRefused(&.{"sctp"}, plan, profiles);
     for ([_][]const u8{ "sctp", "tiny_power_button", "uvcvideo", "rtsx_pci", "nouveau", "mei_me", "videobuf2_common" }) |m|
         try testing.expect(has(refused, m));
     try testing.expect(!has(refused, "iwlwifi") and !has(refused, "btusb"));
-    const dl = driverless(gf63, now, refused, null);
+    const dl = driverless(gf63, now, refused, null, "at installation");
     try testing.expectEqual(@as(usize, 0), dl.lost);
     try testing.expectEqual(@as(usize, 0), dl.lines.len);
     // without the plan only the command line's refusals are known

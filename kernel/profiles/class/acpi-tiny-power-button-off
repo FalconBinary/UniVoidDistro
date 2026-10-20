@@ -1,0 +1,9 @@
+# kernel/profiles/class/acpi-tiny-power-button-off: a control-method power button (PNP0C0C),
+# which button drives with an input device for vh-acpid (acpi.power-button.tiny-off).
+#
+# A class fragment: vh-kconf resolve applies it when the machine's plan names it
+# (vh-plan, hwdb/); a symbol of it that does not survive olddefconfig is an error, as for
+# mandatory.
+
+# tiny_power_button matches the same device and provides no input device: not built.
+# CONFIG_ACPI_TINY_POWER_BUTTON is not set

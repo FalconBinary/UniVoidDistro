@@ -4,7 +4,7 @@ module tables: the pinned stock kernel's
 security: strict; tier: full
 tags: acpi backlight battery bluetooth camera dgpu disk disk-discard disk-nvme disk-on-nvme display displays-2 efi efi64 epp iommu iommu-active keyboard keyboard-i8042 laptop lid mains mor power-button secure-boot secure-boot-on smt sound tpm tpm2 wifi wired x86-64-v2 x86-64-v3
 
-Rules that apply (52):
+Rules that apply (53):
   x86.level.v2 [arch.zon]: x86-64-v2: CMPXCHG16B, LAHF/SAHF, POPCNT, SSE3 to SSE4.2 (Nehalem, Bulldozer and later).
   x86.level.v3 [arch.zon]: x86-64-v3: AVX, AVX2, BMI1/2, F16C, FMA, LZCNT, MOVBE, XSAVE (Haswell, Excavator and later).
   x86.march.v2 [arch.zon]: A kernel built elsewhere (CI) for a CPU no model rule names: the instruction set it has for sure.
@@ -42,6 +42,7 @@ Rules that apply (52):
   iommu.dmar [platform.zon]: VT-d is described by the DMAR table; intel_iommu=on turns it on (Void's kernel leaves it off by default) so that every device's DMA is translated.
   acpi.lid [platform.zon]: An ACPI lid switch (PNP0C0D).
   acpi.power-button [platform.zon]: An ACPI power button (PNP0C0C, or the fixed LNXPWRBN).
+  acpi.power-button.tiny-off [platform.zon]: tiny_power_button and button both match a control-method power button (PNP0C0C), and the first to load wins; tiny_power_button provides no input device, so vh-acpid would never see the button (found on the test bench, kernel 6.18.57).
   acpid.lid [platform.zon]: vh-acpid handles the lid (lock, then a regular poweroff; suspend is forbidden) and the power button.
   acpid.button [platform.zon]: vh-acpid handles the power button (a regular poweroff by default).
   input.i8042 [platform.zon]: A PS/2 keyboard (most laptops, virtual machines): the i8042 controller and atkbd built into the machine kernel, so the LUKS passphrase can be typed.
@@ -70,7 +71,8 @@ packages (10):
   tpm2-tools  <- tpm.tools
   wireless-regdb  <- net.wifi
 
-kernel class fragments (9):
+kernel class fragments (10):
+  acpi-tiny-power-button-off  <- acpi.power-button.tiny-off
   bt-intel  <- bt.intel.kernel
   cpu-intel  <- cpu.intel.kernel
   cpu-x86-aes  <- x86.aes
@@ -108,7 +110,7 @@ services (4):
 udev rules (1):
   99-vh-dgpu-off.rules  <- gpu.nvidia.dgpu-off
 
-denied modules (11):
+denied modules (12):
   kvm  <- cpu.intel.kvm-off
   kvm_intel  <- cpu.intel.kvm-off
   mei  <- cpu.intel.me
@@ -119,6 +121,7 @@ denied modules (11):
   nouveau  <- gpu.nvidia.dgpu-off
   rtsx_pci  <- cardreader.off
   rtsx_pci_sdmmc  <- cardreader.off
+  tiny_power_button  <- acpi.power-button.tiny-off
   uvcvideo  <- camera.off
 
 initrd drivers (2):
@@ -142,7 +145,7 @@ scalars (4):
 
 LUKS: aes-xts-plain64, 512-bit key, Argon2id 1048576 KiB, 4 threads
 kernel: NR_CPUS 12, -march skylake
-modules of the devices (54): ac aesni_intel ahci atkbd battery btusb button coretemp ghash_clmulni_intel hid_generic hid_multitouch i2c_designware_platform i2c_hid_acpi i2c_i801 i8042 i915 iTCO_wdt int3400_thermal intel_cstate intel_hid intel_lpss_pci intel_pch_thermal intel_pmc_core intel_pmc_core_pltdrv intel_powerclamp intel_rapl_common intel_rapl_msr intel_tcc_cooling intel_uncore intel_uncore_frequency iwlwifi lpc_ich msi_ec nvme pcspkr pinctrl_cannonlake polyval_clmulni processor processor_thermal_device_pci_legacy r8169 rapl rtc_cmos shpchp snd_hda_codec_alc269 snd_hda_codec_intelhdmi snd_hda_intel spi_intel_pci tiny_power_button tpm_crb tpm_tis usbcore usbhid x86_pkg_temp_thermal xhci_pci
+modules of the devices (53): ac aesni_intel ahci atkbd battery btusb button coretemp ghash_clmulni_intel hid_generic hid_multitouch i2c_designware_platform i2c_hid_acpi i2c_i801 i8042 i915 iTCO_wdt int3400_thermal intel_cstate intel_hid intel_lpss_pci intel_pch_thermal intel_pmc_core intel_pmc_core_pltdrv intel_powerclamp intel_rapl_common intel_rapl_msr intel_tcc_cooling intel_uncore intel_uncore_frequency iwlwifi lpc_ich msi_ec nvme pcspkr pinctrl_cannonlake polyval_clmulni processor processor_thermal_device_pci_legacy r8169 rapl rtc_cmos shpchp snd_hda_codec_alc269 snd_hda_codec_intelhdmi snd_hda_intel spi_intel_pci tpm_crb tpm_tis usbcore usbhid x86_pkg_temp_thermal xhci_pci
 
 Devices no driver, table or rule knows (2):
   pci 0000:00:08.0 pci:v00008086d00001911sv00001462sd000012D5bc08sc80i00

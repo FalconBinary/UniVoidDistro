@@ -4,7 +4,7 @@ module tables: none for this architecture: only the drivers the running system b
 security: tiered; tier: reduced
 tags: acpi disk disk-discard disk-on-virtio_pci disk-virtio efi efi64 keyboard keyboard-usb power-button vm wired
 
-Rules that apply (16):
+Rules that apply (17):
   arm.kernel [cpu-arm.zon]: The machine kernel's ARM64 class: the generic timer, PSCI, CPPC or SCMI frequency control, the errata of the cores.
   arm.mcpu.generic [cpu-arm.zon]: Any other ARMv8 core: -march=armv8-a, the instruction set every ARM64 CPU has.
   arm.aes [cpu-arm.zon]: The ARMv8 Crypto Extensions: AES-XTS through the ce-blk driver, built into the machine kernel.
@@ -14,6 +14,7 @@ Rules that apply (16):
   class.desktop [platform.zon]: Every other machine.
   class.vm [platform.zon]: The virtual machine class: no microcode, no power management.
   acpi.power-button [platform.zon]: An ACPI power button (PNP0C0C, or the fixed LNXPWRBN).
+  acpi.power-button.tiny-off [platform.zon]: tiny_power_button and button both match a control-method power button (PNP0C0C), and the first to load wins; tiny_power_button provides no input device, so vh-acpid would never see the button (found on the test bench, kernel 6.18.57).
   acpid.button [platform.zon]: vh-acpid handles the power button (a regular poweroff by default).
   usb.common [platform.zon]: What a USB port must handle after the module lock: storage, keyboards and mice, audio.
   camera.off [platform.zon]: VH_CAMERA=no: the UVC driver is refused (the firmware setup can disable the camera outright, which is stronger).
@@ -36,7 +37,8 @@ Requirements not met (3):
 packages (1):
   dhcpcd  <- net.wired.dhcp
 
-kernel class fragments (3):
+kernel class fragments (4):
+  acpi-tiny-power-button-off  <- acpi.power-button.tiny-off
   cpu-arm64  <- arm.kernel
   cpu-arm64-aes  <- arm.aes
   storage-virtio  <- storage.virtio
@@ -55,9 +57,10 @@ services (3):
 
 udev rules (0):
 
-denied modules (3):
+denied modules (4):
   rtsx_pci  <- cardreader.off
   rtsx_pci_sdmmc  <- cardreader.off
+  tiny_power_button  <- acpi.power-button.tiny-off
   uvcvideo  <- camera.off
 
 initrd drivers (3):

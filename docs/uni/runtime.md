@@ -91,6 +91,22 @@ the place of every built-in keyboard vh-acpid cannot tell (`internal_input`, in
 `unknown` (no ACPI description of the port) is not counted [VERIFY on hardware with an
 internal USB keyboard].
 
+The power button reaches `vh-acpid` in one of two ways (`POWER_KEY` of `/etc/vh/acpi.conf`
+decides the action either way). A control-method button (`PNP0C0C`, most laptops and PCs) is an
+input device of the `button` driver; `tiny_power_button`, which matches it too and has no input
+device, is refused (hwdb rule `acpi.power-button.tiny-off`). A machine with only the fixed
+button (`LNXPWRBN`: QEMU's q35, some PCs) has no input device for it on kernel 6.18: between
+6.12 and 6.18 `button` became a platform driver, and the kernel makes no platform device for the
+fixed button, so `tiny_power_button` alone drives it (rule `acpi.power-button.fixed`, which
+builds it into the machine kernel too). It signals init, with SIGINT
+(`tiny_power_button.power_signal=2`: Void builds it with 38, which runit ignores); runit runs
+`/etc/runit/ctrlaltdel`, ours (kept over runit-void's by `/etc/xbps.d/30-vh-noextract.conf`),
+which hands it to `vh-acpid` as SIGUSR1 (`sv 1 vh-acpid`), and `vh-acpid` takes that as a
+press. A hypervisor's shutdown request (`virsh shutdown`, QEMU's `system_powerdown`) is this
+button, and `tests/vm` checks it ends in a regular poweroff. Ctrl+Alt+Del on a text console
+sends init the same SIGINT, so on such a machine it is the power button too; elsewhere
+`ctrlaltdel` does what Void's does, a reboot.
+
 The alarm combination of `optional/deadman` (Right Ctrl + Right Alt + End, `COMBO=yes` in
 `/etc/vh/deadman.conf`) works on the same built-in keyboards, not only on a PS/2 one:
 `vh-deadman` applies the same rule (`zig/lib/input.zig`, which `vh-acpid` uses too) and reads
@@ -130,7 +146,13 @@ On another machine the devices are not compared (they all differ). With a findin
 boot assessment of a machine kernel reads ([kernel.md](kernel.md#what-a-good-boot-is)). On a
 machine kernel (release `*-vh`) the modules its build left out on purpose count as refused:
 `kernel/profiles/modules.deny`, the plan's deny list, the modules of the features the plan does
-not select.
+not select. On the stock kernel, when the machine is the same, the check also writes the
+running system's probe to `/var/lib/vh/check/stock.zon`; a machine kernel's devices are judged
+against that, the stock kernel of the same installation, and its lines say "had the driver X
+on the stock kernel (V)". The installation's probe was made by the live image's kernel, another
+version, and a driver that moved between versions is no loss of the machine kernel's: the q35's
+fixed power button, driven by `button` on the live image's 6.12 and by `tiny_power_button` on
+6.18, is one.
 
 What to do: another machine means the plan (packages, firmware, the kernel's classes, the
 command line) was made for the other one: compare `/run/vh/plan/plan-report.txt` with

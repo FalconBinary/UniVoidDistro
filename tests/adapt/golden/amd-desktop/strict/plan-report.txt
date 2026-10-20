@@ -4,7 +4,7 @@ module tables: the pinned stock kernel's
 security: strict; tier: full
 tags: acpi bluetooth disk disk-ata disk-discard disk-nvme disk-on-ahci disk-on-nvme disk-on-sd_mod disk-rotational display displays-2 efi efi64 epp iommu iommu-active keyboard keyboard-usb mor multi-llc power-button secure-boot secure-boot-on smt sound tpm tpm2 wifi wired x86-64-v2 x86-64-v3 x86-64-v4
 
-Rules that apply (47):
+Rules that apply (48):
   x86.level.v2 [arch.zon]: x86-64-v2: CMPXCHG16B, LAHF/SAHF, POPCNT, SSE3 to SSE4.2 (Nehalem, Bulldozer and later).
   x86.level.v3 [arch.zon]: x86-64-v3: AVX, AVX2, BMI1/2, F16C, FMA, LZCNT, MOVBE, XSAVE (Haswell, Excavator and later).
   x86.level.v4 [arch.zon]: x86-64-v4: AVX-512 F, BW, CD, DQ, VL (Skylake-SP, Ice Lake, Zen 4 and later).
@@ -40,6 +40,7 @@ Rules that apply (47):
   class.desktop [platform.zon]: Every other machine.
   iommu.ivrs [platform.zon]: AMD-Vi is described by the IVRS table; the kernel turns it on by itself, and iommu.strict=1 iommu.passthrough=0 (every machine) keep every device translated.
   acpi.power-button [platform.zon]: An ACPI power button (PNP0C0C, or the fixed LNXPWRBN).
+  acpi.power-button.tiny-off [platform.zon]: tiny_power_button and button both match a control-method power button (PNP0C0C), and the first to load wins; tiny_power_button provides no input device, so vh-acpid would never see the button (found on the test bench, kernel 6.18.57).
   acpid.button [platform.zon]: vh-acpid handles the power button (a regular poweroff by default).
   tpm.tools [platform.zon]: A TPM 2.0: tpm2-tools reads the measurement log (the Option ROM check before key enrolment) and serves tpm2-totp.
   tpm.crb [platform.zon]: A firmware TPM through the Command Response Buffer interface (Intel PTT, AMD fTPM).
@@ -65,7 +66,8 @@ packages (10):
   tpm2-tools  <- tpm.tools
   wireless-regdb  <- net.wifi
 
-kernel class fragments (11):
+kernel class fragments (12):
+  acpi-tiny-power-button-off  <- acpi.power-button.tiny-off
   bt-mediatek  <- bt.mediatek.kernel
   cpu-amd  <- cpu.amd.kernel
   cpu-amd-x3d  <- cpu.amd.x3d
@@ -118,11 +120,12 @@ services (4):
 
 udev rules (0):
 
-denied modules (5):
+denied modules (6):
   kvm  <- cpu.amd.kvm-off
   kvm_amd  <- cpu.amd.kvm-off
   rtsx_pci  <- cardreader.off
   rtsx_pci_sdmmc  <- cardreader.off
+  tiny_power_button  <- acpi.power-button.tiny-off
   uvcvideo  <- camera.off
 
 initrd drivers (4):
@@ -149,7 +152,7 @@ scalars (4):
 
 LUKS: aes-xts-plain64, 512-bit key, Argon2id 1048576 KiB, 4 threads
 kernel: NR_CPUS 32, -march znver4
-modules of the devices (30): aesni_intel ahci amd64_edac amdgpu btusb button ccp fmpm ghash_clmulni_intel hid_generic i2c_piix4 intel_rapl_common k10temp mt7921e nvme pinctrl_amd polyval_clmulni r8169 rapl rtc_cmos sd_mod shpchp snd_hda_codec_alc662 snd_hda_codec_atihdmi snd_hda_intel tiny_power_button tpm_crb usbcore usbhid xhci_pci
+modules of the devices (29): aesni_intel ahci amd64_edac amdgpu btusb button ccp fmpm ghash_clmulni_intel hid_generic i2c_piix4 intel_rapl_common k10temp mt7921e nvme pinctrl_amd polyval_clmulni r8169 rapl rtc_cmos sd_mod shpchp snd_hda_codec_alc662 snd_hda_codec_atihdmi snd_hda_intel tpm_crb usbcore usbhid xhci_pci
 
 Devices no driver, table or rule knows (5):
   dmi id dmi:bvnAmericanMegatrendsInc.:bvr3024:bd08/02/2024:br5.27:svnASUS:pnSystemProductName:pvrSystemVersion:rvnASUSTeKCOMPUTERINC.:rnTUFGAMINGB650-PLUSWIFI:rvrRev1.xx:cvnDefaultstring:ct3:cvrDefaultstring:skuSKU:

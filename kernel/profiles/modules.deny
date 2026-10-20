@@ -50,6 +50,4 @@ binfmt_misc
 uhid
 vivid
 pcspkr
-# the ACPI power button driver that bypasses vh-acpid (tiny_power_button sends init a
-# Ctrl+Alt+Del instead of an input event)
-tiny_power_button
+# (tiny_power_button: the plan decides, hwdb/platform.zon acpi.power-button.*)

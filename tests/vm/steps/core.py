@@ -47,13 +47,25 @@ def step_base(a):
         # at boot vh-acpid may start before socklog-unix and lose its first lines (vlogger
         # without /dev/log): restart, as in the ctools step
         rc, out = run(ser, "doas sh -c 'sv restart vh-acpid; sleep 3; grep -ah vh-acpid /var/log/socklog/*/current | tail -3; "
-                           "grep -c \"Power Button\" /proc/bus/input/devices'")
-        if "power:" not in out and re.search(r"^0\s*$", out, re.M):
-            # kernel 6.18.57: the q35 button (LNXPWRBN) was claimed only by tiny_power_button, which
-            # is now denied (lib.sh); this VM has no input device for the button: hardware checks it
-            print("SKIP: vh-acpid found the power button: this VM has no 'Power Button' device (checked on hardware)")
+                           "grep -c \"Power Button\" /proc/bus/input/devices; ls /sys/bus/acpi/drivers/tiny_power_button 2>/dev/null'")
+        if "LNXPWRBN" in out:
+            # the fixed button alone (q35; hwdb rule acpi.power-button.fixed): kernel 6.18 drives it with
+            # tiny_power_button, which signals init; /etc/runit/ctrlaltdel hands it to vh-acpid
+            check("the fixed power button: tiny_power_button drives it, vh-acpid waits for SIGUSR1",
+                  "SIGUSR1" in out, out[-300:].replace("\n", " | "))
         else:
             check("vh-acpid found the power button", "power:" in out)
+        # the last check, since it powers the VM off: the ACPI power button pressed the way a
+        # hypervisor presses it (system_powerdown), and POWER_KEY=poweroff: a regular poweroff
+        mark = len(ser.alltext)
+        vm.monitor("system_powerdown")
+        try:
+            ser.expect(r"reboot: Power down", 240)
+        except (TimeoutError, EOFError):
+            pass
+        tail = ser.alltext[mark:]
+        check("the power button (system_powerdown): a regular poweroff", "reboot: Power down" in tail,
+              tail[-300:].replace("\n", " | "))
     finally:
         shutdown(vm, ser)
 

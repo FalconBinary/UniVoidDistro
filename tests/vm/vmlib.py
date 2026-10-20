@@ -174,7 +174,10 @@ def boot(a, extra=None, on_prompt=None):
 
 
 def shutdown(vm, ser):
-    ser.send("poweroff")
+    try:
+        ser.send("poweroff")
+    except OSError:
+        pass   # the VM is off already (the base step ends with the power button)
     vm.stop()
 
 

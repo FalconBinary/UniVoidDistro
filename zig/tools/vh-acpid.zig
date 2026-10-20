@@ -9,6 +9,10 @@
 //!                                RAM, and a running laptop in a bag overheats);
 //!   external monitor connected -> the lid does nothing (working with the lid closed);
 //!   power button              -> POWER_KEY: poweroff (default) | lock | ignore;
+//!   SIGUSR1                   -> the same: the power button without an input device, the fixed
+//!                                ACPI button that only tiny_power_button drives (kernel 6.18:
+//!                                hwdb rule acpi.power-button.fixed); it signals init, and
+//!                                /etc/runit/ctrlaltdel passes that on (sv 1 vh-acpid);
 //!   idle (IDLE_*_MIN > 0)     -> lock and regular poweroff after a time without PHYSICAL
 //!                                input: only the built-in keyboard (i8042) and touchpad
 //!                                (I2C-HID/PS2) count. The browser's idle-inhibit, USB devices
@@ -193,6 +197,11 @@ fn poweroff(reason: []const u8) noreturn {
     vh.die("poweroff: {s}", .{vh.serr()});
 }
 
+/// POWER_KEY of acpi.conf for a press of the power button, from its input device or SIGUSR1
+fn powerKey(action: []const u8, user: []const u8, from: []const u8) void {
+    if (vh.eql(action, "poweroff")) poweroff(from) else if (vh.eql(action, "lock")) lockSession(user);
+}
+
 pub fn main(init: std.process.Init.Minimal) void {
     _ = vh.init(init, "vh-acpid");
     var conf: vh.Kv = .{};
@@ -213,13 +222,20 @@ pub fn main(init: std.process.Init.Minimal) void {
     var extra: vh.Strv = .{};
     var it = mem.tokenizeAny(u8, conf.get("INTERNAL_INPUT", ""), " \t");
     while (it.next()) |t| extra.add(t);
+    // SIGUSR1 is a press of the power button: blocked, and read from a signalfd in the poll
+    var sigs = linux.sigemptyset();
+    linux.sigaddset(&sigs, .USR1);
+    _ = linux.sigprocmask(linux.SIG.BLOCK, &sigs, null);
+    const src = linux.signalfd(-1, &sigs, linux.SFD.CLOEXEC);
+    if (linux.errno(src) != .SUCCESS) {
+        vh.errno = linux.errno(src);
+        vh.die("signalfd: {s}", .{vh.serr()});
+    }
+    const sig_fd: vh.fd_t = @intCast(src);
     var found = findDevices(extra.slice());
     if (idle_lock == 0 and idle_off == 0) found.builtin = .{};
-    if (found.lid == null and found.power == null and found.builtin.len() == 0) {
-        vh.log("neither an ACPI lid nor a power button found: exiting (a desktop PC or a VM?)", .{});
-        execSimple("/usr/bin/pause", "pause"); // so runit does not restart us every second
-        vh.die("pause: {s}", .{vh.serr()});
-    }
+    if (found.lid == null and found.power == null and found.builtin.len() == 0)
+        vh.log("no ACPI lid or power button input device: the power button comes as SIGUSR1 alone", .{});
 
     const Dev = struct { fd: vh.fd_t, kind: Kind };
     var devs: std.ArrayList(Dev) = .empty;
@@ -230,7 +246,7 @@ pub fn main(init: std.process.Init.Minimal) void {
         if (paths.items.len >= MAX_DEV) break;
         paths.append(vh.gpa, .{ .p = p, .k = .input }) catch vh.oom();
     }
-    var pfd: [MAX_DEV]linux.pollfd = undefined;
+    var pfd: [MAX_DEV + 1]linux.pollfd = undefined;
     var lid_fd: ?vh.fd_t = null;
     for (paths.items) |x| {
         const fd = vh.openFd(x.p, .{ .ACCMODE = .RDONLY }, 0) catch vh.die("{s}: {s}", .{ x.p, vh.serr() });
@@ -240,6 +256,7 @@ pub fn main(init: std.process.Init.Minimal) void {
         vh.log("{s}: {s}", .{ @tagName(x.k), x.p });
     }
     const nd = devs.items.len;
+    pfd[nd] = .{ .fd = sig_fd, .events = linux.POLL.IN, .revents = 0 };
     const have_input = found.builtin.len() > 0;
     var closed_since: f64 = if (lid_fd != null and lidClosed(lid_fd.?)) now() else -1;
     var last_input = now();
@@ -273,7 +290,7 @@ pub fn main(init: std.process.Init.Minimal) void {
             const ms = (deadline - t) * 1000;
             timeout = if (ms <= 0) 0 else if (ms > std.math.maxInt(i32)) std.math.maxInt(i32) else @as(i32, @intFromFloat(ms)) + 1;
         }
-        const r = linux.poll(&pfd, nd, timeout);
+        const r = linux.poll(&pfd, nd + 1, timeout);
         switch (linux.errno(r)) {
             .SUCCESS => {},
             .INTR => continue,
@@ -298,6 +315,14 @@ pub fn main(init: std.process.Init.Minimal) void {
                 poweroff(vh.fmt("lid closed for more than {d} min", .{lid_min}));
             }
             continue;
+        }
+        if (pfd[nd].revents != 0) {
+            var si: linux.signalfd_siginfo = undefined;
+            const n = linux.read(sig_fd, @ptrCast(&si), @sizeOf(linux.signalfd_siginfo));
+            if (linux.errno(n) == .SUCCESS and n == @sizeOf(linux.signalfd_siginfo) and si.signo == @intFromEnum(linux.SIG.USR1)) {
+                vh.log("power button (SIGUSR1, from pid {d}): POWER_KEY={s}", .{ si.pid, power_key });
+                powerKey(power_key, user, "power button");
+            }
         }
         for (devs.items, 0..) |d, i| {
             if (pfd[i].revents == 0) continue;
@@ -327,7 +352,7 @@ pub fn main(init: std.process.Init.Minimal) void {
                         closed_since = -1;
                     }
                 } else if (d.kind == .power and x.type == EV_KEY and x.code == KEY_POWER and x.value == 1) {
-                    if (vh.eql(power_key, "poweroff")) poweroff("power button") else if (vh.eql(power_key, "lock")) lockSession(user);
+                    powerKey(power_key, user, "power button");
                 }
             }
         }

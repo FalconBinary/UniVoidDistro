@@ -78,6 +78,7 @@
         .{ .value = "wireless-regdb", .rules = .{"net.wifi"} },
     },
     .kconfig = .{
+        .{ .value = "acpi-tiny-power-button-off", .rules = .{"acpi.power-button.tiny-off"} },
         .{ .value = "bt-intel", .rules = .{"bt.intel.kernel"} },
         .{ .value = "cpu-intel", .rules = .{"cpu.intel.kernel"} },
         .{ .value = "cpu-x86-aes", .rules = .{"x86.aes"} },
@@ -121,6 +122,7 @@
         .{ .value = "nouveau", .rules = .{"gpu.nvidia.dgpu-off"} },
         .{ .value = "rtsx_pci", .rules = .{"cardreader.off"} },
         .{ .value = "rtsx_pci_sdmmc", .rules = .{"cardreader.off"} },
+        .{ .value = "tiny_power_button", .rules = .{"acpi.power-button.tiny-off"} },
         .{ .value = "uvcvideo", .rules = .{"camera.off"} },
     },
     .dracut = .{ .{ .value = "atkbd", .rules = .{"keyboard i8042"} }, .{ .value = "i8042", .rules = .{"keyboard i8042"} } },
@@ -353,7 +355,6 @@
         .{ .value = "snd_hda_codec_intelhdmi", .rules = .{"device hdaudio hdaudioC0D2"} },
         .{ .value = "snd_hda_intel", .rules = .{"device pci 0000:00:1f.3"} },
         .{ .value = "spi_intel_pci", .rules = .{"device pci 0000:00:1f.5"} },
-        .{ .value = "tiny_power_button", .rules = .{"device acpi PNP0C0C:00"} },
         .{ .value = "tpm_crb", .rules = .{ "device acpi MSFT0101:00", "device platform MSFT0101:00" } },
         .{ .value = "tpm_tis", .rules = .{"device acpi MSFT0101:00"} },
         .{ .value = "usbcore", .rules = .{

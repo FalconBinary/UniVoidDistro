@@ -67,6 +67,7 @@
     },
     .packages = .{.{ .value = "dhcpcd", .rules = .{"net.wired.dhcp"} }},
     .kconfig = .{
+        .{ .value = "acpi-tiny-power-button-off", .rules = .{"acpi.power-button.tiny-off"} },
         .{ .value = "cpu-arm64", .rules = .{"arm.kernel"} },
         .{ .value = "cpu-arm64-aes", .rules = .{"arm.aes"} },
         .{ .value = "storage-virtio", .rules = .{"storage.virtio"} },
@@ -83,6 +84,7 @@
     .deny = .{
         .{ .value = "rtsx_pci", .rules = .{"cardreader.off"} },
         .{ .value = "rtsx_pci_sdmmc", .rules = .{"cardreader.off"} },
+        .{ .value = "tiny_power_button", .rules = .{"acpi.power-button.tiny-off"} },
         .{ .value = "uvcvideo", .rules = .{"camera.off"} },
     },
     .dracut = .{

@@ -155,8 +155,10 @@ The runit service `vh-boot-assess` runs `vh-limine-update --booted` once a boot,
 services, after the root file system is read-write (it works with either stage 1). For a boot of
 the trial, or of the default machine kernel, it waits up to 120 s for the verdict of
 `vh-kconf check` (the vh-check service, 5 s after the services start). The boot is good when
-`/run/vh/check.done` says `machine=same lost=0`: the same machine, and no device that had a
-driver at installation is without one now. Neither the firmware failures (iwlwifi logs a failed
+`/run/vh/check.done` says `machine=same lost=0`: the same machine, and no device that the stock
+kernel of this installation drives (its view, `/var/lib/vh/check/stock.zon`, which `vh-kconf
+check` writes at each stock boot; the installation's probe while there is none) is without a
+driver now. Neither the firmware failures (iwlwifi logs a failed
 load for every newer firmware API it tries first, on any kernel) nor new devices without a
 driver (a phone on USB has none on any kernel) decide it.
 

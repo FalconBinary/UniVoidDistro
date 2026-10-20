@@ -51,7 +51,7 @@ out=$(audit "root=UUID=x module_blacklist=sctp,$(echo "$deny" | tr ' ' ',') $cmd
 has "the tier" "$out" "[ ok ] protection tier: full (strict mode)"
 has "a service of the plan runs" "$out" "[ ok ] service iwd of the plan is running"
 has "a service of the plan is down" "$out" "[FAIL] service vh-fstrim of the plan is not running"
-has "the refused modules" "$out" "[ ok ] the 11 modules the plan refuses are refused by the kernel, none is loaded"
+has "the refused modules" "$out" "[ ok ] the 12 modules the plan refuses are refused by the kernel, none is loaded"
 has "the command line" "$out" "[ ok ] command line: the plan's parameters ($cmdl)"
 has "the firmware patterns" "$out" "[ ok ] firmware: the plan's 7 patterns are kept"
 has "firmware the plan does not keep" "$out" "[FAIL] firmware on disk the plan does not keep: 1 file(s), for example gpu/left-out.bin.zst"
@@ -69,7 +69,7 @@ audit_nomod() { # $1: the command line of a kernel without loadable modules -> t
 	unshare -m sh -c 'mount -t tmpfs none /proc && cp /tmp/cmdline /proc/cmdline && /usr/local/sbin/vh-audit plan' 2>&1
 }
 out=$(audit_nomod "root=UUID=x $cmdl quiet iwlwifi.power_save=0")
-has "a machine kernel: the refused modules cannot be loaded" "$out" "[ ok ] the 11 modules the plan refuses cannot be loaded: this kernel has no loadable modules"
+has "a machine kernel: the refused modules cannot be loaded" "$out" "[ ok ] the 12 modules the plan refuses cannot be loaded: this kernel has no loadable modules"
 has "a machine kernel: the plan's command line" "$out" "[ ok ] command line: the plan's parameters ($cmdl)"
 case $out in *"missing from module_blacklist="*) bad "a machine kernel: module_blacklist= is not asked for" ;; *) ok "a machine kernel: module_blacklist= is not asked for" ;; esac
 

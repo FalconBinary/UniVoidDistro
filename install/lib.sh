@@ -225,11 +225,7 @@ vh_module_blacklist() {
 		fuse overlay
 		# miscellaneous
 		binfmt_misc uhid vivid pcspkr
-		# ACPI power button: tiny_power_button and button match the same device (PNP0C0C)
-		# and the first one to autoload wins. tiny_power_button provides no input device
-		# and instead sends init a "Ctrl+Alt+Del": vh-acpid never sees the button and its
-		# action bypasses /etc/vh/acpi.conf (found on the test bench, kernel 6.18.57)
-		tiny_power_button
+		# (tiny_power_button: the plan decides, hwdb/platform.zon acpi.power-button.*)
 	)
 	# shellcheck disable=SC2206 # the plan's list, one word per module
 	m+=(${VH_PLAN_DENY:-})

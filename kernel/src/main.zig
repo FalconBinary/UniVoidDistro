@@ -12,7 +12,7 @@
 //!       after the kernel's olddefconfig: which requests survived and why the others did not
 //!       (exit 2 when a mandatory symbol was lost)
 //!   vh-kconf check [--hw FILE] [--out DIR] [--repo DIR] [--vh-plan PATH|none] [--kmsg FILE]
-//!                  [--from DIR] [--root DIR] [--alias F] [--builtin F]
+//!                  [--from DIR] [--root DIR] [--alias F] [--builtin F] [--stock F]
 //!       at boot: is this still the machine of /etc/vh/hw.zon? Another CPU or board, devices
 //!       without a driver, firmware that failed to load -> /run/vh/check (shown at the admin's
 //!       login) and a fresh plan in /run/vh/plan; exit 1 with a finding, 0 without
@@ -37,7 +37,7 @@ const usage =
     \\usage: vh-kconf probe [--from DIR] [--save DIR] [-o FILE|--stdout]
     \\       vh-kconf resolve --hw FILE --plan FILE --out DIR [--repo DIR] [--features LIST|auto|none] [--alias F] [--builtin F] [--builtin-list F] [--base .config] [--profiles DIR]
     \\       vh-kconf diff --config .config --requested fragment.config [--lsmod FILE] [--kernel DIR] [--oracle localyesconfig|localmodconfig]
-    \\       vh-kconf check [--hw FILE] [--out DIR] [--repo DIR] [--vh-plan PATH|none] [--kmsg FILE] [--from DIR] [--root DIR] [--alias F] [--builtin F]
+    \\       vh-kconf check [--hw FILE] [--out DIR] [--repo DIR] [--vh-plan PATH|none] [--kmsg FILE] [--from DIR] [--root DIR] [--alias F] [--builtin F] [--stock F]
     \\       vh-kconf install DIR [--dry-run] [--hw FILE] [--plan FILE] [--repo DIR] [--root DIR]
     \\       vh-kconf version
     \\
@@ -191,6 +191,8 @@ fn cmdCheck(argv: []const [:0]const u8) u8 {
             o.alias = v;
         } else if (a.value(arg, "--builtin")) |v| {
             o.builtin = v;
+        } else if (a.value(arg, "--stock")) |v| {
+            o.stock = v;
         } else vh.die("check: unknown argument {s}", .{arg});
     }
     return check.run(o);

@@ -171,4 +171,4 @@ CONFIG_EXPERT=y
 # CONFIG_UHID is not set
 # CONFIG_INPUT_PCSPKR is not set
 # CONFIG_VIDEO_VIVID is not set
-# CONFIG_ACPI_TINY_POWER_BUTTON is not set
+# (ACPI_TINY_POWER_BUTTON: the plan decides, class/acpi-tiny-power-button[-off], hwdb/platform.zon)

@@ -120,7 +120,6 @@ rtsx_pci_sdmmc
 sctp
 sctp_diag
 thunderbolt
-tiny_power_button
 tipc
 udf
 uhid
@@ -148,7 +147,7 @@ lockdown=confidentiality
 loglevel=3
 lsm=landlock,lockdown,yama,apparmor
 module.sig_enforce=1
-module_blacklist=sctp,sctp_diag,rds,rds_tcp,rds_rdma,tipc,can,atm,ax25,netrom,rose,x25,appletalk,ieee802154,nfc,firewire_core,firewire_ohci,firewire_sbp2,thunderbolt,usbip_host,vhci_hcd,cramfs,hfs,hfsplus,udf,cifs,nfs,nfsv4,ksmbd,9p,jffs2,freevxfs,fuse,overlay,binfmt_misc,uhid,vivid,pcspkr,tiny_power_button,rtsx_pci,rtsx_pci_sdmmc,uvcvideo
+module_blacklist=sctp,sctp_diag,rds,rds_tcp,rds_rdma,tipc,can,atm,ax25,netrom,rose,x25,appletalk,ieee802154,nfc,firewire_core,firewire_ohci,firewire_sbp2,thunderbolt,usbip_host,vhci_hcd,cramfs,hfs,hfsplus,udf,cifs,nfs,nfsv4,ksmbd,9p,jffs2,freevxfs,fuse,overlay,binfmt_misc,uhid,vivid,pcspkr,rtsx_pci,rtsx_pci_sdmmc,uvcvideo
 net.ifnames=0
 page_alloc.shuffle=1
 panic=10

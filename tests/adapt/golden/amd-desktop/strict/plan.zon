@@ -77,6 +77,7 @@
         .{ .value = "wireless-regdb", .rules = .{"net.wifi"} },
     },
     .kconfig = .{
+        .{ .value = "acpi-tiny-power-button-off", .rules = .{"acpi.power-button.tiny-off"} },
         .{ .value = "bt-mediatek", .rules = .{"bt.mediatek.kernel"} },
         .{ .value = "cpu-amd", .rules = .{"cpu.amd.kernel"} },
         .{ .value = "cpu-amd-x3d", .rules = .{"cpu.amd.x3d"} },
@@ -127,6 +128,7 @@
         .{ .value = "kvm_amd", .rules = .{"cpu.amd.kvm-off"} },
         .{ .value = "rtsx_pci", .rules = .{"cardreader.off"} },
         .{ .value = "rtsx_pci_sdmmc", .rules = .{"cardreader.off"} },
+        .{ .value = "tiny_power_button", .rules = .{"acpi.power-button.tiny-off"} },
         .{ .value = "uvcvideo", .rules = .{"camera.off"} },
     },
     .dracut = .{
@@ -408,7 +410,6 @@
             "device pci 0000:0b:00.1",
             "device pci 0000:0b:00.6",
         } },
-        .{ .value = "tiny_power_button", .rules = .{"device acpi PNP0C0C:00"} },
         .{ .value = "tpm_crb", .rules = .{"device platform MSFT0101:00"} },
         .{ .value = "usbcore", .rules = .{
             "device usb 1-1",

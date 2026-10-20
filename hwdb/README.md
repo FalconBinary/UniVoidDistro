@@ -107,7 +107,8 @@ cycle). The built-in tags come from hw.zon alone:
 | `sound`, `display`, `displays-2` | a sound card; a display controller; two PCI ones |
 
 The rules of this directory add: `x86-64-v2`, `x86-64-v3`, `x86-64-v4`, `vm`, `laptop`,
-`server`, `sbc`, `lid`, `power-button`, `iommu`, `bluetooth`, `camera`, `cardreader`, `dgpu`.
+`server`, `sbc`, `lid`, `power-button`, `power-button-fixed` (the fixed ACPI button alone),
+`iommu`, `bluetooth`, `camera`, `cardreader`, `dgpu`.
 
 ## Requirements (`security.zon`)
 

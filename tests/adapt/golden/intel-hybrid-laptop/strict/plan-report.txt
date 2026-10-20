@@ -4,7 +4,7 @@ module tables: the pinned stock kernel's
 security: strict; tier: full
 tags: acpi backlight battery bluetooth camera disk disk-discard disk-nvme disk-on-nvme disk-on-vmd display efi efi64 epp hybrid iommu iommu-active keyboard keyboard-i8042 laptop lid mains mor platform-profile power-button secure-boot secure-boot-on smt sound tpm tpm2 usb-power wifi x86-64-v2 x86-64-v3
 
-Rules that apply (49):
+Rules that apply (50):
   x86.level.v2 [arch.zon]: x86-64-v2: CMPXCHG16B, LAHF/SAHF, POPCNT, SSE3 to SSE4.2 (Nehalem, Bulldozer and later).
   x86.level.v3 [arch.zon]: x86-64-v3: AVX, AVX2, BMI1/2, F16C, FMA, LZCNT, MOVBE, XSAVE (Haswell, Excavator and later).
   x86.march.v2 [arch.zon]: A kernel built elsewhere (CI) for a CPU no model rule names: the instruction set it has for sure.
@@ -38,6 +38,7 @@ Rules that apply (49):
   iommu.dmar [platform.zon]: VT-d is described by the DMAR table; intel_iommu=on turns it on (Void's kernel leaves it off by default) so that every device's DMA is translated.
   acpi.lid [platform.zon]: An ACPI lid switch (PNP0C0D).
   acpi.power-button [platform.zon]: An ACPI power button (PNP0C0C, or the fixed LNXPWRBN).
+  acpi.power-button.tiny-off [platform.zon]: tiny_power_button and button both match a control-method power button (PNP0C0C), and the first to load wins; tiny_power_button provides no input device, so vh-acpid would never see the button (found on the test bench, kernel 6.18.57).
   acpid.lid [platform.zon]: vh-acpid handles the lid (lock, then a regular poweroff; suspend is forbidden) and the power button.
   acpid.button [platform.zon]: vh-acpid handles the power button (a regular poweroff by default).
   input.i8042 [platform.zon]: A PS/2 keyboard (most laptops, virtual machines): the i8042 controller and atkbd built into the machine kernel, so the LUKS passphrase can be typed.
@@ -68,7 +69,8 @@ packages (11):
   tpm2-tools  <- tpm.tools
   wireless-regdb  <- net.wifi
 
-kernel class fragments (11):
+kernel class fragments (12):
+  acpi-tiny-power-button-off  <- acpi.power-button.tiny-off
   audio-sof-intel  <- audio.sof.intel
   bt-intel  <- bt.intel.kernel
   cpu-hybrid  <- cpu.intel.hybrid
@@ -108,7 +110,7 @@ services (3):
 
 udev rules (0):
 
-denied modules (10):
+denied modules (11):
   kvm  <- cpu.intel.kvm-off
   kvm_intel  <- cpu.intel.kvm-off
   mei  <- cpu.intel.me
@@ -118,6 +120,7 @@ denied modules (10):
   mei_wdt  <- cpu.intel.me
   rtsx_pci  <- cardreader.off
   rtsx_pci_sdmmc  <- cardreader.off
+  tiny_power_button  <- acpi.power-button.tiny-off
   uvcvideo  <- camera.off
 
 initrd drivers (3):
@@ -142,7 +145,7 @@ scalars (4):
 
 LUKS: aes-xts-plain64, 512-bit key, Argon2id 1048576 KiB, 4 threads
 kernel: NR_CPUS 16, -march alderlake
-modules of the devices (52): ac aesni_intel atkbd battery btusb button coretemp dcdbas dell_laptop dell_pc dell_smbios dell_smm_hwmon dell_wmi ghash_clmulni_intel hid_multitouch i2c_designware_platform i2c_hid_acpi i2c_i801 i8042 i915 iTCO_wdt int3400_thermal intel_cstate intel_hid intel_ish_ipc intel_lpss_pci intel_pmc_core intel_powerclamp intel_rapl_common intel_tcc_cooling intel_uncore intel_uncore_frequency intel_vsec iwlwifi nvme pinctrl_tigerlake polyval_clmulni processor_thermal_device_pci rapl shpchp snd_hda_codec_alc269 snd_hda_codec_intelhdmi snd_sof_pci_intel_tgl spi_intel_pci thunderbolt tiny_power_button tpm_crb ucsi_acpi usbcore vmd x86_pkg_temp_thermal xhci_pci
+modules of the devices (51): ac aesni_intel atkbd battery btusb button coretemp dcdbas dell_laptop dell_pc dell_smbios dell_smm_hwmon dell_wmi ghash_clmulni_intel hid_multitouch i2c_designware_platform i2c_hid_acpi i2c_i801 i8042 i915 iTCO_wdt int3400_thermal intel_cstate intel_hid intel_ish_ipc intel_lpss_pci intel_pmc_core intel_powerclamp intel_rapl_common intel_tcc_cooling intel_uncore intel_uncore_frequency intel_vsec iwlwifi nvme pinctrl_tigerlake polyval_clmulni processor_thermal_device_pci rapl shpchp snd_hda_codec_alc269 snd_hda_codec_intelhdmi snd_sof_pci_intel_tgl spi_intel_pci thunderbolt tpm_crb ucsi_acpi usbcore vmd x86_pkg_temp_thermal xhci_pci
 
 Devices no driver, table or rule knows (4):
   pci 0000:00:00.0 pci:v00008086d00004621sv00001028sd00000AF3bc06sc00i00

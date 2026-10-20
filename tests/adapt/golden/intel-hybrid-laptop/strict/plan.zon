@@ -80,6 +80,7 @@
         .{ .value = "wireless-regdb", .rules = .{"net.wifi"} },
     },
     .kconfig = .{
+        .{ .value = "acpi-tiny-power-button-off", .rules = .{"acpi.power-button.tiny-off"} },
         .{ .value = "audio-sof-intel", .rules = .{"audio.sof.intel"} },
         .{ .value = "bt-intel", .rules = .{"bt.intel.kernel"} },
         .{ .value = "cpu-hybrid", .rules = .{"cpu.intel.hybrid"} },
@@ -125,6 +126,7 @@
         .{ .value = "mei_wdt", .rules = .{"cpu.intel.me"} },
         .{ .value = "rtsx_pci", .rules = .{"cardreader.off"} },
         .{ .value = "rtsx_pci_sdmmc", .rules = .{"cardreader.off"} },
+        .{ .value = "tiny_power_button", .rules = .{"acpi.power-button.tiny-off"} },
         .{ .value = "uvcvideo", .rules = .{"camera.off"} },
     },
     .dracut = .{
@@ -386,7 +388,6 @@
         .{ .value = "snd_sof_pci_intel_tgl", .rules = .{"device pci 0000:00:1f.3"} },
         .{ .value = "spi_intel_pci", .rules = .{"device pci 0000:00:1f.5"} },
         .{ .value = "thunderbolt", .rules = .{ "device pci 0000:00:0d.2", "device pci 0000:00:0d.3" } },
-        .{ .value = "tiny_power_button", .rules = .{"device acpi PNP0C0C:00"} },
         .{ .value = "tpm_crb", .rules = .{"device platform MSFT0101:00"} },
         .{ .value = "ucsi_acpi", .rules = .{"device platform USBC000:00"} },
         .{ .value = "usbcore", .rules = .{
