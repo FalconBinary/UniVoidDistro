@@ -23,6 +23,12 @@ on:
       live_run:
         description: "the id of a live-image run of this commit: install from its ISO instead of Void's"
         default: ""
+      mem:
+        description: "the VM's RAM in MiB (empty: 3072); below 3 GiB only with live_run, since on Void's image the installer builds in RAM and refuses less"
+        default: ""
+      security:
+        description: "VH_SECURITY of the installation: strict, or tiered (below 2 GiB strict refuses: Argon2id with 1 GiB)"
+        default: strict
   schedule:
     - cron: "17 4 * * 1"
 permissions:
@@ -32,10 +38,13 @@ permissions:
   # gh attestation verify, for live_run
   attestations: read
 env:
-  # the VM's RAM in MiB: 3 GiB, the gate's memory floor (hwdb/security.zon memory-floor), so
-  # every run shows the installer fits there; it peaks at 2.1 GiB (the RefursWM build) and
-  # prints its RAM at every heading. 4096 while the live ISO rode along (run 39297735098)
-  VH_MEM: "3072"
+  # the VM's RAM in MiB. 3 GiB by default: what the installer needs when it builds its programs
+  # in RAM (Void's image; install/lib.sh need_build_ram), so the weekly run shows that it fits
+  # there (it peaks at 2.1 GiB, the RefursWM build, and prints its RAM at every heading). With
+  # live_run as low as the gate's floor, 1.5 GiB (hwdb/security.zon memory-floor), in tiered mode
+  # below 2 GiB. 4096 while the live ISO rode along (run 39297735098)
+  VH_MEM: ${{ github.event.inputs.mem || '3072' }}
+  VH_SECURITY: ${{ github.event.inputs.security || 'strict' }}
 jobs:
   smoke:
     runs-on: ubuntu-latest
@@ -110,7 +119,7 @@ jobs:
       - name: install
         env:
           VH_ACCEL: kvm
-        run: python3 tests/vm/vhvm.py install --iso "$VH_ISO" --mem "$VH_MEM" --timeout 10800
+        run: python3 tests/vm/vhvm.py install --iso "$VH_ISO" --mem "$VH_MEM" --timeout 10800 --conf "VH_SECURITY=\"$VH_SECURITY\""
       - name: check
         env:
           VH_ACCEL: kvm
