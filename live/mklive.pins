@@ -1,0 +1,13 @@
+# The live image (docs/uni/live-image.md): void-mklive at a commit, the kernel series of the image,
+# and the packages and services of the official base image (void-mklive's mkiso.sh, variant base)
+# plus the installer's own tools. The commit is the pin: git checks the tree against it.
+MKLIVE_REPO=https://github.com/void-linux/void-mklive
+MKLIVE_COMMIT=8ca31d112776fdbf7c1deb3dd7e15d87d6712db3
+# the series the installed system runs (vh.conf.example VH_KERNEL): the probe of the
+# installation sees the same kernel as the system
+LIVE_KERNEL=linux6.18
+# mkiso.sh base: PKGS (A11Y and GRUB for x86_64 included) and SERVICES
+LIVE_PKGS_OFFICIAL="dialog cryptsetup lvm2 mdadm void-docs-browse xtools-minimal xmirror chrony tmux espeakup void-live-audio brltty grub-i386-efi grub-x86_64-efi"
+LIVE_SERVICES="sshd chronyd dhcpcd wpa_supplicant acpid"
+# what install/10-install.sh would otherwise install into the live system's RAM
+LIVE_PKGS_INSTALLER="xfsprogs dosfstools minisign xz"

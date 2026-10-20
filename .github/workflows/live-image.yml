@@ -1,0 +1,76 @@
+# live-image: UniVoidDistro's own live image (U6, docs/uni/live-image.md). The programs the
+# installer would otherwise compile in the live system's RAM are built here (live/prebuilt.sh),
+# and void-mklive at a pinned commit makes the ISO (live/build-image.sh): the kernel series of
+# the installed system, the official base image's packages and services, the repository at this
+# commit in /root/vh. The ISO carries a GitHub build provenance attestation:
+#   gh attestation verify ISO --repo FalconBinary/UniVoidDistro
+# On demand the ISO is this run's artifact (kvm-smoke takes it with live_run=RUN); on a v* tag it
+# is a release asset as well.
+name: live-image
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-zig
+      - name: the programs of the image (live/prebuilt.sh)
+        run: sh live/prebuilt.sh "$RUNNER_TEMP/prebuilt"
+      - name: the image (void-mklive in a privileged Void container)
+        run: |
+          set -euo pipefail
+          docker run --rm --privileged -e GITHUB_RUN_ID \
+            -v "$GITHUB_WORKSPACE:/src" -v "$RUNNER_TEMP:/w" \
+            ghcr.io/void-linux/void-glibc-full:latest sh -c '
+              set -e
+              xbps-install -Syu xbps >/dev/null
+              xbps-install -Sy bash git >/dev/null
+              git config --global --add safe.directory /src
+              bash /src/live/build-image.sh /w/prebuilt /w/out'
+          sudo chown -R "$(id -u):$(id -g)" "$RUNNER_TEMP/out"
+          cd "$RUNNER_TEMP/out"
+          sha256sum -c SHA256SUMS
+          cat BUILD
+          echo "packages: $(wc -l < live-packages.txt)"; grep -E '^(linux6|xbps|cryptsetup)-[0-9]' live-packages.txt
+          ls -l
+      - uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: ${{ runner.temp }}/out/*.iso
+      - uses: actions/upload-artifact@v4
+        with:
+          name: univoiddistro-live-x86_64
+          path: ${{ runner.temp }}/out
+          if-no-files-found: error
+          compression-level: 0
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: univoiddistro-live-x86_64
+          path: out
+      - name: the ISO as a release asset of ${{ github.ref_name }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          cd out && sha256sum -c SHA256SUMS
+          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 \
+            || gh release create "$GITHUB_REF_NAME" --verify-tag --title "$GITHUB_REF_NAME" \
+                 --notes "UniVoidDistro $GITHUB_REF_NAME. The live image: verify with sha256sum -c SHA256SUMS and gh attestation verify ISO --repo $GH_REPO (docs/uni/live-image.md)."
+          gh release upload "$GITHUB_REF_NAME" ./*.iso SHA256SUMS BUILD live-packages.txt --clobber
