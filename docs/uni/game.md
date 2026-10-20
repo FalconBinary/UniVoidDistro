@@ -16,7 +16,7 @@ another, the user chooses. The user's decisions of 2026-10-20 are in the table b
 |---|---|---|
 | **G1** | `vh-root`, the gaming root, the login of `game` on tty3; Vulkan through Mesa (the GPU's driver from the plan); no network, no sound, no 32-bit, no kernel change; the remove-and-compare test | built; container end to end; the VM rig [below](#what-is-verified) |
 | G2 | sound: a second restricted pulse socket of the user's PipeWire for the group `game` (playback, no microphone), or the root's own PipeWire when no desktop runs [a spike] | planned |
-| G3 | the gaming boot: a Limine entry of its own with the gaming kernel (modules for NVIDIA only, ia32, NTSYNC, controllers), the NVIDIA kernel module built on the machine in an isolated build root and signed with the user's own key under a passphrase; the NVIDIA userspace (with 32-bit) in the gaming root | planned |
+| G3 | the gaming boot, on any GPU: a Limine entry of its own with ia32 for Steam and 32-bit games ([without NVIDIA](#machines-without-a-discrete-gpu-and-amd) no build and no key); where the plan finds an NVIDIA GPU, the gaming kernel (modules for NVIDIA only, ia32, NTSYNC, controllers) with the NVIDIA kernel module built on the machine in an isolated build root and signed with the user's own key under a passphrase, and the NVIDIA userspace (with 32-bit) in the gaming root | planned |
 | G4 | Steam: multilib, the 32-bit Mesa, the network of the UID `game`, controllers | planned |
 | G5 | the remove-and-compare test grows with every phase (the gaming boot, the build root, the key) | continuous |
 
@@ -36,6 +36,43 @@ another, the user chooses. The user's decisions of 2026-10-20 are in the table b
 What this changes against upstream's plan: the NVIDIA modules are built on the machine with the
 user's key, not in CI with a one-time key; and the gaming kernel boots only from its own entry, so
 `ia32_emulation=0` and `CONFIG_MODULES=n` hold for the everyday boot.
+
+## Machines without a discrete GPU, and AMD
+
+The gaming session does not need a discrete GPU. What a machine gets is a decision of the plan
+(`hwdb/gpu.zon`), by the GPUs the probe finds:
+
+- **G1 as it is.** The session uses the GPU's in-kernel driver, which the system has anyway (i915
+  or xe for Intel, amdgpu for AMD: a signed module of the stock kernel, or built into the machine
+  kernel), and Mesa in the gaming root: Vulkan through ANV or RADV, OpenGL through iris or
+  radeonsi (`mesa-dri`). An AMD dGPU is the same case. A GPU without a Vulkan driver of Mesa gets
+  lavapipe (the CPU). Tested on the plan of every fixture and on two machines made iGPU-only from
+  them: the laptop without its NVIDIA dGPU (Intel, ANV) and the AMD desktop without its Radeon card
+  (its Ryzen's iGPU, RADV); `intel-hybrid-laptop` is an iGPU-only Alder Lake laptop already.
+- **G3 without NVIDIA: no build root, no compiler, no signing key, no module.** The hwdb rules that
+  bring them match NVIDIA devices only. What G3 leaves on such a machine is the gaming boot for
+  ia32 (Steam and 32-bit games need it), in one of two ways, the user's choice when G3 comes:
+  - the **stock signed UKI with `ia32_emulation=1`** in place of `=0`: Void's kernel has ia32,
+    NTSYNC, `modify_ldt` and System V IPC built in, and the controllers' drivers as modules,
+    which go into the gaming boot's preload list before `modules_disabled=1`. No build at all.
+    Cost: one more UKI on the ESP [estimate: 60-90 MB with its initrd] and the stock kernel's
+    speed instead of the machine kernel's [VERIFY by bench];
+  - a **machine gaming kernel**: the machine kernel with ia32, NTSYNC and the controllers built in
+    and no loadable module at all, so no key. Cost: a kernel build for every kernel update (the
+    build root, removed afterwards, or CI).
+
+  The everyday boot's machine kernel is built without ia32 (`kernel/profiles/hardening`), so the
+  same kernel with another command line is a gaming boot on the stock kernel only.
+- **G4 (Steam)**: the 32-bit Mesa of the same GPU (`mesa-dri-32bit` and `mesa-vulkan-intel-32bit`
+  or `-radeon-32bit`), from the same rules.
+- **Old AMD GPUs** on the radeon driver (GCN 1.0 and 1.1 and older): radeon has no Vulkan of
+  Mesa, so lavapipe. GCN 1.0 and 1.1 run on amdgpu with `amdgpu.si_support=1 amdgpu.cik_support=1
+  radeon.si_support=0 radeon.cik_support=0` and get RADV: a later rule [VERIFY on hardware].
+- **Hybrid laptops**: the desktop stays on the iGPU. With an AMD dGPU, games render on it through
+  Mesa (DRI_PRIME), with no proprietary part; with an NVIDIA dGPU, in the gaming boot, through
+  PRIME render offload of NVIDIA's driver. gamescope then shows on the iGPU's panel what the
+  dGPU rendered [VERIFY on the GF63: gamescope with two GPUs is the main practical risk of a
+  laptop].
 
 ## G1: how it works
 
@@ -119,7 +156,9 @@ NVIDIA userspace with its 32-bit part adds 869 MiB, the build root's clang toolc
   workflow lifts that on its runner.
 - The plan: `game_packages` on the golden plans of every machine (`tests/adapt/run.sh`) and a unit
   test on the real hwdb (the GF63: `mesa-vulkan-intel`, with `VH_GPU=nouveau` NVK beside it; the
-  AMD desktop: RADV; the q35 rig: lavapipe; ARM: none).
+  AMD desktop: RADV; the Intel laptop with its iGPU alone: ANV; the q35 rig: lavapipe; ARM: none;
+  the GF63 without its dGPU: ANV, no dGPU tag; the AMD desktop without its card: RADV of the
+  Ryzen's iGPU).
 - On the VM rig: `kvm-smoke` with `step=game` ([tests/vm/steps/session.py](../../tests/vm/steps/session.py)):
   install with the rig's own plan and thor from the mirrors, the session from inside, Vulkan on
   lavapipe, the mounts after a reboot, the login of `game` on tty3 typed on the VM's keyboard, its

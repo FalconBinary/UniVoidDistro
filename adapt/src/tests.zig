@@ -297,4 +297,35 @@ test "the gaming root's Vulkan driver (hwdb): the GPU's, Vulkan on the CPU witho
         const p = plan.compute(.{ .hw = h, .db = d, .config = &cfg, .security = "tiered" }).plan;
         try t.expectEqualStrings(c[1], gamePkgs(p));
     }
+    // machines with an integrated GPU alone: the laptop without its NVIDIA dGPU (the display
+    // that did not bring the console up), the AMD desktop without its Radeon card (its Ryzen's
+    // iGPU then brings the console up). The iGPU's own Vulkan driver, no dGPU tag, no lavapipe
+    const igpu = [_][4][]const u8{
+        .{ "gf63", "0000:01:00.0", "", "mesa-vulkan-intel" },
+        .{ "amd-desktop", "0000:03:00.0", "0000:0b:00.0", "mesa-vulkan-radeon" },
+    };
+    for (igpu) |c| {
+        const h = withoutDisplay(hw.load(vh.fmt("kernel/hw/{s}.zon", .{c[0]})), c[1], c[2]);
+        try t.expectEqual(@as(usize, 1), h.displays.len);
+        const p = plan.compute(.{ .hw = h, .db = d, .config = &cfg }).plan;
+        try t.expectEqualStrings(c[3], gamePkgs(p));
+        for (p.tags) |tag| try t.expect(!vh.eql(tag, "dgpu"));
+    }
+}
+
+/// the machine without the display device NAME (and its PCI device); BOOT, when given, the
+/// display that brings the console up instead
+fn withoutDisplay(h0: hw.Hw, name: []const u8, boot: []const u8) hw.Hw {
+    var h = h0;
+    var devs: std.ArrayList(hw.Device) = .empty;
+    for (h0.devices) |dv| if (!vh.eql(dv.name, name)) devs.append(vh.gpa, dv) catch vh.oom();
+    var disp: std.ArrayList(hw.Display) = .empty;
+    for (h0.displays) |x| if (!vh.eql(x.name, name)) {
+        var y = x;
+        if (boot.len > 0 and vh.eql(y.name, boot)) y.boot_vga = true;
+        disp.append(vh.gpa, y) catch vh.oom();
+    };
+    h.devices = devs.items;
+    h.displays = disp.items;
+    return h;
 }
