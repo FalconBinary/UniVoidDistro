@@ -24,10 +24,10 @@ permissions:
   # the artifact of another run (download-artifact with run-id)
   actions: read
 env:
-  # the VM's RAM in MiB: 4 GiB for now, since the RefursWM build ran out of memory in vhvm.py's
-  # default 3 GiB (run 39297735098); back to 3072 once the installer fits (it prints its RAM at
-  # every heading)
-  VH_MEM: "4096"
+  # the VM's RAM in MiB: 3 GiB, the gate's memory floor (hwdb/security.zon memory-floor), so
+  # every run shows the installer fits there; it peaks at 2.1 GiB (the RefursWM build) and
+  # prints its RAM at every heading. 4096 while the live ISO rode along (run 39297735098)
+  VH_MEM: "3072"
 jobs:
   smoke:
     runs-on: ubuntu-latest
