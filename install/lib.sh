@@ -294,10 +294,10 @@ vh_module_blacklist() {
 # directories (iwlwifi-*.ucode -> intel/iwlwifi/, since 2025), some under another name
 # (amdgpu/vcn_4_0_4.bin -> vcn_4_0_0.bin; intel/ish/ -> the maker's ish/), some of them whole
 # directories (nvidia/ad104 -> ad102), some through chains. A kept link whose target the trim
-# cuts leaves the driver without its firmware: the GF63's Wi-Fi on linux-firmware 20260810. So
-# every pattern is kept in any directory too, which follows the files that moved and keeps
-# working when an update brings new versions of them; and FILES, the firmware packages' file
-# lists (vh_firmware_files), gives the targets under other names, kept by name.
+# cuts leaves the driver without its firmware: the first real machine's Wi-Fi on linux-firmware
+# 20260810. So every pattern is kept in any directory too, which follows the files that moved
+# and keeps working when an update brings new versions of them; and FILES, the firmware
+# packages' file lists (vh_firmware_files), gives the targets under other names, kept by name.
 vh_firmware_noextract() { # [FILES]
 	local k
 	echo "# UniVoidDistro: firmware for this machine's hardware only (VH_FIRMWARE_TRIM=yes, docs/02, the plan)."
