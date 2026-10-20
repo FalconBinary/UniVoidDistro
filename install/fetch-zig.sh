@@ -12,6 +12,8 @@ set -euo pipefail
 . "$(dirname "$0")/lib.sh"
 VER=${1:?"Zig version, for example 0.17.0"}
 DIR=${2:?"directory for the compiler (in RAM)"}
+# Zig in RAM is for building there, which needs 3 GiB (lib.sh: need_build_ram)
+need_build_ram
 
 # Zig release signing key, published at https://ziglang.org/download/.
 # Verify it through a second independent channel (docs/08) before trusting it.

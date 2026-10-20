@@ -81,12 +81,14 @@ present the tier is **full**. With one or more missing it is **reduced**: in `st
 `vh-plan` exits with code 3 and a report that names each missing property, its residual risk
 and the firmware setting that fixes it (`hwdb/board.zon`); in `tiered` mode the plan carries
 the list `acknowledge` that the installer shows and makes the user confirm by typing. A
-machine below the floor (no UEFI 64-bit on x86_64, less than 3 GiB of memory) is refused in
-both modes. The memory floor is the installer's: it builds its programs in the live system's RAM
-and peaks at 2.1 GiB (the RefursWM build; measured on the VM rig, kvm-smoke run 39310221609,
-with the RAM the installer prints at every step). U6, a live image with the programs built, is
-to lower it. The protection alone would ask for 2 GiB: Argon2id with 1 GiB per guess of the
-LUKS passphrase, because cryptsetup gives the PBKDF at most half of the RAM.
+machine below the floor (no UEFI 64-bit on x86_64, less than 1.5 GiB of memory) is refused in
+both modes. The memory floor is the installation's: from our live image (U6), which brings the
+programs built, it peaks at about 1.4 GiB with Argon2id at 1 GiB and near 0.7 GiB with Argon2id
+at a quarter of the RAM. Building the programs in the live system's RAM, on Void's own image,
+peaks at 2.1 GiB (the RefursWM build; measured on the VM rig, kvm-smoke run 39310221609, with the
+RAM the installer prints at every step): the installer refuses that below 3 GiB. The protection
+asks for 2 GiB: Argon2id with 1 GiB per guess of the LUKS passphrase, because cryptsetup gives
+the PBKDF at most half of the RAM; `tiered` below that gives it a quarter of the RAM.
 `vh-audit` reports the tier and the acknowledged risks of the running system.
 
 ## Components
@@ -187,8 +189,8 @@ BPF object serves every machine with no compile-time constants. Tests on QEMU to
 void-mklive images for x86_64 and aarch64 with a current stock kernel, the Zig tools and the
 installer. The official Void image (20250202) does not know new hardware (Wi-Fi 7, new GPUs
 and NICs), and the installer needs the network to fetch packages. With the programs built into
-the image, the installer no longer compiles in RAM: that lowers the 3 GiB memory floor of the
-gate, which is the installer's, not the system's. The design and the decisions:
+the image, the installer no longer compiles in RAM: the gate's memory floor, the installer's
+and not the system's, came down from 3 GiB to 1.5 GiB. The design and the decisions:
 [live-image.md](live-image.md); the x86_64 image is `live/` and the `live-image` workflow, the
 aarch64 one comes with U5.
 
@@ -234,8 +236,7 @@ image); they are installed and checked before it, and the ISO's UEFI boot image 
 
 U6 not verified: the ISO booted by UEFI from a USB stick on real hardware (the rig boots the
 image's kernel directly); the x86-64-v1 builds on a CPU below v3 (the rig is v3); the release on
-a `v*` tag; a memory floor below 3 GiB (the gate keeps 3 GiB until it is decided and measured on
-the rig). Open, from the system: `vh-kconf check` reports `regulatory.db` as firmware that failed
+a `v*` tag; the floor of 1.5 GiB (decided on 2026-10-20) on the rig at 1.5 GiB. Open, from the system: `vh-kconf check` reports `regulatory.db` as firmware that failed
 to load on the rig, which has no Wi-Fi (cfg80211 is loaded although the plan keeps the database
 only with a wireless interface); the same on Void's image, so not from U6.
 
@@ -261,7 +262,8 @@ the synthesised q35 fixture (now the rig's own hw.zon); the fixed power button o
 became a platform driver: `tiny_power_button`, SIGINT, `/etc/runit/ctrlaltdel`, `vh-acpid`);
 `vh-kconf check` judging a machine kernel against the live image's kernel instead of the stock
 one; a test harness that hid failing unit tests. The installer needs 2.1 GiB of RAM at its peak
-(the RefursWM build): the gate's memory floor is 3 GiB in both modes until U6.
+when it builds (the RefursWM build): the gate's memory floor was 3 GiB in both modes until U6,
+1.5 GiB since, and 3 GiB only for building in RAM.
 
 U3 verified, in containers on the Mac: `tests/kernel/matrix.sh` plans every x86_64 machine of
 `kernel/hw` (gf63, amd-desktop, intel-hybrid-laptop, qemu-q35) in tiered mode and resolves it,
@@ -326,7 +328,7 @@ and `.config`, one explained difference in LSMOD); the installer's packages, bla
 firmware and command line, which for the GF63 are exactly upstream's; the lint.
 
 U1 not verified yet: any real machine; the four synthesised fixtures (qemu-q35 is the rig's own
-since kvm-smoke run 39342292948); the installation in 3 GiB, the floor (the rig runs with 4); the
+since kvm-smoke run 39342292948); the
 [VERIFY] items of `hwdb/` (the firmware narrowed for amdgpu, i915 and iwlwifi on hardware, the
 Secure Boot menu names); intel-iommu under TCG (KVM runs it).
 

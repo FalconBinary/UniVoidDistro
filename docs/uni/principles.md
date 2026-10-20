@@ -62,7 +62,7 @@ This file adds the rules of a distribution that adapts itself to the machine.
 | TPM 2.0 | firmware TPM or a discrete one | where present | refused | no tpm2-totp, no measured boot, no Option ROM check for key enrolment |
 | IOMMU | the DMAR (Intel) or IVRS (AMD) table | IORT (SMMU) | refused, with the advice to enable VT-d / AMD-Vi | DMA from a malicious device is not contained |
 | AES in the CPU | the `aes` flag | `aes` (ARMv8 Crypto Extensions) | refused | the disk is encrypted with Adiantum instead of AES-XTS |
-| memory | 3 GiB, the installer's floor: it builds its programs in RAM and peaks at 2.1 GiB (the protection alone, Argon2id with 1 GiB per guess, would need 2 GiB: cryptsetup uses at most half of the RAM) | the same | refused | refused as well: the floor holds in both modes until U6 lowers it; below 2 GiB, `tiered` then gives Argon2id a quarter of the RAM (at least 256 MiB) |
+| memory | 2 GiB for Argon2id with 1 GiB per guess (cryptsetup uses at most half of the RAM); 1.5 GiB, the installation's floor from our live image (on Void's own image the installer builds its programs in RAM and needs 3 GiB) | the same | refused | below 1.5 GiB refused (the floor, in both modes); from 1.5 to 2 GiB Argon2id gets a quarter of the RAM (at least 256 MiB), so each guess of the passphrase costs an attacker less |
 
 What does not change with the mode: `lockdown=confidentiality`, the module lock (no modules
 on a machine kernel, `modules_disabled=1` on the stock one), `init_on_alloc`/`init_on_free`,

@@ -43,6 +43,19 @@ mem_sampler() {
 	done
 }
 
+# Building the installer's programs in the live system's RAM (Void's own image, or ours of
+# another commit) peaks at 2.1 GiB, the RefursWM build with Zig and the earlier builds in tmpfs
+# (the VM rig): 3 GiB, which the gate's memory floor no longer asks for since our live image
+# brings them built (hwdb/security.zon, memory-floor; docs/uni/live-image.md). MemTotal, as the
+# probe reads it; VH_MEMINFO is for tests.
+VH_BUILD_RAM_MIB=2750
+need_build_ram() {
+	local total
+	total=$(awk '/^MemTotal:/ { print int($2 / 1024) }' "${VH_MEMINFO:-/proc/meminfo}" 2>/dev/null) || total=
+	[ -n "$total" ] || return 0
+	[ "$total" -ge "$VH_BUILD_RAM_MIB" ] || die "the kernel sees $total MiB of memory: building the installer's programs in RAM needs 3 GiB. UniVoidDistro's live image of this commit brings them built and installs in 1.5 GiB (docs/uni/live-image.md)"
+}
+
 # In --dry-run mode commands are printed instead of executed.
 DRY_RUN=${DRY_RUN:-0}
 run() {

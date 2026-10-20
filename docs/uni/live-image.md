@@ -11,8 +11,9 @@ and the rig showed what it costs ([ROADMAP](ROADMAP.md#state-2026-10-20)):
   now updates it first).
 - **everything compiled in RAM**: the installer downloads Zig and builds `vh-kconf` and `vh-plan`,
   thor, the Zig tools, RefursWM and RefursLine in the live system's RAM. That is about 20 minutes
-  of every installation and its memory peak of 2.1 GiB (the RefursWM build), the reason for the
-  gate's 3 GiB floor (`hwdb/security.zon`, memory-floor).
+  of every installation and its memory peak of 2.1 GiB (the RefursWM build), the reason the
+  gate's floor was 3 GiB (`hwdb/security.zon`, memory-floor; 1.5 GiB since U6, and the
+  installer itself refuses to build in RAM below 3 GiB).
 
 U6 builds an image from this repository at a commit: the same kernel series as the installed
 system, a current xbps, the installer's tools, and every program already built, so that the

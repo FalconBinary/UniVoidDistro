@@ -57,10 +57,10 @@
         },
         .{
             .id = "memory-floor",
-            .why = "The installer builds its programs in the live system's RAM and needs 2.1 GiB at its peak (the RefursWM build, measured on the VM rig), so 3 GiB in either mode, until a live image brings the programs built (U6).",
-            .when = .{ .ram_min_mib = 2750 },
+            .why = "Installing from UniVoidDistro's live image, which brings the programs built (U6), peaks at about 1.4 GiB with Argon2id at 1 GiB (the live system's 325 MiB and Argon2id, on the VM rig) and near 0.7 GiB with Argon2id at a quarter of the RAM below 2 GiB (the UKI build); 1.5 GiB in either mode leaves room for what the firmware keeps. Building the programs in RAM, on Void's own image, needs 3 GiB: the installer checks that itself (install/lib.sh, need_build_ram).",
+            .when = .{ .ram_min_mib = 1300 },
             .floor = true,
-            .fix = "At least 3 GiB of memory.",
+            .fix = "At least 1.5 GiB of memory.",
         },
     },
 }

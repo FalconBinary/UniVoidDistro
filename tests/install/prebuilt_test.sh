@@ -48,6 +48,15 @@ mv /etc/vh-live /tmp/vh-live.away
 r=$(pb); [ "$r" = "1:" ] && ok "Void's own image (no /etc/vh-live): built here (1)" || bad "Void's own image" "$r"
 mv /tmp/vh-live.away /etc/vh-live
 
+echo "== need_build_ram: building in RAM needs 3 GiB, our image installs in 1.5"
+nb() { printf 'MemTotal:       %s kB\n' "$1" > /tmp/meminfo; ( . "$repo/install/lib.sh"; VH_MEMINFO=/tmp/meminfo need_build_ram ) 2>&1; }
+r=$(nb 2940928) && ok "2872 MiB (the rig with 3 GiB): builds" || bad "2872 MiB" "$r"
+if r=$(nb 1382400); then bad "1350 MiB is refused" "it was not"; else
+	case $r in *"1350 MiB"*"needs 3 GiB"*"live image of this commit"*) ok "1350 MiB (the rig with 1.5 GiB): refused, pointing to our image" ;;
+	*) bad "1350 MiB: the message" "$r" ;; esac
+fi
+r=$(VH_MEMINFO=/nonexistent bash -c '. "$1/install/lib.sh"; need_build_ram' _ "$repo" 2>&1) && ok "no meminfo: not refused" || bad "no meminfo" "$r"
+
 echo "== vh_desktop_variant"
 dv() { ( . "$repo/install/lib.sh"; VH_PLAN_TAGS=$1 VH_BLUETOOTH=$2 vh_desktop_variant ); }
 [ "$(dv 'efi x86-64-v2 x86-64-v3 vm' optional)" = x86-64-v3-btmenu ] && ok "v3, optional: x86-64-v3-btmenu" || bad "v3, optional" "$(dv 'efi x86-64-v2 x86-64-v3 vm' optional)"

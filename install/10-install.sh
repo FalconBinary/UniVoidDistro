@@ -65,6 +65,11 @@ sb=$(od -An -t u1 -j4 -N1 /sys/firmware/efi/efivars/SecureBoot-* 2>/dev/null | t
 ESP_PART=$(part "$VH_DISK" 1)
 LUKS_PART=$(part "$VH_DISK" 2)
 ok "disk $VH_DISK, $size_gib GiB: $ESP_PART (ESP $VH_ESP_SIZE) + $LUKS_PART (LUKS2)"
+# the programs are built in RAM unless our live image of this commit brings them: building
+# needs 3 GiB, refused here before anything is downloaded or written (lib.sh: need_build_ram)
+rc=0
+vh_prebuilt >/dev/null 2>&1 || rc=$?
+[ "$DRY_RUN" = 1 ] || [ "$rc" != 1 ] || need_build_ram
 
 # ---------------------------------------------------------------- the plan of this machine
 say "the plan of this machine (install/plan.sh: the probe and the rules of hwdb/)"

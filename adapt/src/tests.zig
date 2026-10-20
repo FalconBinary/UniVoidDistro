@@ -206,6 +206,36 @@ test "a misspelt condition is an error, not a match" {
     try t.expectEqualStrings("vm", f.rules[0].when.lacks[0]);
 }
 
+test "the memory floor (hwdb): 1.5 GiB in either mode, 2 GiB in strict" {
+    // the real hwdb and the rig's own probe: tests/adapt/run.sh runs the tests in the repository's root
+    if (!vh.isDir("hwdb") or !vh.pathExists("kernel/hw/qemu-q35.zon")) return error.SkipZigTest;
+    const d = rules.load("hwdb");
+    var cfg: vh.Kv = .{};
+    cfg.read("vh.conf.example", false);
+    var h = hw.load("kernel/hw/qemu-q35.zon");
+    // 2 GiB (the kernel sees a little less): every protection, Argon2id with 1 GiB
+    h.memory.total_kib = 1950 * 1024;
+    const two = plan.compute(.{ .hw = h, .db = d, .config = &cfg });
+    try t.expectEqualStrings("full", two.plan.tier);
+    try t.expectEqual(@as(u64, 1048576), two.plan.luks.pbkdf_memory_kib);
+    // 1.5 GiB (the rig with VH_MEM=1536): strict refuses it, tiered installs it with Argon2id at
+    // a quarter of the RAM, rounded down to 64 MiB
+    h.memory.total_kib = 1350 * 1024;
+    const strict = plan.compute(.{ .hw = h, .db = d, .config = &cfg });
+    try t.expectEqualStrings("reduced", strict.plan.tier);
+    try t.expectEqual(@as(u8, 3), strict.status);
+    const tiered = plan.compute(.{ .hw = h, .db = d, .config = &cfg, .security = "tiered" });
+    try t.expectEqual(@as(u8, 0), tiered.status);
+    try t.expectEqual(@as(usize, 1), tiered.plan.acknowledge.len);
+    try t.expectEqualStrings("memory", tiered.plan.acknowledge[0]);
+    try t.expectEqual(@as(u64, 327680), tiered.plan.luks.pbkdf_memory_kib);
+    // below the floor: refused in either mode
+    h.memory.total_kib = 1200 * 1024;
+    const low = plan.compute(.{ .hw = h, .db = d, .config = &cfg, .security = "tiered" });
+    try t.expectEqualStrings("refused", low.plan.tier);
+    try t.expectEqual(@as(u8, 3), low.status);
+}
+
 test "-march: the CPU model's on bare metal, the x86-64 level in a virtual machine (hwdb)" {
     // the real hwdb and fixtures: tests/adapt/run.sh runs the tests in the repository's root
     if (!vh.isDir("hwdb") or !vh.pathExists("kernel/hw/amd-desktop.zon")) return error.SkipZigTest;
