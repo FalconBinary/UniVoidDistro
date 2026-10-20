@@ -90,9 +90,10 @@ def step_game(a):
         rc, out = run(ser, enter("-c 'vulkaninfo --summary 2>&1'") + " | grep -E 'deviceName|driverName|apiVersion|ERROR' | head -8", timeout=300)
         print(out)
         check("Vulkan in the gaming root (lavapipe on the CPU)", "llvmpipe" in out.lower() or "lavapipe" in out.lower(), out[-300:].replace("\n", " | "))
-        rc, out = run(ser, enter("-c 'ls /home; cat /proc/self/uid_map; ls /etc/vh 2>&1; ls /dev | tr \"\\n\" \" \"'"))
-        check("the session sees its home only, not the system's /etc/vh", "No such file" in out and re.search(r"^game\r?$", out, re.M) is not None,
-              out[-300:].replace("\n", " | "))
+        rc, out = run(ser, enter("-c 'for h in /home/*; do echo \"HOME_SEEN=$h\"; done; [ -e /etc/vh ] && echo ETC_VH=yes || echo ETC_VH=no; "
+                                 "echo \"MAP=$(cat /proc/self/uid_map)\"; echo DEV: /dev/*'"))
+        check("the session sees its home only, not the system's /etc/vh",
+              out.count("HOME_SEEN=") == 1 and "HOME_SEEN=/home/game" in out and "ETC_VH=no" in out, out[-300:].replace("\n", " | "))
     finally:
         shutdown(vm, ser)
 
