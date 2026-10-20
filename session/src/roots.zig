@@ -38,19 +38,29 @@ pub fn exists(o: Opts, name: []const u8) bool {
 
 /// The directory of every root, its fstab line and its mount (nosuid, nodev), made with the
 /// first root; /var/lib/vh too when it was not there, so that the last root's removal can take
-/// away exactly what the first one brought.
+/// away exactly what the first one brought. A root's own user (game) has to pass through
+/// /var/lib/vh: one that only root may enter (vh-limine-update makes it 0700) gets the search
+/// bit for others while a root exists, and its mode back with the last one.
 fn ensureRootsDir(o: Opts) void {
     const roots = o.sys.path(common.roots_dir);
     if (!vh.isDir(roots)) {
-        var made: vh.Strv = .{};
-        if (!vh.isDir(o.sys.path(common.vh_dir))) {
-            sys.mkdir(o.sys.path(common.vh_dir), 0o755) catch vh.die("{s}: {s}", .{ o.sys.path(common.vh_dir), vh.serr() });
-            made.add(common.vh_dir);
-        }
-        sys.mkdir(roots, 0o755) catch vh.die("{s}: {s}", .{ roots, vh.serr() });
         var text: std.ArrayList(u8) = .empty;
         text.appendSlice(vh.gpa, "# vh-root: what the first root brought, which the last one's removal takes away\n") catch vh.oom();
-        for (made.slice()) |m| text.print(vh.gpa, "made {s}\n", .{m}) catch vh.oom();
+        const vd = o.sys.path(common.vh_dir);
+        if (!vh.isDir(vd)) {
+            sys.mkdir(vd, 0o755) catch vh.die("{s}: {s}", .{ vd, vh.serr() });
+            sys.chmod(vd, 0o755) catch vh.die("{s}: {s}", .{ vd, vh.serr() });
+            text.print(vh.gpa, "made {s}\n", .{common.vh_dir}) catch vh.oom();
+        } else {
+            const st = vh.stat(vd, false) catch vh.die("{s}: {s}", .{ vd, vh.serr() });
+            const mode = st.mode & 0o7777;
+            if (mode & 0o001 == 0) {
+                sys.chmod(vd, mode | 0o001) catch vh.die("{s}: {s}", .{ vd, vh.serr() });
+                text.print(vh.gpa, "mode {s} {o}\n", .{ common.vh_dir, mode }) catch vh.oom();
+            }
+        }
+        sys.mkdir(roots, 0o755) catch vh.die("{s}: {s}", .{ roots, vh.serr() });
+        sys.chmod(roots, 0o755) catch vh.die("{s}: {s}", .{ roots, vh.serr() });
         vh.writeAtomic(vh.fmt("{s}{s}", .{ roots, marker }), text.items, 0o644);
     }
     const fstab = o.sys.path("/etc/fstab");
@@ -74,11 +84,18 @@ fn dropRootsDir(o: Opts) void {
     vh.unlink(vh.fmt("{s}{s}", .{ roots, marker })) catch {};
     _ = vh.sys(linux.rmdir(vh.z(roots).ptr)) catch vh.die("{s}: {s}", .{ roots, vh.serr() });
     var it = mem.splitScalar(u8, made, '\n');
-    while (it.next()) |l| if (vh.startsWith(l, "made ")) {
-        const d = o.sys.path(l[5..]);
-        // only when empty: something else may have moved in meanwhile
-        _ = linux.rmdir(vh.z(d).ptr);
-    };
+    while (it.next()) |l| {
+        if (vh.startsWith(l, "made ")) {
+            const d = o.sys.path(l[5..]);
+            // only when empty: something else may have moved in meanwhile
+            _ = linux.rmdir(vh.z(d).ptr);
+        } else if (vh.startsWith(l, "mode ")) {
+            var f = mem.tokenizeScalar(u8, l[5..], ' ');
+            const d = o.sys.path(f.next() orelse continue);
+            const m = std.fmt.parseInt(u32, f.next() orelse continue, 8) catch continue;
+            sys.chmod(d, m) catch vh.die("{s}: {s}", .{ d, vh.serr() });
+        }
+    }
 }
 
 pub fn isMountPoint(p: []const u8) bool {

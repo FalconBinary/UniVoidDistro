@@ -15,6 +15,7 @@ const vh = @import("vh");
 const profiles = @import("profiles");
 const common = @import("common.zig");
 const roots = @import("roots.zig");
+const sys = @import("sys.zig");
 
 const usage =
     \\usage: doas vh-root create NAME [--profile P] [--packages "A B ..."]
@@ -28,6 +29,10 @@ const usage =
 
 pub fn main(init: std.process.Init.Minimal) void {
     const all = vh.init(init, "vh-root");
+    // doas keeps the admin's umask, 077: the roots' directories, and the files that package
+    // scripts make in a root (the loader's cache, font and icon caches), must stay readable to
+    // the root's own user, as vh-update keeps the system's
+    sys.umask(0o022);
     var o: roots.Opts = .{};
     var args: std.ArrayList([]const u8) = .empty;
     var profile_name: ?[]const u8 = null;

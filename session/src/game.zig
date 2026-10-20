@@ -49,6 +49,10 @@ const Cfg = struct {
 
 pub fn main(init: std.process.Init.Minimal) void {
     const all = vh.init(init, "vh-game");
+    // doas keeps the admin's umask, 077: the roots' directories, and the files that package
+    // scripts make in a root (the loader's cache, font and icon caches), must stay readable to
+    // the root's own user, as vh-update keeps the system's
+    sys.umask(0o022);
     var c: Cfg = .{};
     var args: std.ArrayList([]const u8) = .empty;
     var i: usize = 0;
@@ -165,6 +169,7 @@ fn install(c: Cfg) void {
         roots.writeKeeping(p, lines.append(old, e[1]));
     }
     sys.mkdir(vh.fmt("{s}{s}", .{ root, G.home }), 0o755) catch vh.die("{s}{s}: {s}", .{ root, G.home, vh.serr() });
+    sys.chmod(vh.fmt("{s}{s}", .{ root, G.home }), 0o755) catch vh.die("{s}{s}: {s}", .{ root, G.home, vh.serr() });
     vh.mkdirs(vh.fmt("{s}/etc/profile.d", .{root}), 0o755);
     vh.writeAtomic(vh.fmt("{s}/etc/profile.d/zz-vh-game.sh", .{root}),
         \\# vh-game: the login shell of the gaming session (vh-game-enter starts it in this root)

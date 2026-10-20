@@ -13,7 +13,10 @@ ROOT = "/var/lib/vh/roots/game"
 # of seedrng, the state unbound keeps in its DNSSEC root key (RFC 5011), the hardware clock's
 # drift that stage 3 writes. Directories are compared without their size (XFS keeps a
 # directory's size)
-VOLATILE = ("/var/log", "/var/lib/chrony", "/var/db/dhcpcd", "/var/lib/seedrng", "/etc/unbound/var", "/etc/adjtime", "/root/.cache")
+# /root/.vh-game-test keeps this step's own files across the reboot (/var/tmp is in memory)
+TEST_DIR = "/root/.vh-game-test"
+VOLATILE = ("/var/log", "/var/lib/chrony", "/var/db/dhcpcd", "/var/lib/dhcpcd", "/var/lib/seedrng", "/etc/unbound/var",
+            "/etc/adjtime", "/root/.cache", TEST_DIR)
 PRUNE = " -o ".join(f"-path {p}" for p in VOLATILE)
 SNAPSHOT_CMD = ("{ find / -xdev \\( " + PRUNE + " \\) -prune -o \\( -type d -printf '%p\\td\\t%m\\t%U\\t%G\\n' \\) "
                 "-o -printf '%p\\t%y\\t%m\\t%U\\t%G\\t%s\\t%l\\n' | LC_ALL=C sort; "
@@ -53,8 +56,8 @@ def step_game(a):
     vm, ser = boot(a)
     try:
         base_fails, base_lines = fails(ser, "vh-audit before the gaming session")
-        rc, out = run(ser, snapshot("/var/tmp/vh-game-before") + "; grep -c . /var/tmp/vh-game-before; "
-                           "nft list ruleset > /var/tmp/vh-game-nft-before; cp /etc/vh/hw.zon /var/tmp/vh-game-hw-before", timeout=3600)
+        rc, out = run(ser, f"rm -rf {TEST_DIR} && install -d -m 0700 {TEST_DIR} && " + snapshot(f"{TEST_DIR}/before") +
+                      f"; grep -c . {TEST_DIR}/before; nft list ruleset > {TEST_DIR}/nft-before; cp /etc/vh/hw.zon {TEST_DIR}/hw-before", timeout=3600)
         check("snapshot of the system before the install", rc == 0, out.strip().splitlines()[-1] if out.strip() else "")
         rc, out = run(ser, f"printf '%s\\n' '{vhvm.USER_PASS}' | vh-game install --password-stdin 2>&1 | tail -40", timeout=5400)
         m = re.search(r"VH_GAME installed user=game uid=(\d+) root=\S+ packages=(\S+)", out)
@@ -66,6 +69,9 @@ def step_game(a):
         print(out)
         check("vh-game status: installed, tty3 off", "VH_GAME status installed=yes tty=off" in out, out[-300:].replace("\n", " | "))
         check("the root: 0750 root:game", "750 root game" in out)
+        rc, out = run(ser, as_user("game", f"test -r {ROOT}/etc/passwd && test -x {ROOT}/usr/bin && echo REACHES") +
+                      f"; stat -c '%a %n' /var/lib/vh /var/lib/vh/roots {ROOT} {ROOT}/etc")
+        check("game reaches its root (doas's umask is 077)", "REACHES" in out, out[-300:].replace("\n", " | "))
         n_fails, lines = fails(ser, "vh-audit with the gaming session")
         check("vh-audit: no new FAIL with the gaming session", n_fails == base_fails and n_fails >= 0,
               " | ".join(l for l in lines if l not in base_lines))
@@ -74,7 +80,8 @@ def step_game(a):
         print(out)
         check("vh-game-enter --check: every check", "VH_GAME_ENTER ok=" in out and re.search(r"VH_GAME_ENTER ok=\d+ fail=0", out) is not None,
               " | ".join(l for l in out.splitlines() if l.startswith("FAIL")))
-        rc, out = run(ser, enter("-c 'vulkaninfo --summary 2>&1 | grep -E \"deviceName|driverName|apiVersion\" | head -6'"), timeout=300)
+        # the root has no grep (bash, coreutils, Mesa, Vulkan and gamescope only): the host filters
+        rc, out = run(ser, enter("-c 'vulkaninfo --summary 2>&1'") + " | grep -E 'deviceName|driverName|apiVersion|ERROR' | head -8", timeout=300)
         print(out)
         check("Vulkan in the gaming root (lavapipe on the CPU)", "llvmpipe" in out.lower() or "lavapipe" in out.lower(), out[-300:].replace("\n", " | "))
         rc, out = run(ser, enter("-c 'ls /home; cat /proc/self/uid_map; ls /etc/vh 2>&1; ls /dev | tr \"\\n\" \" \"'"))
@@ -115,22 +122,23 @@ def step_game(a):
                   out[-400:].replace("\n", " | "))
             check("the login's session runs in the gaming root, on tty3", "profile=game" in out and "/dev/tty3" in out)
         # tty off: the getty goes, and with its hangup the session
-        rc, out = run(ser, "vh-game tty off; sleep 3; echo procs=$(pgrep -u game | wc -l); pgrep -a agetty")
-        check("vh-game tty off: the getty and the session end", "procs=0" in out and "tty3" not in out, out[-300:].replace("\n", " | "))
+        rc, out = run(ser, "vh-game tty off; sleep 3; echo procs=$(pgrep -u game | wc -l) gettys=$(pgrep -a agetty | grep -c tty3)")
+        check("vh-game tty off: the getty and the session end", "procs=0 gettys=0" in out, out[-300:].replace("\n", " | "))
         vm.monitor("sendkey ctrl-alt-f1")
         rc, out = run(ser, "vh-game remove --yes 2>&1 | tail -5", timeout=1800)
         check("vh-game remove", "VH_GAME removed" in out, out[-500:].replace("\n", " | "))
-        rc, out = run(ser, snapshot("/var/tmp/vh-game-after") + "; "
-                           "if cmp -s /var/tmp/vh-game-before /var/tmp/vh-game-after; then echo FILES_SAME; else diff /var/tmp/vh-game-before /var/tmp/vh-game-after | head -40; fi; "
-                           "nft list ruleset | cmp -s - /var/tmp/vh-game-nft-before && echo NFT_SAME; "
-                           "cmp -s /etc/vh/hw.zon /var/tmp/vh-game-hw-before && echo HW_SAME; "
-                           "getent passwd game || echo NO_GAME", timeout=3600)
+        rc, out = run(ser, snapshot(f"{TEST_DIR}/after") + "; "
+                      f"if cmp -s {TEST_DIR}/before {TEST_DIR}/after; then echo FILES_SAME; else diff {TEST_DIR}/before {TEST_DIR}/after | head -40; fi; "
+                      f"nft list ruleset | cmp -s - {TEST_DIR}/nft-before && echo NFT_SAME; "
+                      f"cmp -s /etc/vh/hw.zon {TEST_DIR}/hw-before && echo HW_SAME; "
+                      "getent passwd game || echo NO_GAME", timeout=3600)
         print(out)
         check("after the removal the system is the system before the install, byte for byte", "FILES_SAME" in out,
               out[-1200:].replace("\n", " | "))
         check("the nft ruleset, hw.zon, no user game", "NFT_SAME" in out and "HW_SAME" in out and "NO_GAME" in out)
         n_fails, lines = fails(ser, "vh-audit after the removal")
         check("vh-audit after the removal: as before", n_fails == base_fails, " | ".join(lines))
+        run(ser, f"rm -rf {TEST_DIR}")
     finally:
         shutdown(vm, ser)
 

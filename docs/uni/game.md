@@ -96,7 +96,11 @@ doas vh-game remove       everything install made, the home with it
   (`game_packages`: `mesa-vulkan-intel`, `-radeon`, `-nouveau`; `mesa-vulkan-lavapipe` without a
   GPU that has one, as on the VM rig). Documentation and firmware are not extracted; the package
   cache is emptied after each install. `/var/lib/vh/roots` is a bind mount of itself with nosuid and
-  nodev; thor strips SUID bits and file capabilities in every root as in the system.
+  nodev; thor strips SUID bits and file capabilities in every root as in the system. `/var/lib/vh`,
+  when only root may enter it (vh-limine-update makes it 0700), gets the search bit for others
+  while a root exists, and its mode back with the last one. vh-root and vh-game work with umask
+  022 whatever doas leaves them (the admin's 077), so that the root's directories and the caches
+  its package scripts write stay readable to `game`.
 - **The account**: `game`, its own group, the groups `_seatd` (seatd's socket) and `render` (the
   render nodes) only; never `input` (seatd hands the active session its input devices and takes
   them back at a VT switch), `video`, `audio` or `wheel`. vh-game writes the lines of passwd,

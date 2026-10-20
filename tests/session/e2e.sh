@@ -28,6 +28,9 @@ printf 'repository=%s\n' "$repo" > /etc/xbps.d/00-repository-main.conf
 install -m 0755 "$src/build/st/bin/vh-game-enter" /usr/local/bin/
 install -m 0755 "$src/build/st/bin/vh-game" "$src/build/st/bin/vh-root" /usr/local/sbin/
 [ -d /etc/sv/agetty-tty3 ] || mkdir -p /etc/sv/agetty-tty3
+# /var/lib/vh as vh-limine-update makes it, for root alone: vh-root lets game pass through it
+# while the root exists, and gives it its mode back with the removal
+mkdir -p /var/lib/vh && chmod 0700 /var/lib/vh
 mkdir -p /tmp/stub
 cat > /tmp/stub/thor <<'EOF'
 #!/bin/sh
@@ -57,7 +60,7 @@ nft_before=$(nft list ruleset 2>/dev/null || true)
 
 echo "== vh-game install"
 hash='$y$j9T$7SZe8DiL3oMiMOkl7I0Na/$Fdu9oQ8ER1wM2ixgnXzlvaK0Ap/CIoUEB1n/6OWfl25'
-if vh-game install --any-arch --password-hash "$hash" --plan-env /tmp/plan.env --thor /tmp/stub/thor > /tmp/install.out 2>&1; then
+if (umask 077; vh-game install --any-arch --password-hash "$hash" --plan-env /tmp/plan.env --thor /tmp/stub/thor) > /tmp/install.out 2>&1; then
 	ok "install"
 else
 	bad "install" "$(tail -5 /tmp/install.out | tr '\n' '|')"
@@ -85,6 +88,10 @@ grep -qx 'mode=enforce' "$root/etc/thor/policy.conf" && grep -qx xorg-server-xwa
 	&& ok "the root's thor policy: enforce, Xwayland allowed there" || bad "the root's thor policy"
 grep -q "^game:x:$uid:$uid:" "$root/etc/passwd" && ok "game in the root's passwd" || bad "the root's passwd"
 [ -d "$root/home/game" ] && ok "the home's place in the root" || bad "no $root/home/game"
+# game reaches its root (and only through the search bit of /var/lib/vh)
+setpriv --reuid=game --regid=game --init-groups sh -c "test -r $root/etc/passwd && test -x $root/usr/bin" \
+	&& ok "game reads its root, though doas's umask is 077" || bad "game cannot read $root" "$(stat -c '%a %n' /var/lib/vh /var/lib/vh/roots "$root" "$root/etc" 2>&1 | tr '\n' '|')"
+[ "$(stat -c %a /var/lib/vh)" = 701 ] && ok "/var/lib/vh: the search bit for others while a root exists" || bad "/var/lib/vh" "$(stat -c %a /var/lib/vh)"
 missing=""
 for d in proc sys dev run tmp var/tmp home/game bin/bash; do [ -e "$root/$d" ] || missing="$missing $d"; done
 [ -z "$missing" ] && ok "the mount points vh-game-enter needs are in the root" || bad "missing in the root:$missing"
@@ -122,7 +129,7 @@ game" ] && ok "vh-game-enter -c: game, host game, PID 2, only its home" || bad "
 fi
 
 echo "== vh-game remove"
-vh-game remove --yes > /tmp/remove.out 2>&1 && ok "remove" || bad "remove" "$(tail -5 /tmp/remove.out | tr '\n' '|')"
+(umask 077; vh-game remove --yes) > /tmp/remove.out 2>&1 && ok "remove" || bad "remove" "$(tail -5 /tmp/remove.out | tr '\n' '|')"
 grep -E '^VH_GAME|vh-game:|vh-root:' /tmp/remove.out
 snap /tmp/after
 if cmp -s /tmp/before /tmp/after; then
