@@ -8,4 +8,7 @@
 # Since the button driver became a platform driver (between 6.12 and 6.18), tiny_power_button
 # alone drives the fixed button: it signals init (tiny_power_button.power_signal=2, SIGINT, on
 # the command line), and /etc/runit/ctrlaltdel hands that to vh-acpid.
+# Built in, the two exclude each other (ACPI_TINY_POWER_BUTTON depends on !ACPI_BUTTON), and
+# button has nothing to drive here: no control-method button, no lid (the rule's condition).
+# CONFIG_ACPI_BUTTON is not set
 CONFIG_ACPI_TINY_POWER_BUTTON=y

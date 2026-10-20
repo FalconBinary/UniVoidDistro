@@ -98,12 +98,13 @@
         },
         .{
             .id = "acpi.power-button.fixed",
-            .why = "Only the fixed ACPI power button (LNXPWRBN, no PNP0C0C; QEMU's q35, some PCs). Between kernels 6.12 and 6.18 the button driver became a platform driver, and the kernel makes no platform device for the fixed button: only tiny_power_button drives it. It signals init, SIGINT here (Void builds it with 38, which runit ignores), and /etc/runit/ctrlaltdel hands that to vh-acpid as the power button (POWER_KEY of /etc/vh/acpi.conf); a hypervisor's shutdown request is this button too. Ctrl+Alt+Del on a text console is then the power button as well.",
+            .why = "Only the fixed ACPI power button (LNXPWRBN; no PNP0C0C and no lid, PNP0C0D, for button to drive: QEMU's q35, some PCs). Between kernels 6.12 and 6.18 the button driver became a platform driver, and the kernel makes no platform device for the fixed button: only tiny_power_button drives it. It signals init, SIGINT here (Void builds it with 38, which runit ignores), and /etc/runit/ctrlaltdel hands that to vh-acpid as the power button (POWER_KEY of /etc/vh/acpi.conf); a hypervisor's shutdown request is this button too. Ctrl+Alt+Del on a text console is then the power button as well. Built in, tiny_power_button and button exclude each other (depends on !ACPI_BUTTON): button is refused here, where it has nothing to drive.",
             .when = .{ .device = .{ .acpi_id = .{"LNXPWRBN"} } },
-            .unless = .{ .device = .{ .acpi_id = .{"PNP0C0C"} } },
+            .unless = .{ .device = .{ .acpi_id = .{ "PNP0C0C", "PNP0C0D" } } },
             .sets = .{"power-button-fixed"},
             .kconfig = .{"acpi-tiny-power-button"},
             .cmdline = .{"tiny_power_button.power_signal=2"},
+            .deny = .{"button"},
         },
         .{
             .id = "acpi.power-button.tiny-off",

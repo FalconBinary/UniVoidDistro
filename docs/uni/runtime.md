@@ -97,8 +97,9 @@ input device of the `button` driver; `tiny_power_button`, which matches it too a
 device, is refused (hwdb rule `acpi.power-button.tiny-off`). A machine with only the fixed
 button (`LNXPWRBN`: QEMU's q35, some PCs) has no input device for it on kernel 6.18: between
 6.12 and 6.18 `button` became a platform driver, and the kernel makes no platform device for the
-fixed button, so `tiny_power_button` alone drives it (rule `acpi.power-button.fixed`, which
-builds it into the machine kernel too). It signals init, with SIGINT
+fixed button, so `tiny_power_button` alone drives it (rule `acpi.power-button.fixed`, for a
+machine without a control-method button and without a lid: it builds `tiny_power_button` into
+the machine kernel instead of `button`, since built in the two exclude each other). It signals init, with SIGINT
 (`tiny_power_button.power_signal=2`: Void builds it with 38, which runit ignores); runit runs
 `/etc/runit/ctrlaltdel`, ours (kept over runit-void's by `/etc/xbps.d/30-vh-noextract.conf`),
 which hands it to `vh-acpid` as SIGUSR1 (`sv 1 vh-acpid`), and `vh-acpid` takes that as a

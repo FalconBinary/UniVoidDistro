@@ -77,6 +77,7 @@
     },
     .udev = .{},
     .deny = .{
+        .{ .value = "button", .rules = .{"acpi.power-button.fixed"} },
         .{ .value = "kvm", .rules = .{"cpu.amd.kvm-off"} },
         .{ .value = "kvm_amd", .rules = .{"cpu.amd.kvm-off"} },
         .{ .value = "rtsx_pci", .rules = .{"cardreader.off"} },
@@ -88,7 +89,6 @@
         .{ .value = "8250", .rules = .{"device acpi PNP0501:00"} },
         .{ .value = "ahci", .rules = .{"device pci 0000:00:1f.2"} },
         .{ .value = "atkbd", .rules = .{"device serio serio0"} },
-        .{ .value = "button", .rules = .{"device acpi LNXPWRBN:00"} },
         .{ .value = "e1000", .rules = .{"device pci 0000:00:01.0"} },
         .{ .value = "efi_pstore", .rules = .{"device platform efivars.0"} },
         .{ .value = "i2c_i801", .rules = .{"device pci 0000:00:1f.3"} },

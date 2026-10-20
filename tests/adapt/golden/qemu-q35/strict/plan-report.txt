@@ -23,7 +23,7 @@ Rules that apply (29):
   class.vm [platform.zon]: The virtual machine class: no microcode, no power management.
   iommu.dmar [platform.zon]: VT-d is described by the DMAR table; intel_iommu=on turns it on (Void's kernel leaves it off by default) so that every device's DMA is translated.
   acpi.power-button [platform.zon]: An ACPI power button (PNP0C0C, or the fixed LNXPWRBN).
-  acpi.power-button.fixed [platform.zon]: Only the fixed ACPI power button (LNXPWRBN, no PNP0C0C; QEMU's q35, some PCs). Between kernels 6.12 and 6.18 the button driver became a platform driver, and the kernel makes no platform device for the fixed button: only tiny_power_button drives it. It signals init, SIGINT here (Void builds it with 38, which runit ignores), and /etc/runit/ctrlaltdel hands that to vh-acpid as the power button (POWER_KEY of /etc/vh/acpi.conf); a hypervisor's shutdown request is this button too. Ctrl+Alt+Del on a text console is then the power button as well.
+  acpi.power-button.fixed [platform.zon]: Only the fixed ACPI power button (LNXPWRBN; no PNP0C0C and no lid, PNP0C0D, for button to drive: QEMU's q35, some PCs). Between kernels 6.12 and 6.18 the button driver became a platform driver, and the kernel makes no platform device for the fixed button: only tiny_power_button drives it. It signals init, SIGINT here (Void builds it with 38, which runit ignores), and /etc/runit/ctrlaltdel hands that to vh-acpid as the power button (POWER_KEY of /etc/vh/acpi.conf); a hypervisor's shutdown request is this button too. Ctrl+Alt+Del on a text console is then the power button as well. Built in, tiny_power_button and button exclude each other (depends on !ACPI_BUTTON): button is refused here, where it has nothing to drive.
   acpid.button [platform.zon]: vh-acpid handles the power button (a regular poweroff by default).
   input.i8042 [platform.zon]: A PS/2 keyboard (most laptops, virtual machines): the i8042 controller and atkbd built into the machine kernel, so the LUKS passphrase can be typed.
   tpm.tools [platform.zon]: A TPM 2.0: tpm2-tools reads the measurement log (the Option ROM check before key enrolment) and serves tpm2-totp.
@@ -66,7 +66,8 @@ services (3):
 
 udev rules (0):
 
-denied modules (5):
+denied modules (6):
+  button  <- acpi.power-button.fixed
   kvm  <- cpu.amd.kvm-off
   kvm_amd  <- cpu.amd.kvm-off
   rtsx_pci  <- cardreader.off
@@ -87,7 +88,7 @@ scalars (4):
 
 LUKS: aes-xts-plain64, 512-bit key, Argon2id 1048576 KiB, 4 threads
 kernel: NR_CPUS 4, -march x86-64-v3
-modules of the devices (25): 8250 ahci atkbd button e1000 efi_pstore i2c_i801 i8042 iTCO_wdt intel_agp intel_rapl_msr lpc_ich nvme parport_pc pcspkr processor psmouse qemu_fw_cfg rtc_cmos serio_raw sr_mod tpm_crb tpm_tis virtio_gpu virtio_pci
+modules of the devices (24): 8250 ahci atkbd e1000 efi_pstore i2c_i801 i8042 iTCO_wdt intel_agp intel_rapl_msr lpc_ich nvme parport_pc pcspkr processor psmouse qemu_fw_cfg rtc_cmos serio_raw sr_mod tpm_crb tpm_tis virtio_gpu virtio_pci
 
 Devices no driver, table or rule knows (32):
   acpi ACPI0010:00 acpi:ACPI0010:PNP0A05:
