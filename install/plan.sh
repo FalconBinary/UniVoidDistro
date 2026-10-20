@@ -26,6 +26,17 @@ load_config "$CFG"
 OUT=${VH_PLAN_DIR:-/tmp/vh}
 install -d -m 0700 "$OUT"
 
+# on our live image, its builds (docs/uni/live-image.md); elsewhere they are built here
+if [ ! -x "$OUT/bin/vh-plan" ] || [ ! -x "$OUT/bin/vh-kconf" ]; then
+	rc=0
+	PRE=$(vh_prebuilt) || rc=$?
+	[ "$rc" != 2 ] || die "the live image's programs do not match its SHA256SUMS"
+	if [ "$rc" = 0 ]; then
+		say "vh-kconf and vh-plan: the live image's build ($PRE)"
+		install -d "$OUT/bin"
+		install -m 0755 "$PRE/bin/vh-kconf" "$PRE/bin/vh-plan" "$OUT/bin/"
+	fi
+fi
 if [ ! -x "$OUT/bin/vh-plan" ] || [ ! -x "$OUT/bin/vh-kconf" ]; then
 	ZIG=$(bash "$VH_ROOT/install/fetch-zig.sh" "$(cat "$VH_ROOT/zig/ZIG_VERSION")" /tmp/vh-zig)
 	BUILD=$(mktemp -d /tmp/vh-plan-build.XXXXXX)

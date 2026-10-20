@@ -78,6 +78,11 @@ else
 	[ "$rc" = 0 ] || [ "$rc" = 3 ] || die "the plan failed ($rc)"
 fi
 load_plan "$PLAN_DIR/plan.env"
+# our live image brings thor, the desktop and the Zig tools built (docs/uni/live-image.md):
+# PREBUILT is their directory there, empty elsewhere (they are built in RAM below)
+rc=0
+PREBUILT=$(vh_prebuilt) || rc=$?
+[ "$rc" != 2 ] || die "the live image's programs do not match its SHA256SUMS"
 security_gate "$PLAN_DIR/plan-report.txt"
 # a USB keyboard always; the drivers on the way to this machine's own keyboards
 VH_DRACUT_DRIVERS=$(printf '%s\n' xhci_pci usbhid hid_generic ${VH_PLAN_DRACUT:-} | awk '!seen[$0]++' | paste -sd' ' -)
@@ -200,8 +205,13 @@ if [ "$VH_FIRMWARE_TRIM" = yes ]; then
 	else vh_firmware_noextract > "$MNT/etc/xbps.d/40-vh-firmware.conf"; fi
 fi
 
-say "thor: building in the live environment's RAM (docs/18)"
-run bash "$VH_ROOT/install/build-thor.sh" "$MNT"
+if [ -n "$PREBUILT" ]; then
+	say "thor: the live image's build (docs/18)"
+	run bash "$VH_ROOT/install/build-thor.sh" --prebuilt "$PREBUILT/thor" "$MNT"
+else
+	say "thor: building in the live environment's RAM (docs/18)"
+	run bash "$VH_ROOT/install/build-thor.sh" "$MNT"
+fi
 THOR=/tmp/vh-thor/dest/usr/bin/thor
 # During installation the thor policy runs in learn mode: kernel hooks, dracut modules,
 # sysctl.d files and udev rules of the base system packages are recorded in
@@ -222,8 +232,13 @@ mapfile -t PKGS < <(vh_packages | grep -vx "$VH_KERNEL")
 thor_install "${PKGS[@]}"
 
 # ---------------------------------------------------------------- desktop
-say "RefursWM and RefursLine: building in the live environment's RAM"
-run bash "$VH_ROOT/install/build-desktop.sh" "$MNT"
+if [ -n "$PREBUILT" ]; then
+	say "RefursWM and RefursLine: the live image's build $(vh_desktop_variant)"
+	run bash "$VH_ROOT/install/build-desktop.sh" --prebuilt "$PREBUILT/desktop/$(vh_desktop_variant)" "$MNT"
+else
+	say "RefursWM and RefursLine: building in the live environment's RAM"
+	run bash "$VH_ROOT/install/build-desktop.sh" "$MNT"
+fi
 
 # ---------------------------------------------------------------- configuration files
 say "configuration files (rootfs/)"
@@ -246,7 +261,11 @@ if [ -x "$PLAN_DIR/bin/vh-plan" ]; then
 	run install -m 0755 "$PLAN_DIR/bin/vh-kconf" "$PLAN_DIR/bin/vh-plan" "$MNT/usr/local/sbin/"
 fi
 # Zig tools: the compiler lives only in the live environment's RAM; the system gets binaries
-run bash "$VH_ROOT/install/build-tools.sh" "$MNT"
+if [ -n "$PREBUILT" ]; then
+	run bash "$VH_ROOT/install/build-tools.sh" --prebuilt "$PREBUILT/bin" "$MNT"
+else
+	run bash "$VH_ROOT/install/build-tools.sh" "$MNT"
+fi
 [ -f "$CFG" ] && run install -m 0600 "$CFG" "$MNT/root/vh/vh.conf"
 if [ "$DRY_RUN" != 1 ]; then
 	printf 'VH_LUKS_UUID=%s\nVH_ROOT_UUID=%s\nVH_ESP_UUID=%s\nVH_DISK=%s\n' \

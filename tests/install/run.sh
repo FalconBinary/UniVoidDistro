@@ -70,4 +70,8 @@ else
 	rc=1
 fi
 [ "$rc" = 0 ] && echo "every machine's installer output matches its golden file"
+
+# the installer on our live image: the prebuilt programs and their checks (prebuilt_test.sh)
+tar -C "$repo" -cf - install thor zig/ZIG_VERSION vh.conf.example tests/install/prebuilt_test.sh |
+	docker run --rm -i "$img" bash -c 'mkdir -p /src && cd /src && tar -xf - 2>/dev/null && bash /src/tests/install/prebuilt_test.sh /src' || rc=1
 exit "$rc"

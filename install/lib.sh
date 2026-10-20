@@ -128,6 +128,44 @@ load_plan() {
 
 # The security gate (docs/uni/principles.md): refused stops; reduced stops in strict mode and
 # asks for a typed confirmation of every residual risk in tiered mode. The report lists them.
+# The commit of this repository: git's, or .vh-commit where the copy has no .git (the copy on
+# our live image, the rig's copy in its VM)
+vh_commit() {
+	git -C "$VH_ROOT" rev-parse HEAD 2>/dev/null || cat "$VH_ROOT/.vh-commit" 2>/dev/null || true
+}
+
+# The programs our live image brings already built (live/prebuilt.sh, docs/uni/live-image.md):
+# prints their directory when this is our image, made from this very commit, and every file
+# matches the image's SHA256SUMS. Returns 1 when it is not (Void's own image, another commit:
+# the installer builds as before), 2 when a file does not match: the caller stops then, since
+# the image is not what was built.
+VH_PREBUILT=${VH_PREBUILT:-/usr/local/lib/vh/prebuilt}
+vh_prebuilt() {
+	local built here
+	[ -r /etc/vh-live ] && [ -r "$VH_PREBUILT/SHA256SUMS" ] || return 1
+	built=$(sed -n 's/^COMMIT=//p' /etc/vh-live)
+	here=$(vh_commit)
+	if [ -z "$built" ] || [ "$built" != "$here" ]; then
+		warn "the live image was built from ${built:-an unknown commit}, this repository is ${here:-of an unknown commit}: building here instead of using the image's programs"
+		return 1
+	fi
+	if ! ( cd "$VH_PREBUILT" && sha256sum -c --quiet SHA256SUMS ) >&2; then
+		warn "$VH_PREBUILT: a file does not match SHA256SUMS"
+		return 2
+	fi
+	echo "$VH_PREBUILT"
+}
+
+# Which of the live image's builds of RefursWM and RefursLine fits this machine: the plan's
+# x86-64 level (v3 when its CPU has it, v1 otherwise) and VH_BLUETOOTH (optional compiles the
+# bar's Bluetooth menu in)
+vh_desktop_variant() {
+	local lvl=v1 bt=plain
+	case " ${VH_PLAN_TAGS:-} " in *" x86-64-v3 "*) lvl=v3 ;; esac
+	[ "${VH_BLUETOOTH:-}" = optional ] && bt=btmenu
+	echo "x86-64-$lvl-$bt"
+}
+
 security_gate() {
 	local report=${1:-/tmp/vh/plan-report.txt}
 	case $VH_PLAN_TIER in
