@@ -2,7 +2,7 @@ vh-plan report
 machine: amd-desktop (ASUS System Product Name; AMD Ryzen 9 7950X3D 16-Core Processor), arch x86_64, 63705 MiB, 32 CPUs
 module tables: the pinned stock kernel's
 security: strict; tier: full
-tags: acpi bluetooth disk disk-ata disk-discard disk-nvme disk-on-ahci disk-on-nvme disk-on-sd_mod disk-rotational display displays-2 efi efi64 epp iommu iommu-active keyboard keyboard-usb mor multi-llc power-button secure-boot secure-boot-on smt sound tpm tpm2 wifi wired x86-64-v2 x86-64-v3 x86-64-v4
+tags: acpi bluetooth disk disk-ata disk-discard disk-nvme disk-on-ahci disk-on-nvme disk-on-sd_mod disk-rotational display displays-2 efi efi64 epp iommu iommu-active keyboard keyboard-usb mor multi-llc power-button secure-boot secure-boot-on smt sound tpm tpm2 vulkan-gpu wifi wired x86-64-v2 x86-64-v3 x86-64-v4
 
 Rules that apply (48):
   x86.level.v2 [arch.zon]: x86-64-v2: CMPXCHG16B, LAHF/SAHF, POPCNT, SSE3 to SSE4.2 (Nehalem, Bulldozer and later).
@@ -26,7 +26,7 @@ Rules that apply (48):
   cpu.amd.x3d [cpu-amd.zon]: Two CCDs with last-level caches of different sizes (an X3D part with 3D V-Cache on one): the kernel's amd_3d_vcache driver chooses which CCD the scheduler prefers; vh-sched reads the caches at load (U4).
   cpu.amd.march.znver4 [cpu-amd.zon]: Zen 4 (family 0x19, models 0x10-0x1F and 0x60-0xAF): -march=znver4.
   cpu.amd.pinctrl [cpu-amd.zon]: The AMD GPIO controller (ACPI AMDI0030): touchpad interrupts and the power button on many AMD machines.
-  gpu.amdgpu [gpu.zon]: AMD graphics from GCN 1.2 on: amdgpu, VA-API and Vulkan from Mesa (radeonsi, RADV), the firmware in linux-firmware-amd.
+  gpu.amdgpu [gpu.zon]: AMD graphics from GCN 1.2 on: amdgpu, VA-API and Vulkan from Mesa (radeonsi, RADV; RADV in the gaming root too), the firmware in linux-firmware-amd.
   gpu.amdgpu.navi33 [gpu.zon]: Navi 33 (RX 7600, 7600 XT, 7700S): GC 11.0.2, PSP 13.0.7, SMU 13.0.7, DCN 3.2.1, SDMA 6.0.2, VCN 4.0.4 (the IP versions amdgpu's discovery finds) [VERIFY on hardware].
   gpu.amdgpu.raphael [gpu.zon]: Raphael (the iGPU of Ryzen 7000 desktop): GC 10.3.6, PSP 13.0.5, DCN 3.1.5, SDMA 5.2.6, VCN 3.1.2 [VERIFY on hardware].
   gpu.renderer.gles2 [gpu.zon]: A GPU with a DRM driver: RefursWM renders with GLES2.
@@ -65,6 +65,9 @@ packages (10):
   mesa-vulkan-radeon  <- gpu.amdgpu
   tpm2-tools  <- tpm.tools
   wireless-regdb  <- net.wifi
+
+gaming root packages (vh-game) (1):
+  mesa-vulkan-radeon  <- gpu.amdgpu
 
 kernel class fragments (12):
   acpi-tiny-power-button-off  <- acpi.power-button.tiny-off

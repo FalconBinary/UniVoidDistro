@@ -53,6 +53,7 @@
         },
     },
     .packages = .{ .{ .value = "dhcpcd", .rules = .{"net.wired.dhcp"} }, .{ .value = "tpm2-tools", .rules = .{"tpm.tools"} } },
+    .game_packages = .{.{ .value = "mesa-vulkan-lavapipe", .rules = .{"game.vulkan.software"} }},
     .kconfig = .{
         .{ .value = "acpi-tiny-power-button", .rules = .{"acpi.power-button.fixed"} },
         .{ .value = "cpu-x86-aes", .rules = .{"x86.aes"} },

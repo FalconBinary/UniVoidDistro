@@ -60,11 +60,12 @@ except `cpu_flags` and `has`, which need all of theirs. Globs (`*`, `?`, `[...]`
 `unless` takes the same conditions: the rule does not apply when they all hold.
 
 **Effects** (lists are merged over every rule that applies, and each item keeps the ids of its
-rules): `packages`, `kconfig` (a fragment of `kernel/profiles/class/`), `features` (a kernel
-feature of `kernel/profiles/features/`), `firmware` (patterns
-under `/usr/lib/firmware`), `firmware_only` (the firmware of the matched devices' modules,
-narrowed to these patterns; the rule of the highest `priority` wins for a module),
-`firmware_none` (the matched devices' modules keep no firmware), `cmdline`,
+rules): `packages`, `game_packages` (packages of the gaming session's root, never of the system:
+the Vulkan driver of the machine's GPU, [docs/uni/game.md](../docs/uni/game.md)), `kconfig` (a
+fragment of `kernel/profiles/class/`), `features` (a kernel feature of `kernel/profiles/features/`),
+`firmware` (patterns under `/usr/lib/firmware`), `firmware_only` (the firmware of the matched
+devices' modules, narrowed to these patterns; the rule of the highest `priority` wins for a
+module), `firmware_none` (the matched devices' modules keep no firmware), `cmdline`,
 `services`, `udev` (files of `rootfs/etc/udev/rules.d` installed only when named), `deny`
 (modules), `dracut` (initrd drivers), `modules` (needed although no device names them),
 `sets` (tags), `note`, `set` (scalars: `.{ .key = "march", .value = "skylake" }`; the higher
@@ -108,7 +109,8 @@ cycle). The built-in tags come from hw.zon alone:
 
 The rules of this directory add: `x86-64-v2`, `x86-64-v3`, `x86-64-v4`, `vm`, `laptop`,
 `server`, `sbc`, `lid`, `power-button`, `power-button-fixed` (the fixed ACPI button alone),
-`iommu`, `bluetooth`, `camera`, `cardreader`, `dgpu`.
+`iommu`, `bluetooth`, `camera`, `cardreader`, `dgpu`, `vulkan-gpu` (a GPU whose Mesa Vulkan driver
+the gaming root gets).
 
 ## Requirements (`security.zon`)
 

@@ -50,6 +50,8 @@ packages (7):
   linux-firmware-network  <- net.wifi
   wireless-regdb  <- net.wifi
 
+gaming root packages (vh-game) (0):
+
 kernel class fragments (4):
   cpu-arm64  <- arm.kernel
   cpu-arm64-aes  <- arm.aes

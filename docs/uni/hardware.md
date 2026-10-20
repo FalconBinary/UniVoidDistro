@@ -61,6 +61,11 @@ unless the gaming session needs it.
 | no GPU (server, serial console) | no PCI class 0x03 | no desktop stack |
 | Raspberry Pi VideoCore VI/VII | device tree `brcm,bcm2711-v3d` / `brcm,2712-v3d` | v3d + vc4 (U5) |
 
+The gaming session ([game.md](game.md)) gets the Vulkan driver of the machine's GPU in its own
+root, never in the system: ANV for Intel, RADV for AMD, NVK where nouveau drives an NVIDIA GPU,
+lavapipe (the CPU) where no GPU has one (a virtual machine without 3D). The rule is the GPU's own,
+its effect `game_packages` (`hwdb/gpu.zon`).
+
 ## Network
 
 | Hardware | Driver | Effect |

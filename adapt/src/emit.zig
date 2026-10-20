@@ -79,6 +79,7 @@ pub fn renderEnv(p: Plan) []u8 {
         .{ "VH_PLAN_MISSING", missing.join(" ") },
         .{ "VH_PLAN_ACKNOWLEDGE", ack.join(" ") },
         .{ "VH_PLAN_PACKAGES", values(p.packages) },
+        .{ "VH_PLAN_GAME_PACKAGES", values(p.game_packages) },
         .{ "VH_PLAN_KCONFIG", values(p.kconfig) },
         .{ "VH_PLAN_FEATURES", values(p.features) },
         .{ "VH_PLAN_FIRMWARE", values(p.firmware) },

@@ -98,6 +98,9 @@ pub const Rule = struct {
     /// tags for later conditions
     sets: []const []const u8 = &.{},
     packages: []const []const u8 = &.{},
+    /// packages of the gaming session's root, never of the system (vh-game, session/): the
+    /// Vulkan driver of the machine's GPU
+    game_packages: []const []const u8 = &.{},
     /// kernel class fragments: kernel/profiles/class/NAME
     kconfig: []const []const u8 = &.{},
     /// kernel features: kernel/profiles/features/NAME (their modules are refused when absent)

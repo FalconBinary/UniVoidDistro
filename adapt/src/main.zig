@@ -164,6 +164,7 @@ fn cmdExplain(argv: []const [:0]const u8) u8 {
     const db: ?rules.Db = if (hwdb.len > 0) rules.load(hwdb) else null;
     const lists = [_]struct { name: []const u8, items: []const plan.Item }{
         .{ .name = "package", .items = p.packages },
+        .{ .name = "gaming root package", .items = p.game_packages },
         .{ .name = "kernel class", .items = p.kconfig },
         .{ .name = "kernel feature", .items = p.features },
         .{ .name = "firmware", .items = p.firmware },

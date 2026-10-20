@@ -70,6 +70,7 @@
         },
     },
     .packages = .{.{ .value = "dhcpcd", .rules = .{"net.wired.dhcp"} }},
+    .game_packages = .{},
     .kconfig = .{
         .{ .value = "acpi-tiny-power-button-off", .rules = .{"acpi.power-button.tiny-off"} },
         .{ .value = "cpu-arm64", .rules = .{"arm.kernel"} },

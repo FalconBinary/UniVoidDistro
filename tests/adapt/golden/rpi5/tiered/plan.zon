@@ -88,6 +88,7 @@
         .{ .value = "linux-firmware-network", .rules = .{"net.wifi"} },
         .{ .value = "wireless-regdb", .rules = .{"net.wifi"} },
     },
+    .game_packages = .{},
     .kconfig = .{
         .{ .value = "cpu-arm64", .rules = .{"arm.kernel"} },
         .{ .value = "cpu-arm64-aes", .rules = .{"arm.aes"} },

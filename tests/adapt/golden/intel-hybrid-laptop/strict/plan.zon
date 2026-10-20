@@ -38,6 +38,7 @@
         "tpm",
         "tpm2",
         "usb-power",
+        "vulkan-gpu",
         "wifi",
         "x86-64-v2",
         "x86-64-v3",
@@ -79,6 +80,7 @@
         .{ .value = "tpm2-tools", .rules = .{"tpm.tools"} },
         .{ .value = "wireless-regdb", .rules = .{"net.wifi"} },
     },
+    .game_packages = .{.{ .value = "mesa-vulkan-intel", .rules = .{"gpu.i915"} }},
     .kconfig = .{
         .{ .value = "acpi-tiny-power-button-off", .rules = .{"acpi.power-button.tiny-off"} },
         .{ .value = "audio-sof-intel", .rules = .{"audio.sof.intel"} },

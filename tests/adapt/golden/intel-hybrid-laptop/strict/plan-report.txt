@@ -2,7 +2,7 @@ vh-plan report
 machine: intel-hybrid-laptop (Dell Inc. XPS 13 9320; 12th Gen Intel(R) Core(TM) i7-1260P), arch x86_64, 15286 MiB, 16 CPUs
 module tables: the pinned stock kernel's
 security: strict; tier: full
-tags: acpi backlight battery bluetooth camera disk disk-discard disk-nvme disk-on-nvme disk-on-vmd display efi efi64 epp hybrid iommu iommu-active keyboard keyboard-i8042 laptop lid mains mor platform-profile power-button secure-boot secure-boot-on smt sound tpm tpm2 usb-power wifi x86-64-v2 x86-64-v3
+tags: acpi backlight battery bluetooth camera disk disk-discard disk-nvme disk-on-nvme disk-on-vmd display efi efi64 epp hybrid iommu iommu-active keyboard keyboard-i8042 laptop lid mains mor platform-profile power-button secure-boot secure-boot-on smt sound tpm tpm2 usb-power vulkan-gpu wifi x86-64-v2 x86-64-v3
 
 Rules that apply (50):
   x86.level.v2 [arch.zon]: x86-64-v2: CMPXCHG16B, LAHF/SAHF, POPCNT, SSE3 to SSE4.2 (Nehalem, Bulldozer and later).
@@ -21,7 +21,7 @@ Rules that apply (50):
   cpu.intel.kvm-off [cpu-intel.zon]: VH_VIRT=no: KVM is refused, so a kernel exploit cannot slip a thin hypervisor under the system; disable VT-x in the firmware as well.
   cpu.intel.hybrid [cpu-intel.zon]: P and E cores: the scheduler places tasks by core type and cluster (ITMT, SCHED_CLUSTER); vh-sched reads the topology at load (U4).
   cpu.intel.march.alderlake [cpu-intel.zon]: Alder Lake and Raptor Lake (models 0x97, 0x9A, 0xB7, 0xBA, 0xBF): -march=alderlake.
-  gpu.i915 [gpu.zon]: Intel graphics up to Gen12 (Skylake to Raptor Lake, DG2): the i915 driver, VA-API through intel-media-driver (Broadwell and newer [VERIFY] older parts need libva-intel-driver), its firmware in linux-firmware-intel.
+  gpu.i915 [gpu.zon]: Intel graphics up to Gen12 (Skylake to Raptor Lake, DG2): the i915 driver, VA-API through intel-media-driver (Broadwell and newer [VERIFY] older parts need libva-intel-driver), its firmware in linux-firmware-intel; Vulkan (ANV) in the gaming root.
   gpu.i915.adlp [gpu.zon]: Alder Lake-P and Raptor Lake-P graphics (Iris Xe): the DMC and GuC of ADL-P, the HuC of Tiger Lake [VERIFY on hardware].
   gpu.renderer.gles2 [gpu.zon]: A GPU with a DRM driver: RefursWM renders with GLES2.
   net.wifi [net.zon]: A wireless interface: iwd, the regulatory database (signed, read by cfg80211 from the initrd of a machine kernel), iw for diagnosis, the firmware package of network chips, and the feature wifi, the 802.11 stack of a machine kernel. Without a wireless interface a machine kernel has no such stack, and the stock kernel loads cfg80211 only as a Wi-Fi driver's dependency (rootfs/etc/modprobe.d/vh-cfg80211.conf).
@@ -68,6 +68,9 @@ packages (11):
   sof-firmware  <- audio.sof.intel
   tpm2-tools  <- tpm.tools
   wireless-regdb  <- net.wifi
+
+gaming root packages (vh-game) (1):
+  mesa-vulkan-intel  <- gpu.i915
 
 kernel class fragments (12):
   acpi-tiny-power-button-off  <- acpi.power-button.tiny-off

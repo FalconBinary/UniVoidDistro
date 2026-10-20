@@ -37,6 +37,8 @@ Requirements not met (3):
 packages (1):
   dhcpcd  <- net.wired.dhcp
 
+gaming root packages (vh-game) (0):
+
 kernel class fragments (4):
   acpi-tiny-power-button-off  <- acpi.power-button.tiny-off
   cpu-arm64  <- arm.kernel

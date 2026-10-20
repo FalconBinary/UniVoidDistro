@@ -60,6 +60,8 @@ pub const Plan = struct {
     acknowledge: []const []const u8 = &.{},
     scalars: []const ScalarItem = &.{},
     packages: []const Item = &.{},
+    /// the packages of the gaming session's root (vh-game), not of the system
+    game_packages: []const Item = &.{},
     kconfig: []const Item = &.{},
     features: []const Item = &.{},
     firmware: []const Item = &.{},
@@ -366,6 +368,7 @@ pub fn compute(o: Opts) Result {
     const c: Ctx = .{ .m = &m, .config = o.config, .tags = &tags };
 
     var packages: Bag = .{};
+    var game_packages: Bag = .{};
     var kconfig: Bag = .{};
     var features: Bag = .{};
     var fw: Bag = .{};
@@ -391,6 +394,7 @@ pub fn compute(o: Opts) Result {
         applied.append(vh.gpa, ri) catch vh.oom();
         for (matched.items) |i| claimed.put(vh.gpa, i, {}) catch vh.oom();
         for (r.packages) |x| packages.add(x, r.id);
+        for (r.game_packages) |x| game_packages.add(x, r.id);
         for (r.kconfig) |x| kconfig.add(x, r.id);
         for (r.features) |x| features.add(x, r.id);
         for (r.firmware) |x| fw.add(x, r.id);
@@ -520,6 +524,7 @@ pub fn compute(o: Opts) Result {
         .acknowledge = acknowledge.slice(),
         .scalars = scalar_items.items,
         .packages = packages.items(true),
+        .game_packages = game_packages.items(true),
         .kconfig = kconfig.items(true),
         .features = features.items(true),
         .firmware = fw.items(true),
@@ -566,6 +571,7 @@ pub fn compute(o: Opts) Result {
     }
     const lists = [_]struct { name: []const u8, items: []const Item }{
         .{ .name = "packages", .items = plan.packages },
+        .{ .name = "gaming root packages (vh-game)", .items = plan.game_packages },
         .{ .name = "kernel class fragments", .items = plan.kconfig },
         .{ .name = "kernel features", .items = plan.features },
         .{ .name = "firmware kept", .items = plan.firmware },

@@ -4,7 +4,7 @@ module tables: the pinned stock kernel's
 security: strict; tier: full
 tags: acpi disk disk-discard disk-nvme display efi efi64 iommu iommu-active keyboard keyboard-i8042 power-button power-button-fixed secure-boot setup-mode tpm tpm2 vm wired x86-64-v2 x86-64-v3
 
-Rules that apply (29):
+Rules that apply (30):
   x86.level.v2 [arch.zon]: x86-64-v2: CMPXCHG16B, LAHF/SAHF, POPCNT, SSE3 to SSE4.2 (Nehalem, Bulldozer and later).
   x86.level.v3 [arch.zon]: x86-64-v3: AVX, AVX2, BMI1/2, F16C, FMA, LZCNT, MOVBE, XSAVE (Haswell, Excavator and later).
   x86.march.v2 [arch.zon]: A kernel built elsewhere (CI) for a CPU no model rule names: the instruction set it has for sure.
@@ -14,6 +14,7 @@ Rules that apply (29):
   x86.aes [arch.zon]: The disk is AES-XTS: the AES-NI driver built into the machine kernel, not loaded on demand.
   cpu.amd.kvm-off [cpu-amd.zon]: VH_VIRT=no: KVM is refused; disable SVM in the firmware as well.
   gpu.virtio [gpu.zon]: The virtio GPU of a virtual machine.
+  game.vulkan.software [gpu.zon]: No GPU with a Vulkan driver of Mesa (a virtual machine without 3D, a GPU on the old radeon driver): the gaming root gets Vulkan on the CPU (lavapipe), slow but complete.
   gpu.renderer.gles2 [gpu.zon]: A GPU with a DRM driver: RefursWM renders with GLES2.
   gpu.renderer.vm [gpu.zon]: A virtual machine without accelerated 3D: RefursWM renders with pixman (the CPU) [VERIFY with virgl].
   net.wired.dhcp [net.zon]: A wired interface and VH_ETH auto or dhcp: dhcpcd on eth0 (the kernel names interfaces with net.ifnames=0).
@@ -38,6 +39,9 @@ Rules that apply (29):
 packages (2):
   dhcpcd  <- net.wired.dhcp
   tpm2-tools  <- tpm.tools
+
+gaming root packages (vh-game) (1):
+  mesa-vulkan-lavapipe  <- game.vulkan.software
 
 kernel class fragments (7):
   acpi-tiny-power-button  <- acpi.power-button.fixed

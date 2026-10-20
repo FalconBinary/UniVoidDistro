@@ -258,3 +258,43 @@ test "-march: the CPU model's on bare metal, the x86-64 level in a virtual machi
         try t.expectEqualStrings(c[2], plan.compute(.{ .hw = h, .db = d, .config = &cfg }).plan.kernel.march);
     }
 }
+
+test "the gaming root's Vulkan driver (hwdb): the GPU's, Vulkan on the CPU without one" {
+    // the real hwdb and fixtures: tests/adapt/run.sh runs the tests in the repository's root
+    if (!vh.isDir("hwdb") or !vh.pathExists("kernel/hw/gf63.zon")) return error.SkipZigTest;
+    const d = rules.load("hwdb");
+    var cfg: vh.Kv = .{};
+    cfg.read("vh.conf.example", false);
+    const gamePkgs = struct {
+        fn of(p: plan.Plan) []const u8 {
+            var s: vh.Strv = .{};
+            for (p.game_packages) |x| s.add(x.value);
+            return s.join(" ");
+        }
+    }.of;
+    // the laptop of the fixtures: the iGPU's driver; its sleeping NVIDIA dGPU gets none
+    const gf63 = hw.load("kernel/hw/gf63.zon");
+    const auto = plan.compute(.{ .hw = gf63, .db = d, .config = &cfg }).plan;
+    try t.expectEqualStrings("mesa-vulkan-intel", gamePkgs(auto));
+    // with nouveau driving the dGPU, NVK beside it
+    cfg.set("VH_GPU", "nouveau");
+    const nv = plan.compute(.{ .hw = gf63, .db = d, .config = &cfg }).plan;
+    try t.expectEqualStrings("mesa-vulkan-intel mesa-vulkan-nouveau", gamePkgs(nv));
+    // the system's packages stay as they were: the gaming root's never reach them
+    try t.expect(!hasItem(auto.packages, "mesa-vulkan-intel"));
+    cfg.set("VH_GPU", "auto");
+    const cases = [_][2][]const u8{
+        .{ "amd-desktop", "mesa-vulkan-radeon" },
+        .{ "intel-hybrid-laptop", "mesa-vulkan-intel" },
+        // a virtual machine without 3D: lavapipe
+        .{ "qemu-q35", "mesa-vulkan-lavapipe" },
+        // ARM: no gaming session yet
+        .{ "rpi5", "" },
+        .{ "aarch64-virt", "" },
+    };
+    for (cases) |c| {
+        const h = hw.load(vh.fmt("kernel/hw/{s}.zon", .{c[0]}));
+        const p = plan.compute(.{ .hw = h, .db = d, .config = &cfg, .security = "tiered" }).plan;
+        try t.expectEqualStrings(c[1], gamePkgs(p));
+    }
+}

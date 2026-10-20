@@ -7,11 +7,13 @@
         // Intel
         .{
             .id = "gpu.i915",
-            .why = "Intel graphics up to Gen12 (Skylake to Raptor Lake, DG2): the i915 driver, VA-API through intel-media-driver (Broadwell and newer [VERIFY] older parts need libva-intel-driver), its firmware in linux-firmware-intel.",
+            .why = "Intel graphics up to Gen12 (Skylake to Raptor Lake, DG2): the i915 driver, VA-API through intel-media-driver (Broadwell and newer [VERIFY] older parts need libva-intel-driver), its firmware in linux-firmware-intel; Vulkan (ANV) in the gaming root.",
             .when = .{ .device = .{ .pci_class = .{"03"}, .module = .{"i915"} } },
             .kconfig = .{"gpu-i915"},
             .packages = .{ "intel-media-driver", "linux-firmware-intel" },
             .firmware_only = .{"i915/*"},
+            .game_packages = .{"mesa-vulkan-intel"},
+            .sets = .{"vulkan-gpu"},
         },
         .{
             .id = "gpu.i915.cml",
@@ -29,20 +31,24 @@
         },
         .{
             .id = "gpu.xe",
-            .why = "Intel Xe2 and newer (Lunar Lake, Battlemage): the xe driver and its firmware directory.",
+            .why = "Intel Xe2 and newer (Lunar Lake, Battlemage): the xe driver and its firmware directory; Vulkan (ANV) in the gaming root.",
             .when = .{ .device = .{ .pci_class = .{"03"}, .driver = .{"xe"} } },
             .kconfig = .{"gpu-xe"},
             .packages = .{ "intel-media-driver", "linux-firmware-intel" },
             .firmware_only = .{"xe/*"},
+            .game_packages = .{"mesa-vulkan-intel"},
+            .sets = .{"vulkan-gpu"},
         },
         // AMD
         .{
             .id = "gpu.amdgpu",
-            .why = "AMD graphics from GCN 1.2 on: amdgpu, VA-API and Vulkan from Mesa (radeonsi, RADV), the firmware in linux-firmware-amd.",
+            .why = "AMD graphics from GCN 1.2 on: amdgpu, VA-API and Vulkan from Mesa (radeonsi, RADV; RADV in the gaming root too), the firmware in linux-firmware-amd.",
             .when = .{ .device = .{ .pci_class = .{"03"}, .module = .{"amdgpu"} } },
             .kconfig = .{"gpu-amdgpu"},
             .packages = .{ "linux-firmware-amd", "mesa-vaapi", "mesa-vulkan-radeon" },
             .firmware_only = .{"amdgpu/*"},
+            .game_packages = .{"mesa-vulkan-radeon"},
+            .sets = .{"vulkan-gpu"},
         },
         .{
             .id = "gpu.amdgpu.navi33",
@@ -77,12 +83,14 @@
         },
         .{
             .id = "gpu.nvidia.nouveau",
-            .why = "VH_GPU=nouveau, or an NVIDIA GPU that drives the console: nouveau with its firmware (GSP on Turing and newer), Vulkan through NVK.",
+            .why = "VH_GPU=nouveau, or an NVIDIA GPU that drives the console: nouveau with its firmware (GSP on Turing and newer), Vulkan through NVK, in the gaming root too.",
             .when = .{ .device = .{ .pci_vendor = .{"10de"}, .pci_class = .{"03"} } },
             .unless = .{ .config = .{.{ .key = "VH_GPU", .any = .{ "auto", "igpu" } }}, .has = .{"dgpu"} },
             .kconfig = .{"gpu-nouveau"},
             .packages = .{ "linux-firmware-nvidia", "mesa-vulkan-nouveau" },
             .firmware_only = .{"nvidia/*"},
+            .game_packages = .{"mesa-vulkan-nouveau"},
+            .sets = .{"vulkan-gpu"},
             .note = "nouveau drives the NVIDIA GPU; the open NVIDIA modules come with the gaming session (track G). NVK is slower than the proprietary driver in games.",
         },
         .{
@@ -116,6 +124,13 @@
             .why = "The Raspberry Pi's VideoCore: v3d renders, vc4 drives the displays.",
             .when = .{ .device = .{ .dt_compatible = .{ "brcm,*-v3d", "brcm,bcm2712-vc6", "brcm,bcm2711-vc5" } } },
             .kconfig = .{"gpu-vc4"},
+        },
+        // the gaming session (vh-game): Vulkan on the CPU where no GPU rule above gives a driver
+        .{
+            .id = "game.vulkan.software",
+            .why = "No GPU with a Vulkan driver of Mesa (a virtual machine without 3D, a GPU on the old radeon driver): the gaming root gets Vulkan on the CPU (lavapipe), slow but complete.",
+            .when = .{ .arch = .{"x86_64"}, .lacks = .{"vulkan-gpu"} },
+            .game_packages = .{"mesa-vulkan-lavapipe"},
         },
         // the renderer of RefursWM
         .{
