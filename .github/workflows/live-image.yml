@@ -47,7 +47,7 @@ jobs:
           cd "$RUNNER_TEMP/out"
           sha256sum -c SHA256SUMS
           cat BUILD
-          echo "packages: $(wc -l < live-packages.txt)"; grep -E '^(linux6|xbps|cryptsetup)-[0-9]' live-packages.txt
+          echo "packages: $(wc -l < live-packages.txt)"; grep -E '^(linux[0-9.]+|linux-firmware[a-z-]*|xbps|cryptsetup)-[0-9]' live-packages.txt
           ls -l
       - uses: actions/attest-build-provenance@v2
         with:

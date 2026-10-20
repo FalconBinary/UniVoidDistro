@@ -188,7 +188,9 @@ void-mklive images for x86_64 and aarch64 with a current stock kernel, the Zig t
 installer. The official Void image (20250202) does not know new hardware (Wi-Fi 7, new GPUs
 and NICs), and the installer needs the network to fetch packages. With the programs built into
 the image, the installer no longer compiles in RAM: that lowers the 3 GiB memory floor of the
-gate, which is the installer's, not the system's.
+gate, which is the installer's, not the system's. The design and the decisions:
+[live-image.md](live-image.md); the x86_64 image is `live/` and the `live-image` workflow, the
+aarch64 one comes with U5.
 
 ### Shared tracks from upstream
 
@@ -214,7 +216,28 @@ hardware enters: N shows the plan and the tier and runs the gate; G is GPU-vendo
 
 M0, U1, U2 and U3 are done; U3 but for what waits: the local build in the kbuild root
 (upstream v0.3; designed in [kernel.md](kernel.md#the-local-build-later)). On 2026-10-20 all of
-it ran on GitHub's KVM rig for the first time.
+it ran on GitHub's KVM rig for the first time. U6 is done for x86_64 (aarch64 comes with U5).
+
+U6 on the VM rig: the `live-image` workflow builds the programs (23 minutes) and the ISO
+(void-mklive, 5 minutes; 1.3 GB: linux6.18 6.18.57 and the official image's packages, services
+and firmware) with its sha256 and a build provenance attestation (run 39379089134). `kvm-smoke`
+with `live_run` checks both and the commit, then installs from it: the installer took
+`vh-kconf` and `vh-plan`, thor and RefursWM/RefursLine `x86-64-v3-btmenu` from the image, with no
+Zig and nothing compiled. The installation took 2.6 minutes instead of 16.4, its tmpfs held
+30 MiB instead of 1.1 GiB, and the lowest MemAvailable sampled was 1.9 GiB instead of 756 MiB
+(of 2.8): the peak is now the LUKS Argon2id (1 GiB), which the 2-second sampler only partly
+sees. `check.py base` passed 19 of 19 (run 39381993073), the step `machine` 23 of 23 (run
+39382001559). The install-time probe is made by the system's own kernel (6.18.57), and `vh-kconf
+check` on the stock kernel finds nothing lost. What the first build found: mklive runs tools of
+the build host and goes on without them (without `mkfs.vfat` it made an unformatted EFI boot
+image); they are installed and checked before it, and the ISO's UEFI boot image after it.
+
+U6 not verified: the ISO booted by UEFI from a USB stick on real hardware (the rig boots the
+image's kernel directly); the x86-64-v1 builds on a CPU below v3 (the rig is v3); the release on
+a `v*` tag; a memory floor below 3 GiB (the gate keeps 3 GiB until it is decided and measured on
+the rig). Open, from the system: `vh-kconf check` reports `regulatory.db` as firmware that failed
+to load on the rig, which has no Wi-Fi (cfg80211 is loaded although the plan keeps the database
+only with a wireless interface); the same on Void's image, so not from U6.
 
 On the VM rig (`kvm-smoke` under KVM; the EPYC-Milan CPU that `tests/vm/vhvm.py` pins, 4 GiB):
 the installation from the Void live image to a system that boots through Limine, the signed UKI
