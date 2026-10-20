@@ -110,7 +110,7 @@ directly and would not see a broken UEFI boot.
   Argon2id, the largest step is the UKI (dracut: about 280 MiB).
 - The install-time probe is made by the installed kernel's series: `vh-kconf check` on the stock
   kernel finds nothing lost on the rig (`lost=0`); its one firmware load failure, `regulatory.db`,
-  is the same on Void's image.
+  is the same on Void's image (cfg80211 without Wi-Fi, [runtime.md](runtime.md#vh-kconf-check)).
 
 ## aarch64
 

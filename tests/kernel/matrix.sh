@@ -113,6 +113,14 @@ for dir in "$out"/*/; do
 			*" game "*) need 'CONFIG_MODULES=y'; need 'CONFIG_MODULE_SIG_FORCE=y' ;;
 			*) need '# CONFIG_MODULES is not set' ;;
 		esac
+		# the 802.11 stack only with a wireless interface (features/wifi): built in without one,
+		# cfg80211 asks at every boot for a regulatory.db the plan does not keep, even when the
+		# probe saw it loaded (the live system's dhcpcd loads it)
+		case " $features " in
+			*" wifi "*) need 'CONFIG_CFG80211=y'; need 'CONFIG_MAC80211=y' ;;
+			*) ! grep -qx 'CONFIG_CFG80211=y' "$cfg" || fail "CONFIG_CFG80211=y without the feature wifi"
+				! grep -qx -e cfg80211 -e mac80211 "$d/resolve/lsmod" || fail "the 802.11 stack in LSMOD without the feature wifi" ;;
+		esac
 		need 'CONFIG_SCHED_CLASS_EXT=y'
 		need 'CONFIG_DEBUG_INFO_BTF=y'
 		need 'CONFIG_LOCALVERSION="-vh"'

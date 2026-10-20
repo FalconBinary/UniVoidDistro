@@ -52,7 +52,7 @@ pub fn loadPlan(path: []const u8) PlanView {
 
 /// the fragments in the order they are applied; the features follow
 const fixed_fragments = [_][]const u8{ "base", "mandatory", "hardening", "perf" };
-pub const all_features = [_][]const u8{ "usb-common", "bluetooth", "camera", "virt", "game" };
+pub const all_features = [_][]const u8{ "usb-common", "bluetooth", "wifi", "camera", "virt", "game" };
 
 const Conflict = struct { name: []const u8, first_src: []const u8, first: []const u8, src: []const u8, value: []const u8 };
 
@@ -378,9 +378,9 @@ test "resolve: the GF63 fixture against the pinned tables and its plan" {
     const repo = probe.repoRoot() orelse return error.SkipZigTest;
     const src: probe.Src = .{ .root = dir };
     const h = probe.run(&src);
-    const r = resolve(h, .{ .hw = "fixture", .out = "", .repo = repo, .plan = plan_path, .features = "usb-common,bluetooth" });
+    const r = resolve(h, .{ .hw = "fixture", .out = "", .repo = repo, .plan = plan_path, .features = "usb-common,bluetooth,wifi" });
     // the Wi-Fi, the Ethernet, the Bluetooth, the touchpad and what was loaded are in LSMOD
-    for ([_][]const u8{ "iwlwifi", "iwlmvm", "r8169", "btusb", "i2c_hid_acpi", "hid_multitouch", "dm_crypt", "xfs", "nft_ct", "zram", "snd_hda_codec_alc269", "usb_storage", "exfat" }) |m|
+    for ([_][]const u8{ "iwlwifi", "iwlmvm", "cfg80211", "mac80211", "r8169", "btusb", "i2c_hid_acpi", "hid_multitouch", "dm_crypt", "xfs", "nft_ct", "zram", "snd_hda_codec_alc269", "usb_storage", "exfat" }) |m|
         try std.testing.expect(r.lsmod.has(m));
     // built-in drivers of the stock kernel are not listed (they are =y already)
     try std.testing.expect(!r.lsmod.has("nvme"));
@@ -398,10 +398,12 @@ test "resolve: the GF63 fixture against the pinned tables and its plan" {
     try std.testing.expect(r.lsmod.has("snd_hda_intel"));
     try std.testing.expect(r.lsmod.has("tpm_crb"));
     try std.testing.expect(!r.lsmod.has("tpm_tis"));
-    // the fragments: base, mandatory, hardening, perf, the plan's classes, two features, the machine
+    // the fragments: base, mandatory, hardening, perf, the plan's classes, three features, the machine
     try std.testing.expectEqualStrings("n", r.fragment.get("MODULES").?);
     try std.testing.expectEqualStrings("y", r.fragment.get("SCHED_CLASS_EXT").?);
     try std.testing.expectEqualStrings("y", r.fragment.get("BT_HCIBTUSB").?);
+    try std.testing.expectEqualStrings("features/wifi", r.sources.get("CFG80211").?);
+    try std.testing.expectEqualStrings("y", r.fragment.get("CFG80211_REQUIRE_SIGNED_REGDB").?);
     try std.testing.expect(r.fragment.get("USB_VIDEO_CLASS") == null);
     try std.testing.expectEqualStrings("mandatory", r.sources.get("RTC_HCTOSYS").?);
     try std.testing.expectEqualStrings("class/gpu-i915", r.sources.get("DRM_I915").?);
@@ -437,7 +439,11 @@ test "resolve: the GF63 fixture against the pinned tables and its plan" {
     try std.testing.expectEqualStrings("y", g.fragment.get("IA32_EMULATION").?);
     try std.testing.expect(g.conflicts.items.len >= 3);
     try std.testing.expect(g.denied.has("btusb"));
+    // without the feature wifi the 802.11 stack is refused, although the probe saw cfg80211 loaded
+    try std.testing.expect(g.denied.has("cfg80211") and g.denied.has("mac80211"));
+    try std.testing.expect(!g.lsmod.has("cfg80211") and !g.lsmod.has("mac80211"));
+    try std.testing.expect(g.fragment.get("CFG80211") == null);
     // "auto" takes the plan's features
     const a = resolve(h, .{ .hw = "fixture", .out = "", .repo = repo, .plan = plan_path });
-    try std.testing.expect(a.features.has("bluetooth") and a.features.has("usb-common") and !a.features.has("game") and !a.features.has("camera"));
+    try std.testing.expect(a.features.has("bluetooth") and a.features.has("usb-common") and a.features.has("wifi") and !a.features.has("game") and !a.features.has("camera"));
 }

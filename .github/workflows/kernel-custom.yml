@@ -24,7 +24,7 @@ on:
         description: kernel version (6.18.y)
         default: "6.18.57"
       features:
-        description: "features, comma-separated: usb-common bluetooth camera virt game; auto (the plan's); none"
+        description: "features, comma-separated: usb-common bluetooth wifi camera virt game; auto (the plan's); none"
         default: auto
       release:
         description: publish the result as a release (tag kernel-custom-NAME-KVER-rRUN)

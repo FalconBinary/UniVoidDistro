@@ -15,7 +15,7 @@ kernel/
   profiles/            Kconfig fragments, every option with its reason: base, mandatory,
                        hardening, perf (what every machine gets), class/ (what a hardware
                        class needs: cpu-intel, gpu-amdgpu, storage-nvme, ...; the machine's plan
-                       names them), features/{usb-common,bluetooth,camera,virt,game}
+                       names them), features/{usb-common,bluetooth,wifi,camera,virt,game}
                        (+ NAME.modules: the stock modules a feature stands for), modules.deny
   pins/                the Void linux6.18 .config and its modules.alias / modules.builtin* /
                        modules.firmware, with the void-packages commit and hashes; kernel.org
@@ -117,9 +117,9 @@ the command it would run; nothing is written. What happens to the result at boot
    patterns from the same `kernel/pins/modules.firmware` (what each module names, narrowed to
    the device where a hwdb rule knows it) and added the files drivers pick at run time (Intel
    Bluetooth's `intel/ibt-*`), so on a trimmed system (`VH_FIRMWARE_TRIM=yes`) they are the files
-   on disk. Plus `regulatory.db` and `regulatory.db.p7s` when cfg80211 is built in (without them
-   it stays in the world domain). The patterns of the `*.microcode` rules are left out
-   ([hwdb/README.md](../hwdb/README.md)): dracut's `early_microcode` puts this CPU's file into
+   on disk. Plus `regulatory.db` and `regulatory.db.p7s` when cfg80211 is built in (the feature
+   `wifi`; without them it stays in the world domain). The patterns of the `*.microcode` rules
+   are left out ([hwdb/README.md](../hwdb/README.md)): dracut's `early_microcode` puts this CPU's file into
    the early cpio, as for the stock UKI. The drivers of the LSMOD list and the stock built-ins
    whose firmware (`/root/vh/kernel/pins/modules.firmware`) gets no file in the initrd are
    reported. The files go in as Void ships them (zstd). A built-in driver probed at boot finds

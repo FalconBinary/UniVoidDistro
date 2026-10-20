@@ -1,0 +1,3 @@
+# Modules of the stock kernel that features/wifi stands for (see usb-common.modules).
+cfg80211
+mac80211

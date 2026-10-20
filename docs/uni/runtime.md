@@ -165,6 +165,17 @@ reinstall its package with `xbps-install -f`. The heuristics are **[VERIFY on ha
 the probe at installation runs in the live system, whose devices and drivers may differ a
 little from the installed system's.
 
+Without a wireless interface the plan keeps no `regulatory.db` (`net.wifi` of
+`hwdb/net.zon`), so cfg80211, which asks for the file as soon as it loads, must not load
+there. Its one alias is the generic netlink family nl80211, and dhcpcd asks for that family at
+every start, for every interface; until `rootfs/etc/modprobe.d/vh-cfg80211.conf` the check
+reported `regulatory.db` at every boot of the rig, which has no Wi-Fi. The file blacklists
+cfg80211: modprobe then ignores its alias, while a Wi-Fi driver still loads it as a dependency,
+so a USB adapter plugged in later works and the next check sees its interface. A machine
+kernel has the 802.11 stack only with the feature `wifi`, which the same rule selects. A
+`regulatory.db` failure therefore means a wireless interface the plan did not see: compare
+the fresh plan.
+
 ## `vh-audit plan`
 
 The audit area `rootfs/usr/local/libexec/vh/vh-audit.d/15-plan.sh` reads the plan of the

@@ -236,9 +236,17 @@ image); they are installed and checked before it, and the ISO's UEFI boot image 
 
 U6 not verified: the ISO booted by UEFI from a USB stick on real hardware (the rig boots the
 image's kernel directly); the x86-64-v1 builds on a CPU below v3 (the rig is v3); the release on
-a `v*` tag; the floor of 1.5 GiB (decided on 2026-10-20) on the rig at 1.5 GiB. Open, from the system: `vh-kconf check` reports `regulatory.db` as firmware that failed
-to load on the rig, which has no Wi-Fi (cfg80211 is loaded although the plan keeps the database
-only with a wireless interface); the same on Void's image, so not from U6.
+a `v*` tag; the floor of 1.5 GiB (decided on 2026-10-20) on the rig at 1.5 GiB.
+
+From the system, found on the rig with Void's image as with ours: `vh-kconf check` reported
+`regulatory.db` as firmware that failed to load, at every boot of a rig without Wi-Fi. The stock
+kernel loaded cfg80211 because dhcpcd asks for the nl80211 family (cfg80211's one alias) at
+every start, and a machine kernel had it built in by the base profile; cfg80211 then asks for
+the database, which the plan keeps only with a wireless interface. Fixed by
+`rootfs/etc/modprobe.d/vh-cfg80211.conf` (a blacklist: cfg80211 loads only as a Wi-Fi driver's
+dependency) and the kernel feature `wifi`, which the plan selects with a wireless interface
+([runtime.md](runtime.md#vh-kconf-check)). `check.py base` and the step `machine` now require
+`firmware=0`; the rig has not run them yet.
 
 On the VM rig (`kvm-smoke` under KVM; the EPYC-Milan CPU that `tests/vm/vhvm.py` pins, 4 GiB):
 the installation from the Void live image to a system that boots through Limine, the signed UKI

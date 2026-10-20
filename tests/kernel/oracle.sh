@@ -16,7 +16,8 @@ out=$repo/build/ko
 rm -rf "$out"
 (cd "$repo/kernel" && zig build install -Dtarget="$arch-linux" -Dcpu=baseline --prefix "$out")
 golden=$repo/tests/kernel/golden/gf63
-features=${VH_ORACLE_FEATURES:-usb-common,bluetooth}
+# wifi: upstream's base profile built the 802.11 stack into every kernel; here it is a feature
+features=${VH_ORACLE_FEATURES:-usb-common,bluetooth,wifi}
 plan_arg=""
 [ -f "$repo/tests/adapt/golden/gf63/strict/plan.zon" ] && plan_arg="--plan /src/tests/adapt/golden/gf63/strict/plan.zon"
 tar -C "$repo" -cf - kernel/pins kernel/profiles kernel/hw tests/adapt build/ko 2>/dev/null |

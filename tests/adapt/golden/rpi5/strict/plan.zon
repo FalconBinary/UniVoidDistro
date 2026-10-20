@@ -89,7 +89,11 @@
         .{ .value = "gpu-vc4", .rules = .{"gpu.vc4"} },
         .{ .value = "storage-mmc", .rules = .{"storage.mmc"} },
     },
-    .features = .{ .{ .value = "bluetooth", .rules = .{"bt.bluez"} }, .{ .value = "usb-common", .rules = .{"usb.common"} } },
+    .features = .{
+        .{ .value = "bluetooth", .rules = .{"bt.bluez"} },
+        .{ .value = "usb-common", .rules = .{"usb.common"} },
+        .{ .value = "wifi", .rules = .{"net.wifi"} },
+    },
     .firmware = .{
         .{ .value = "brcm/brcmfmac*", .rules = .{"net.brcmfmac"} },
         .{ .value = "cypress/cyfmac*", .rules = .{"net.brcmfmac"} },

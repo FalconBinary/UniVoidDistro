@@ -90,7 +90,11 @@
         .{ .value = "storage-nvme", .rules = .{"storage.nvme"} },
         .{ .value = "tpm-crb", .rules = .{"tpm.crb"} },
     },
-    .features = .{ .{ .value = "bluetooth", .rules = .{"bt.bluez"} }, .{ .value = "usb-common", .rules = .{"usb.common"} } },
+    .features = .{
+        .{ .value = "bluetooth", .rules = .{"bt.bluez"} },
+        .{ .value = "usb-common", .rules = .{"usb.common"} },
+        .{ .value = "wifi", .rules = .{"net.wifi"} },
+    },
     .firmware = .{
         .{ .value = "amd-ucode/*", .rules = .{"cpu.amd.microcode"} },
         .{ .value = "amdgpu/dcn_3_1_5_*", .rules = .{"gpu.amdgpu.raphael"} },

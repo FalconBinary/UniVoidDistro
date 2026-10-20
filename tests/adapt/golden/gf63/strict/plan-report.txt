@@ -26,7 +26,7 @@ Rules that apply (53):
   gpu.nvidia.dgpu-off [gpu.zon]: An NVIDIA dGPU that did not bring the console up, in a laptop, not wanted (VH_GPU auto or igpu): no driver, nouveau refused, runtime PM puts it in D3cold through its root port (5-8 W saved, a cooler machine).
   gpu.nvidia.tu11x [gpu.zon]: Turing TU116 and TU117 (GTX 1650, 1660): their nouveau firmware only.
   gpu.renderer.gles2 [gpu.zon]: A GPU with a DRM driver: RefursWM renders with GLES2.
-  net.wifi [net.zon]: A wireless interface: iwd, the regulatory database (signed, read by cfg80211 from the initrd of a machine kernel), iw for diagnosis, the firmware package of network chips.
+  net.wifi [net.zon]: A wireless interface: iwd, the regulatory database (signed, read by cfg80211 from the initrd of a machine kernel), iw for diagnosis, the firmware package of network chips, and the feature wifi, the 802.11 stack of a machine kernel. Without a wireless interface a machine kernel has no such stack, and the stock kernel loads cfg80211 only as a Wi-Fi driver's dependency (rootfs/etc/modprobe.d/vh-cfg80211.conf).
   net.iwlwifi [net.zon]: Intel Wi-Fi: iwlwifi's firmware, one pattern for every generation it names.
   net.iwlwifi.qu [net.zon]: Intel Wi-Fi 6 AX201 and Wireless-AC 9560 on the CNVi of Comet/Ice/Tiger Lake (the Qu family): its firmware only.
   net.wired.dhcp [net.zon]: A wired interface and VH_ETH auto or dhcp: dhcpcd on eth0 (the kernel names interfaces with net.ifnames=0).
@@ -83,9 +83,10 @@ kernel class fragments (10):
   storage-nvme  <- storage.nvme
   tpm-crb  <- tpm.crb
 
-kernel features (2):
+kernel features (3):
   bluetooth  <- bt.bluez
   usb-common  <- usb.common
+  wifi  <- net.wifi
 
 firmware kept (7):
   i915/cml_*  <- gpu.i915.cml

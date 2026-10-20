@@ -12,7 +12,7 @@ Rules that apply (21):
   arm.aes [cpu-arm.zon]: The ARMv8 Crypto Extensions: AES-XTS through the ce-blk driver, built into the machine kernel.
   gpu.vc4 [gpu.zon]: The Raspberry Pi's VideoCore: v3d renders, vc4 drives the displays.
   gpu.renderer.gles2 [gpu.zon]: A GPU with a DRM driver: RefursWM renders with GLES2.
-  net.wifi [net.zon]: A wireless interface: iwd, the regulatory database (signed, read by cfg80211 from the initrd of a machine kernel), iw for diagnosis, the firmware package of network chips.
+  net.wifi [net.zon]: A wireless interface: iwd, the regulatory database (signed, read by cfg80211 from the initrd of a machine kernel), iw for diagnosis, the firmware package of network chips, and the feature wifi, the 802.11 stack of a machine kernel. Without a wireless interface a machine kernel has no such stack, and the stock kernel loads cfg80211 only as a Wi-Fi driver's dependency (rootfs/etc/modprobe.d/vh-cfg80211.conf).
   net.brcmfmac [net.zon]: Broadcom and Cypress FullMAC Wi-Fi: brcmfmac's firmware and NVRAM files [VERIFY the directory Void ships the Cypress files in].
   net.wired.dhcp [net.zon]: A wired interface and VH_ETH auto or dhcp: dhcpcd on eth0 (the kernel names interfaces with net.ifnames=0).
   bt.uart [net.zon]: A Bluetooth controller on a UART, described by the device tree (the Raspberry Pi's CYW43455).
@@ -56,9 +56,10 @@ kernel class fragments (4):
   gpu-vc4  <- gpu.vc4
   storage-mmc  <- storage.mmc
 
-kernel features (2):
+kernel features (3):
   bluetooth  <- bt.bluez
   usb-common  <- usb.common
+  wifi  <- net.wifi
 
 firmware kept (3):
   brcm/brcmfmac*  <- net.brcmfmac

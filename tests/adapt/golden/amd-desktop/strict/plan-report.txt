@@ -30,7 +30,7 @@ Rules that apply (48):
   gpu.amdgpu.navi33 [gpu.zon]: Navi 33 (RX 7600, 7600 XT, 7700S): GC 11.0.2, PSP 13.0.7, SMU 13.0.7, DCN 3.2.1, SDMA 6.0.2, VCN 4.0.4 (the IP versions amdgpu's discovery finds) [VERIFY on hardware].
   gpu.amdgpu.raphael [gpu.zon]: Raphael (the iGPU of Ryzen 7000 desktop): GC 10.3.6, PSP 13.0.5, DCN 3.1.5, SDMA 5.2.6, VCN 3.1.2 [VERIFY on hardware].
   gpu.renderer.gles2 [gpu.zon]: A GPU with a DRM driver: RefursWM renders with GLES2.
-  net.wifi [net.zon]: A wireless interface: iwd, the regulatory database (signed, read by cfg80211 from the initrd of a machine kernel), iw for diagnosis, the firmware package of network chips.
+  net.wifi [net.zon]: A wireless interface: iwd, the regulatory database (signed, read by cfg80211 from the initrd of a machine kernel), iw for diagnosis, the firmware package of network chips, and the feature wifi, the 802.11 stack of a machine kernel. Without a wireless interface a machine kernel has no such stack, and the stock kernel loads cfg80211 only as a Wi-Fi driver's dependency (rootfs/etc/modprobe.d/vh-cfg80211.conf).
   net.wired.dhcp [net.zon]: A wired interface and VH_ETH auto or dhcp: dhcpcd on eth0 (the kernel names interfaces with net.ifnames=0).
   net.r8169 [net.zon]: Realtek Ethernet (RTL8111/8168, RTL8125): r8169 loads the PHY and MAC patches of rtl_nic.
   bt.usb [net.zon]: A Bluetooth controller on USB (interface class E0).
@@ -80,9 +80,10 @@ kernel class fragments (12):
   storage-nvme  <- storage.nvme
   tpm-crb  <- tpm.crb
 
-kernel features (2):
+kernel features (3):
   bluetooth  <- bt.bluez
   usb-common  <- usb.common
+  wifi  <- net.wifi
 
 firmware kept (22):
   amd-ucode/*  <- cpu.amd.microcode

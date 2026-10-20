@@ -1,0 +1,16 @@
+# kernel/profiles/features/wifi: the 802.11 stack, for a wireless interface; the driver
+# (iwlwifi, mt7921e ...) comes from LSMOD, its vendor's firmware from the plan.
+#
+# Selected by the plan with a wireless interface (hwdb/net.zon, net.wifi). Not selected,
+# vh-kconf resolve refuses cfg80211 and mac80211 even when the probe saw them loaded (a live
+# system's dhcpcd or wpa_supplicant loads cfg80211 by asking for the nl80211 family): built in
+# without a wireless interface, cfg80211 would ask for regulatory.db at every boot, which the
+# plan does not keep then.
+
+# The regulatory database is read from the initrd and must be signed, otherwise the built-in
+# cfg80211 falls into the world domain (docs/ROADMAP.md; vh-kconf install puts regulatory.db
+# and its signature into the initrd).
+CONFIG_CFG80211=y
+CONFIG_CFG80211_REQUIRE_SIGNED_REGDB=y
+CONFIG_CFG80211_USE_KERNEL_REGDB_KEYS=y
+CONFIG_MAC80211=y

@@ -73,7 +73,7 @@ unless the gaming session needs it.
 | Realtek Ethernet (RTL8111/8168, RTL8125) | r8169 | `rtl_nic` firmware of that chip; EEE off (a runtime udev rule, no-op elsewhere) |
 | Intel Ethernet (I219, I225, I226) | e1000e, igc | no firmware |
 | virtio-net, e1000e in a VM | virtio_net, e1000e | — |
-| Wi-Fi of any vendor | `/sys/class/net/*/wireless` | `iwd`, `wireless-regdb` (`regulatory.db` into the initrd of a machine kernel) |
+| Wi-Fi of any vendor | `/sys/class/net/*/wireless` | `iwd`, `wireless-regdb` (`regulatory.db` into the initrd of a machine kernel), the feature `wifi` (cfg80211 and mac80211 built into a machine kernel); without a wireless interface cfg80211 loads only as a Wi-Fi driver's dependency ([runtime](runtime.md#vh-kconf-check)) |
 | wired interfaces | `/sys/class/net/*` with a device and no wireless | `dhcpcd` on each of them (`VH_ETH=auto`), or the static address of `vh.conf` |
 | Bluetooth | a `btusb` (or UART) controller | `bluez` only when present and `VH_BLUETOOTH` is not `off`; the vendor helper module (btintel, btrtl, btmtk, btbcm) by the controller's id |
 

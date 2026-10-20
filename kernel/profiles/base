@@ -76,19 +76,14 @@ CONFIG_FB_EFI=y
 CONFIG_SWAP=y
 CONFIG_ZRAM=y
 
-# Networking of the system: Wi-Fi (iwlwifi/iwlmvm come from LSMOD), the regulatory database is
-# read from the initrd and must be signed, otherwise the built-in cfg80211 falls into the world
-# domain (docs/ROADMAP.md).
+# Networking of the system. Wi-Fi is the feature wifi (features/wifi), which the plan selects
+# with a wireless interface; rfkill stays here, Bluetooth uses it too.
 CONFIG_NET=y
 CONFIG_INET=y
 CONFIG_IPV6=y
 CONFIG_UNIX=y
 CONFIG_PACKET=y
 CONFIG_NETFILTER=y
-CONFIG_CFG80211=y
-CONFIG_CFG80211_REQUIRE_SIGNED_REGDB=y
-CONFIG_CFG80211_USE_KERNEL_REGDB_KEYS=y
-CONFIG_MAC80211=y
 CONFIG_RFKILL=y
 
 # eudev and the service manager need devtmpfs mounted by the kernel and tmpfs with ACLs/xattrs

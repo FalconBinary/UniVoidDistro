@@ -24,7 +24,7 @@ Rules that apply (50):
   gpu.i915 [gpu.zon]: Intel graphics up to Gen12 (Skylake to Raptor Lake, DG2): the i915 driver, VA-API through intel-media-driver (Broadwell and newer [VERIFY] older parts need libva-intel-driver), its firmware in linux-firmware-intel.
   gpu.i915.adlp [gpu.zon]: Alder Lake-P and Raptor Lake-P graphics (Iris Xe): the DMC and GuC of ADL-P, the HuC of Tiger Lake [VERIFY on hardware].
   gpu.renderer.gles2 [gpu.zon]: A GPU with a DRM driver: RefursWM renders with GLES2.
-  net.wifi [net.zon]: A wireless interface: iwd, the regulatory database (signed, read by cfg80211 from the initrd of a machine kernel), iw for diagnosis, the firmware package of network chips.
+  net.wifi [net.zon]: A wireless interface: iwd, the regulatory database (signed, read by cfg80211 from the initrd of a machine kernel), iw for diagnosis, the firmware package of network chips, and the feature wifi, the 802.11 stack of a machine kernel. Without a wireless interface a machine kernel has no such stack, and the stock kernel loads cfg80211 only as a Wi-Fi driver's dependency (rootfs/etc/modprobe.d/vh-cfg80211.conf).
   net.iwlwifi [net.zon]: Intel Wi-Fi: iwlwifi's firmware, one pattern for every generation it names.
   net.iwlwifi.so-gf [net.zon]: Intel Wi-Fi 6E AX211 on the CNVi of Alder/Raptor Lake (the So family with the GF radio): its firmware and PNVM [VERIFY on hardware].
   bt.usb [net.zon]: A Bluetooth controller on USB (interface class E0).
@@ -83,9 +83,10 @@ kernel class fragments (12):
   storage-vmd  <- storage.vmd
   tpm-crb  <- tpm.crb
 
-kernel features (2):
+kernel features (3):
   bluetooth  <- bt.bluez
   usb-common  <- usb.common
+  wifi  <- net.wifi
 
 firmware kept (9):
   i915/adlp_*  <- gpu.i915.adlp

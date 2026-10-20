@@ -93,7 +93,11 @@
         .{ .value = "storage-vmd", .rules = .{"storage.vmd"} },
         .{ .value = "tpm-crb", .rules = .{"tpm.crb"} },
     },
-    .features = .{ .{ .value = "bluetooth", .rules = .{"bt.bluez"} }, .{ .value = "usb-common", .rules = .{"usb.common"} } },
+    .features = .{
+        .{ .value = "bluetooth", .rules = .{"bt.bluez"} },
+        .{ .value = "usb-common", .rules = .{"usb.common"} },
+        .{ .value = "wifi", .rules = .{"net.wifi"} },
+    },
     .firmware = .{
         .{ .value = "i915/adlp_*", .rules = .{"gpu.i915.adlp"} },
         .{ .value = "i915/tgl_huc*", .rules = .{"gpu.i915.adlp"} },

@@ -4,11 +4,12 @@
         // Wi-Fi
         .{
             .id = "net.wifi",
-            .why = "A wireless interface: iwd, the regulatory database (signed, read by cfg80211 from the initrd of a machine kernel), iw for diagnosis, the firmware package of network chips.",
+            .why = "A wireless interface: iwd, the regulatory database (signed, read by cfg80211 from the initrd of a machine kernel), iw for diagnosis, the firmware package of network chips, and the feature wifi, the 802.11 stack of a machine kernel. Without a wireless interface a machine kernel has no such stack, and the stock kernel loads cfg80211 only as a Wi-Fi driver's dependency (rootfs/etc/modprobe.d/vh-cfg80211.conf).",
             .when = .{ .has = .{"wifi"} },
             .packages = .{ "iwd", "iw", "wireless-regdb", "linux-firmware-network" },
             .services = .{"iwd"},
             .firmware = .{"regulatory.db*"},
+            .features = .{"wifi"},
         },
         .{
             .id = "net.iwlwifi",

@@ -19,6 +19,16 @@ def step_base(a):
         check("DNS through unbound (DoT)", rc == 0)
         rc, out = run(ser, "ok=1; for i in $(seq 1 24); do doas chronyc -n -N authdata | awk 'NR>2 && $2==\"NTS\" && $4>0 {f=1} END {exit !f}' && { ok=0; break; }; sleep 5; done; doas chronyc -N authdata; test $ok = 0")
         check("chrony: NTS sources with keys", rc == 0)
+        # vh-kconf check of this boot (the vh-check service, 5 s after the services start): the rig
+        # is the machine of /etc/vh/hw.zon, every device has its driver and no firmware failed.
+        # The rig has no Wi-Fi: cfg80211, which dhcpcd's nl80211 lookup loaded until
+        # rootfs/etc/modprobe.d/vh-cfg80211.conf, asked for the trimmed regulatory.db at every boot
+        rc, out = run(ser, "for i in $(seq 1 30); do test -e /run/vh/check.done && break; sleep 2; done; "
+                           "cat /run/vh/check.done; doas cat /run/vh/check 2>/dev/null; "
+                           "grep -E '^(cfg80211|mac80211) ' /proc/modules || echo 'no 802.11 stack'")
+        check("vh-kconf check: the rig's own machine, every driver, no firmware failure",
+              "VH_CHECK machine=same devices=0 firmware=0 lost=0" in out, out[-600:].replace("\n", " | "))
+        check("no cfg80211 without Wi-Fi", "no 802.11 stack" in out, out[-200:].replace("\n", " | "))
         audit(ser, "vh-audit")
         rc, out = run(ser, "ls /usr/local/bin; ls -l /usr/local/bin/vh-wlfilter /usr/local/libexec/vh/browser-sandbox")
         check("RefursWM and RefursLine installed", "refurswm" in out and "refursline" in out)
