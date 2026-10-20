@@ -25,3 +25,5 @@ bench/results/*.tmp
 adapt/.zig-cache/
 adapt/zig-out/
 tests/adapt/out/
+# the commit of a copy without .git (tests/vm/vhvm.py, the live image)
+.vh-commit

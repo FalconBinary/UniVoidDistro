@@ -202,6 +202,12 @@ class VM:
 def make_repo_iso(out):
     """The repository as a tar archive on the VM's second CD drive: file modes are preserved."""
     stage = tempfile.mkdtemp()
+    # the copy has no .git: .vh-commit tells the installer its commit, which our live image's
+    # programs must be of (install/lib.sh vh_prebuilt, docs/uni/live-image.md)
+    commit = subprocess.run(["git", "-C", REPO, "rev-parse", "HEAD"], capture_output=True, text=True)
+    if commit.returncode == 0:
+        with open(os.path.join(REPO, ".vh-commit"), "w") as f:
+            f.write(commit.stdout.strip() + "\n")
     flags = ["--no-xattrs"] + (["--no-fflags", "--no-mac-metadata"] if sys.platform == "darwin" else [])
     subprocess.run(["tar", *flags, "-cf", os.path.join(stage, "vh.tar"),
                     "--exclude", ".git", "--exclude", "tests/vm/work", "--exclude", "__pycache__",

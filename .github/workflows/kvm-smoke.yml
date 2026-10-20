@@ -4,6 +4,9 @@
 # machine: vh-kconf install and the boot assessment of a real machine kernel (docs/uni/kernel.md).
 # Hours long, so it runs on demand and weekly, not on every push. The live ISO is verified
 # against Void's signed sha256sum.txt (minisign key and ISO name pinned in tests/vm/void-live.pins).
+# With live_run, it is our own image of that live-image run instead (docs/uni/live-image.md):
+# its sha256, its build provenance attestation, and its commit must be this run's, so that the
+# installer takes the image's programs instead of building them.
 name: kvm-smoke
 on:
   workflow_dispatch:
@@ -17,12 +20,17 @@ on:
       kver:
         description: the kernel version of that run
         default: "6.18.57"
+      live_run:
+        description: "the id of a live-image run of this commit: install from its ISO instead of Void's"
+        default: ""
   schedule:
     - cron: "17 4 * * 1"
 permissions:
   contents: read
   # the artifact of another run (download-artifact with run-id)
   actions: read
+  # gh attestation verify, for live_run
+  attestations: read
 env:
   # the VM's RAM in MiB: 3 GiB, the gate's memory floor (hwdb/security.zon memory-floor), so
   # every run shows the installer fits there; it peaks at 2.1 GiB (the RefursWM build) and
@@ -58,7 +66,30 @@ jobs:
           # libarchive-tools: bsdtar, which unpacks the live ISO's kernel (tests/vm/vhvm.py)
           sudo apt-get install -y -q qemu-system-x86 ovmf swtpm xorriso minisign libarchive-tools
       - uses: ./.github/actions/setup-zig
+      - name: our live ISO of live-image run ${{ github.event.inputs.live_run }}
+        if: github.event.inputs.live_run != ''
+        uses: actions/download-artifact@v4
+        with:
+          name: univoiddistro-live-x86_64
+          run-id: ${{ github.event.inputs.live_run }}
+          github-token: ${{ github.token }}
+          path: iso-live
+      - name: our live ISO, verified (sha256, attestation, this commit)
+        if: github.event.inputs.live_run != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          cd iso-live
+          sha256sum -c SHA256SUMS
+          iso=$(sed -n 's/^ISO=//p' BUILD)
+          gh attestation verify "$iso" --repo "$GITHUB_REPOSITORY"
+          built=$(sed -n 's/^COMMIT=//p' BUILD)
+          [ "$built" = "$GITHUB_SHA" ] || { echo "the image is of $built, this run of $GITHUB_SHA: the installer would build instead of taking the image's programs"; exit 1; }
+          cat BUILD
+          echo "VH_ISO=$PWD/$iso" >> "$GITHUB_ENV"
       - name: the Void live ISO, verified
+        if: github.event.inputs.live_run == ''
         run: |
           set -euo pipefail
           . tests/vm/void-live.pins
@@ -71,6 +102,7 @@ jobs:
           # be in the signed file, on exactly that line
           sum=$(sha256sum "$ISO" | cut -d' ' -f1)
           grep -qFx "SHA256 ($ISO) = $sum" sha256sum.txt || { echo "$ISO: sha256 $sum is not in the signed sha256sum.txt"; exit 1; }
+          echo "VH_ISO=$PWD/$ISO" >> "$GITHUB_ENV"
       - name: the tools and thor for the VM (tests/zig/build.sh)
         run: sh tests/zig/build.sh
       - name: vh-stage1 for the VM (tests/init/build.sh; the stage1 step installs it)
@@ -78,7 +110,7 @@ jobs:
       - name: install
         env:
           VH_ACCEL: kvm
-        run: python3 tests/vm/vhvm.py install --iso "iso/$(. tests/vm/void-live.pins; echo $ISO)" --mem "$VH_MEM" --timeout 10800
+        run: python3 tests/vm/vhvm.py install --iso "$VH_ISO" --mem "$VH_MEM" --timeout 10800
       - name: check
         env:
           VH_ACCEL: kvm
