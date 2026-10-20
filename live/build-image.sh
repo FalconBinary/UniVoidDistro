@@ -32,13 +32,17 @@ git -C "$work/mklive" fetch -q --depth 1 "$MKLIVE_REPO" "$MKLIVE_COMMIT"
 git -C "$work/mklive" checkout -q FETCH_HEAD
 [ "$(git -C "$work/mklive" rev-parse HEAD)" = "$MKLIVE_COMMIT" ] || die "void-mklive is not at $MKLIVE_COMMIT"
 
-echo "== the image's own files: /root/vh at $short, the prebuilt programs, /etc/vh-live"
+echo "== the image's own files: /root/vh at $short, the prebuilt programs, modprobe.d, /etc/vh-live"
 inc=$work/include
-mkdir -p "$inc/root/vh" "$inc/usr/local/lib/vh" "$inc/etc"
+mkdir -p "$inc/root/vh" "$inc/usr/local/lib/vh" "$inc/etc/modprobe.d"
 git -C "$repo" archive "$commit" | tar -x -C "$inc/root/vh"
 echo "$commit" > "$inc/root/vh/.vh-commit"
 chmod 0700 "$inc/root/vh"
 cp -a "$pre" "$inc/usr/local/lib/vh/prebuilt"
+# the installed system's modprobe.d at the commit: the live system's stage 1 then loads what
+# this machine uses and not every module of modules.devname, and the probe of the installation
+# (hw.zon) lists only that (rootfs/etc/modprobe.d/vh-devnodes.conf)
+cp "$inc/root/vh/rootfs/etc/modprobe.d/"*.conf "$inc/etc/modprobe.d/"
 cat > "$inc/etc/vh-live" <<EOT
 # UniVoidDistro's live image (docs/uni/live-image.md)
 COMMIT=$commit

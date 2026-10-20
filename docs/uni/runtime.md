@@ -176,6 +176,43 @@ kernel has the 802.11 stack only with the feature `wifi`, which the same rule se
 `regulatory.db` failure therefore means a wireless interface the plan did not see: compare
 the fresh plan.
 
+## Kernel modules at boot
+
+Stage 1 loads every module of the kernel's `modules.devname` at every boot, so that its device
+node exists before udev starts: runit-void's `01-static-devnodes.sh` runs `modprobe -bq` for
+each, vh-stage1's step `static-devnodes` one `modprobe -abq` ([init](../../init/README.md)).
+eudev creates no static nodes, so without the module there is no node, and no process can load
+the module by opening one. The stock 6.18 kernel lists 18 modules there. On the rig (no
+Bluetooth, no sound, `VH_VIRT=no`) 15 of them loaded, 27 modules with their dependencies: the
+Bluetooth stack through `hci_vhci` (a virtual controller for testing), tun, vhost-net,
+vhost-vsock and the VFIO container, whose nodes eudev's rules make world-writable (0666), and
+more. `install/30-lock.sh` then preloaded all of them before the module lock. Under KVM the
+step took 328 ms of a 1211 ms stage 1 (kvm-smoke run 39411670080).
+
+`modprobe -b` skips a module that modprobe.d blacklists, named or found through an alias,
+while a driver that needs it still loads it as a dependency (kmod 34.2, `tools/modprobe.c`
+and `libkmod/libkmod-module.c`; eudev's module loading checks the blacklist the same way).
+Two files use that:
+
+| File | Modules | Who still loads them |
+|---|---|---|
+| `rootfs/etc/modprobe.d/vh-devnodes.conf` | hci_vhci, bluetooth, userio, uinput, ppp_generic, nvram, snd_seq, snd_timer | btusb and hci_uart (bluetooth), thinkpad_acpi (nvram), every sound driver (snd_timer); the rest only `doas modprobe NAME` |
+| `rootfs/etc/modprobe.d/vh-novirt.conf` | tun, vhost_net, vhost_vsock, vfio | `doas modprobe NAME`; with `VH_VIRT=yes` the installer removes the file (`install/chroot.sh`), since qemu needs the nodes at boot |
+
+The blacklist of bluetooth also keeps `socket(AF_BLUETOOTH)` from loading the stack on a
+machine without a controller. The ALSA sequencer serves MIDI only: WirePlumber makes its
+Midi-Bridge when `/dev/snd/seq` exists, PipeWire's audio does not use it, and a MIDI device
+does not load it (the sequencer itself unblocks the loading of its drivers). For MIDI:
+`doas modprobe snd_seq` before `30-lock.sh`, so that the lock keeps it. loop, dm_mod, btrfs and
+rfkill still load at boot: blacklisted, btrfs would no longer load for `mount -t btrfs` either,
+and with btrfs-progs installed runit-void's `btrfs device scan || emergency_shell` fails on a
+btrfs disk without `/dev/btrfs-control`; `rfkill(8)` fails without `/dev/rfkill`, and `vh-keys`
+(`optional/sb-offline-keys`) and `install/00-probe.sh` run it under `set -e` on machines with no
+radio as well (the node is root's only, `99-vh-devices.rules`). The live image carries the
+same files ([live-image.md](live-image.md#what-the-image-holds)), so the probe of the
+installation lists the modules the machine uses, not these. A system locked before keeps its
+old `/etc/vh/modules.preload` until `30-lock.sh` runs again.
+
 ## `vh-audit plan`
 
 The audit area `rootfs/usr/local/libexec/vh/vh-audit.d/15-plan.sh` reads the plan of the

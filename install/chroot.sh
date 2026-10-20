@@ -67,6 +67,11 @@ render /root/vh/rootfs/etc/sysctl.d/40-vh-network.conf.cin /etc/sysctl.d/40-vh-n
 	echo "# install ... /bin/false also denies an explicit \"modprobe name\", not just autoloading."
 	vh_module_blacklist | sed 's|.*|install & /bin/false|'
 } > /etc/modprobe.d/vh-blacklist.conf
+# stage 1 loads the virtual machines' modules of modules.devname (tun, vhost_net, vhost_vsock,
+# vfio) only with VH_VIRT=yes: their blacklist goes (rootfs/etc/modprobe.d/vh-novirt.conf)
+if [ "$VH_VIRT" = yes ]; then
+	rm -f /etc/modprobe.d/vh-novirt.conf
+fi
 
 # rule files a hwdb rule selects (the dGPU that sleeps): only those the plan names stay
 for f in ${VH_PLAN_UDEV_KNOWN:-}; do

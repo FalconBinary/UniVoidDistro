@@ -4,7 +4,7 @@ import re
 import sys
 
 import vhvm
-from vmlib import VM_SRC, audit, boot, check, run, shutdown
+from vmlib import VM_SRC, audit, boot, check, devname_unused, run, shutdown
 
 
 def step_stage1(a):
@@ -35,6 +35,9 @@ def step_stage1(a):
               re.search(r"vh-stage1: done in \d+ ms \(0 errors\)", out) is not None, out[-700:].replace("\n", " | "))
         check("the per-step times are in kmsg", "vh-stage1: steps " in out and "udev-settle=" in out)
         check("--status: vh-stage1 ran this boot", "st=0" in out and "done " in out)
+        left = devname_unused(ser)
+        check("vh-stage1 loads no devname module the rig does not use (modprobe -b)", left == [],
+              "/proc/modules not read" if left is None else " ".join(left))
         rc, out = run(ser, "sv status /var/service/*")
         bad = [l for l in out.splitlines() if l.startswith(("down:", "fail:", "warning:"))]
         check("all runit services running under vh-stage1", not bad, "; ".join(bad))

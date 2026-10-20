@@ -253,6 +253,19 @@ dependency) and the kernel feature `wifi`, which the plan selects with a wireles
 ([runtime.md](runtime.md#vh-kconf-check)). `check.py base` and the step `machine` now require
 `firmware=0`; the rig has not run them yet.
 
+Also from the system: stage 1 loaded every module of `modules.devname` at every boot (runit-void's
+`01-static-devnodes.sh` as vh-stage1), 27 modules with their dependencies on the rig, which has
+no Bluetooth, no sound and `VH_VIRT=no`: the Bluetooth stack through the test driver `hci_vhci`,
+tun, vhost-net, vhost-vsock and VFIO with world-writable nodes, and `30-lock.sh` preloaded them
+all before the lock. Under KVM the step took 328 ms of a 1211 ms stage 1 (kvm-smoke run
+39411670080). Fixed by `rootfs/etc/modprobe.d/vh-devnodes.conf` and `vh-novirt.conf` (the
+latter removed with `VH_VIRT=yes`): `modprobe -b` skips them, a driver still loads them as its
+dependency; the live image carries both ([runtime.md](runtime.md#kernel-modules-at-boot)).
+`check.py base`, `stage1` and `lock` check it; the rig has not run them yet. The machine kernel
+built from a probe that saw them is a separate finding (the qemu-q35 kernel of kernel-custom run
+39359766281 has tun, vhost-net, VFIO and others built in although resolve refused their
+feature).
+
 On the VM rig (`kvm-smoke` under KVM; the EPYC-Milan CPU that `tests/vm/vhvm.py` pins, 4 GiB):
 the installation from the Void live image to a system that boots through Limine, the signed UKI
 and LUKS2; `check.py base` with every check passing (lockdown, AppArmor, every runit service,

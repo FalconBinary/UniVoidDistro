@@ -1,7 +1,7 @@
 """The installation path of a new machine: base, ctools, enroll, sb, lock."""
 import re
 
-from vmlib import as_user, audit, boot, check, run, shutdown
+from vmlib import as_user, audit, boot, check, devname_unused, run, shutdown
 
 
 def step_base(a):
@@ -29,6 +29,13 @@ def step_base(a):
         check("vh-kconf check: the rig's own machine, every driver, no firmware failure",
               "VH_CHECK machine=same devices=0 firmware=0 lost=0" in out, out[-600:].replace("\n", " | "))
         check("no cfg80211 without Wi-Fi", "no 802.11 stack" in out, out[-200:].replace("\n", " | "))
+        # stage 1 loads every module of modules.devname that modprobe.d does not blacklist
+        rc, out = run(ser, "ls /etc/modprobe.d")
+        check("modprobe.d: vh-devnodes.conf, and vh-novirt.conf with VH_VIRT=no",
+              "vh-devnodes.conf" in out and "vh-novirt.conf" in out, out[-300:].replace("\n", " | "))
+        left = devname_unused(ser)
+        check("stage 1 loads no devname module the rig does not use", left == [],
+              "/proc/modules not read" if left is None else " ".join(left))
         audit(ser, "vh-audit")
         rc, out = run(ser, "ls /usr/local/bin; ls -l /usr/local/bin/vh-wlfilter /usr/local/libexec/vh/browser-sandbox")
         check("RefursWM and RefursLine installed", "refurswm" in out and "refursline" in out)
@@ -142,6 +149,9 @@ def step_lock(a):
     try:
         rc, out = run(ser, "printf 'lock\\n' | doas /root/vh/install/30-lock.sh")
         check("30-lock.sh", rc == 0)
+        left = devname_unused(ser, "/etc/vh/modules.preload")
+        check("modules.preload keeps no devname module the rig does not use", left == [],
+              "/etc/vh/modules.preload not read" if left is None else " ".join(left))
     finally:
         shutdown(vm, ser)
     vm, ser = boot(a)

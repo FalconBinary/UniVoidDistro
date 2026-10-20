@@ -28,7 +28,7 @@ doas vh-stage1 --rollback    # /etc/runit/1.orig back
 | Step | runit-void / vh script | How |
 |---|---|---|
 | pseudofs | 00-pseudofs.sh | mount(2): proc, sysfs, /run, /dev, devpts, /dev/shm, securityfs, efivarfs, cgroup2 (unified), plus bpffs for vh-sched |
-| static-devnodes | 01-static-devnodes.sh | `modules.devname` read natively, one `modprobe -abq` |
+| static-devnodes | 01-static-devnodes.sh | `modules.devname` read natively, one `modprobe -abq`: `-b` skips what modprobe.d blacklists (`vh-devnodes.conf`, `vh-novirt.conf`, [runtime](../docs/uni/runtime.md#kernel-modules-at-boot)) |
 | kmods | 02-kmods.sh (modules-load) | modules-load.d and the command line read natively, one `modprobe -ab` |
 | udev-start, -trigger, -settle | 02-udev.sh | `udevd --daemon`, `udevadm trigger` ×2, `udevadm settle` by argv (three timed steps) |
 | console | 03-console-setup.sh | `setfont` only with FONT set, `loadkeys` only for a non-us keymap; the kernel time zone of `hwclock --systz` natively (TZif from /etc/localtime) |

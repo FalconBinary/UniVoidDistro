@@ -61,6 +61,21 @@ def audit(ser, name, want_zero_fails=False):
     return m
 
 
+# Modules of modules.devname that stage 1 loads unless modprobe.d blacklists them, and that the
+# rig does not use (no Bluetooth, no sound, VH_VIRT=no): rootfs/etc/modprobe.d/vh-devnodes.conf
+# and vh-novirt.conf leave them out (docs/uni/runtime.md, "Kernel modules at boot")
+DEVNAME_UNUSED = ("hci_vhci", "bluetooth", "userio", "uinput", "ppp_generic", "nvram", "snd_seq",
+                  "snd_timer", "tun", "vhost_net", "vhost_vsock", "vfio")
+
+
+def devname_unused(ser, path="/proc/modules"):
+    """The modules of DEVNAME_UNUSED that path names (the first word of a line, # comments
+    skipped), or None when path cannot be read."""
+    rc, out = run(ser, f"test -r {path} && echo words: $(awk '!/^#/ {{print $1}}' {path})")
+    m = re.search(r"words: (.*)", out)
+    return [x for x in DEVNAME_UNUSED if x in m.group(1).split()] if rc == 0 and m else None
+
+
 def put_file(ser, path, data):
     """A file from the host into the VM: base64 in chunks (ASCII only over the serial console)."""
     import base64

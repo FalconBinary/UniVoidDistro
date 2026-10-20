@@ -45,6 +45,7 @@ The tree, beside Void's root file system:
 | `/usr/local/lib/vh/prebuilt/thor` | the thor package and its repository index (`thor/package.sh`) |
 | `/usr/local/lib/vh/prebuilt/desktop/LEVEL-BT` | RefursWM and RefursLine for each x86-64 level and Bluetooth variant (see the first decision) |
 | `/usr/local/lib/vh/prebuilt/SHA256SUMS` | every file above; `BUILD` names the commit and the CI run |
+| `/etc/modprobe.d` | the installed system's `rootfs/etc/modprobe.d` at the commit: stage 1 does not load every module of `modules.devname`, and the probe of the installation lists the modules this machine uses ([runtime.md](runtime.md#kernel-modules-at-boot)) |
 | `/etc/vh-live` | the marker: the commit, the run, the image's kernel |
 
 ## The installer on our image
