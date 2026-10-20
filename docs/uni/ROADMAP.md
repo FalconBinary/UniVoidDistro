@@ -251,7 +251,10 @@ the database, which the plan keeps only with a wireless interface. Fixed by
 `rootfs/etc/modprobe.d/vh-cfg80211.conf` (a blacklist: cfg80211 loads only as a Wi-Fi driver's
 dependency) and the kernel feature `wifi`, which the plan selects with a wireless interface
 ([runtime.md](runtime.md#vh-kconf-check)). `check.py base` and the step `machine` now require
-`firmware=0`; the rig has not run them yet.
+`firmware=0`, and pass on the rig with the image of cb10024: `base` 21 of 21 (kvm-smoke run
+39416639943), `machine` 23 of 23 with a q35 kernel built without cfg80211 (kernel-custom run
+39413157691, "feature wifi not selected"; kvm-smoke run 39416650235), `firmware=0 lost=0` on the
+stock kernel and at each trial boot.
 
 Also from the system: stage 1 loaded every module of `modules.devname` at every boot (runit-void's
 `01-static-devnodes.sh` as vh-stage1), 27 modules with their dependencies on the rig, which has

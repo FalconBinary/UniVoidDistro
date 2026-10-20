@@ -114,8 +114,10 @@ directly and would not see a broken UEFI boot.
   system's own 325 MiB and the 1 GiB of Argon2id put the real peak near 1.4 GiB. Without
   Argon2id, the largest step is the UKI (dracut: about 280 MiB).
 - The install-time probe is made by the installed kernel's series: `vh-kconf check` on the stock
-  kernel finds nothing lost on the rig (`lost=0`); its one firmware load failure, `regulatory.db`,
-  is the same on Void's image (cfg80211 without Wi-Fi, [runtime.md](runtime.md#vh-kconf-check)).
+  kernel finds nothing lost on the rig (`lost=0`); its one firmware load failure then,
+  `regulatory.db`, was the same on Void's image (cfg80211 without Wi-Fi,
+  [runtime.md](runtime.md#vh-kconf-check)); with cfg80211 blacklisted the check finds none
+  (`firmware=0`, kvm-smoke run 39416639943).
 
 ## aarch64
 
