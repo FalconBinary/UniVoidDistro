@@ -76,7 +76,29 @@ jobs:
         run: |
           set -euo pipefail
           cd out && sha256sum -c SHA256SUMS
-          notes="UniVoidDistro $GITHUB_REF_NAME for x86_64 UEFI machines. The live image: verify it with sha256sum -c SHA256SUMS and gh attestation verify ISO --repo $GH_REPO, then install as docs/uni/install.md says. vh-tools-x86_64.tar.gz (the zig-test workflow) holds the Zig tools."
+          # the release's own check, as docs/uni/install.md gives it: no GitHub account, the
+          # attestation by the ISO's sha256 from the public API, this workflow and this tag
+          iso=$(ls -- *.iso) sum=$(cut -d' ' -f1 SHA256SUMS) commit=$(sed -n 's/^COMMIT=//p' BUILD)
+          fence='```'
+          notes=$(cat <<EOF
+          UniVoidDistro $GITHUB_REF_NAME for x86_64 machines with a 64-bit UEFI, built from commit ${commit:0:12}.
+
+          Check the live image before writing it to a USB stick; no GitHub account is needed. The download is whole (on macOS: \`shasum -a 256 -c SHA256SUMS\`):
+
+          $fence
+          sha256sum -c SHA256SUMS
+          $fence
+
+          This repository's live-image workflow built it from this tag (GitHub CLI, curl and jq):
+
+          $fence
+          curl -fsSL https://api.github.com/repos/$GH_REPO/attestations/sha256:$sum | jq -c '.attestations[].bundle' > bundle.jsonl
+          gh attestation verify $iso --bundle bundle.jsonl --repo $GH_REPO --signer-workflow $GH_REPO/.github/workflows/live-image.yml --source-ref refs/tags/$GITHUB_REF_NAME --deny-self-hosted-runners
+          $fence
+
+          How to install it: [docs/uni/install.md](https://github.com/$GH_REPO/blob/$GITHUB_REF_NAME/docs/uni/install.md). \`vh-tools-x86_64.tar.gz\` holds the Zig tools (the zig-test workflow).
+          EOF
+          )
           gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 \
             || gh release create "$GITHUB_REF_NAME" --verify-tag --title "UniVoidDistro $GITHUB_REF_NAME" --notes "$notes"
           # zig-test, ten minutes into the same tag, usually makes the release first with notes of

@@ -19,19 +19,47 @@ are the same everywhere: where a machine differs, its plan says so before anythi
 
 ## 1. Download and verify the image
 
-The images are the assets of the releases,
+Take the project's address, `FalconBinary/UniVoidDistro`, from a source you trust, not from a
+link someone sent. Its images are the assets of its releases,
 <https://github.com/FalconBinary/UniVoidDistro/releases>: `univoiddistro-live-x86_64-COMMIT.iso`,
-`SHA256SUMS`, `BUILD` (the commit, the CI run, the kernel series) and `live-packages.txt`. Download
-the ISO and `SHA256SUMS` of the newest release, then:
+`SHA256SUMS`, `BUILD` (the commit, the CI run, the kernel series) and `live-packages.txt`.
+Download the ISO and `SHA256SUMS` of the newest release; TAG below is its tag, for example
+`v0.1.0`. None of this needs a GitHub account.
+
+**Is the download whole?** `SHA256SUMS` holds the ISO's sha256, SHA256 below. It shows that the
+file arrived whole, not who made it: it comes from the same page as the ISO.
 
 ```sh
-sha256sum -c SHA256SUMS            # macOS: shasum -a 256 -c SHA256SUMS
-gh attestation verify univoiddistro-live-x86_64-COMMIT.iso --repo FalconBinary/UniVoidDistro
+sha256sum -c SHA256SUMS            # Linux
+shasum -a 256 -c SHA256SUMS        # macOS
 ```
 
-The sha256 shows that the download is whole; the build provenance attestation ties the ISO to
-this repository, the `live-image` workflow and the commit in `BUILD`
-([live-image.md](live-image.md#trust)). A project signing key comes later.
+On Windows, `certutil -hashfile ISO SHA256` prints the sum to compare with `SHA256SUMS`.
+
+**Did this project build it?** The ISO carries a build provenance attestation: a Sigstore
+signature that GitHub gives this repository's `live-image` workflow, on GitHub's own runners,
+for the file it built from the tag ([live-image.md](live-image.md#trust)). It is public:
+download it by the ISO's sha256 and check it with the GitHub CLI (a current version: these
+commands were checked with 2.102), `curl` and `jq`:
+
+```sh
+curl -fsSL https://api.github.com/repos/FalconBinary/UniVoidDistro/attestations/sha256:SHA256 \
+  | jq -c '.attestations[].bundle' > bundle.jsonl
+gh attestation verify univoiddistro-live-x86_64-COMMIT.iso --bundle bundle.jsonl \
+  --repo FalconBinary/UniVoidDistro \
+  --signer-workflow FalconBinary/UniVoidDistro/.github/workflows/live-image.yml \
+  --source-ref refs/tags/TAG --deny-self-hosted-runners
+```
+
+It ends with exit status 0, and in a terminal with "Verification succeeded!". Another file,
+another repository, workflow or tag, or a runner outside GitHub makes it fail. To pin the exact
+commit as well, add `--source-digest` with the `COMMIT` of `BUILD`. On Windows the same two
+commands run in `cmd.exe`, with `curl.exe` and jq (`winget install jqlang.jq`), not in
+PowerShell, whose `>` writes UTF-16 [VERIFY].
+
+What the attestation does not prove: that the code is right (it is public at that commit), or
+more about Void's packages in the image than Void's own signatures, which xbps checked when the
+image was built. A project signing key comes later.
 
 ## 2. Write the USB stick
 
