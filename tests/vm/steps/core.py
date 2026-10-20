@@ -47,7 +47,7 @@ def step_base(a):
         # at boot vh-acpid may start before socklog-unix and lose its first lines (vlogger
         # without /dev/log): restart, as in the ctools step
         rc, out = run(ser, "doas sh -c 'sv restart vh-acpid; sleep 3; grep -ah vh-acpid /var/log/socklog/*/current | tail -3; "
-                           "grep -c \"Power Button\" /proc/bus/input/devices; ls /sys/bus/acpi/drivers/tiny_power_button 2>/dev/null'")
+                           "grep -c \"Power Button\" /proc/bus/input/devices; ls /sys/bus/acpi/drivers/tiny-power-button 2>/dev/null'")
         if "LNXPWRBN" in out:
             # the fixed button alone (q35; hwdb rule acpi.power-button.fixed): kernel 6.18 drives it with
             # tiny_power_button, which signals init; /etc/runit/ctrlaltdel hands it to vh-acpid

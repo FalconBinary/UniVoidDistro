@@ -8,14 +8,14 @@
 
 PATH=/usr/bin:/usr/sbin
 
-if ls /sys/bus/acpi/drivers/tiny_power_button 2>/dev/null | grep -q ':'; then
+if ls /sys/bus/acpi/drivers/tiny-power-button 2>/dev/null | grep -q ':'; then
 	sv 1 vh-acpid >/dev/null 2>&1 && exit 0
 	# vh-acpid is not running: POWER_KEY without it (lock needs vh-acpid; ignore is nothing)
 	key=$(sed -n 's/^POWER_KEY=//p' /etc/vh/acpi.conf 2>/dev/null | tr -d '"')
 	if [ "${key:-poweroff}" = poweroff ]; then
 		chmod 100 /run/runit/stopit
 		chmod 000 /run/runit/reboot
-		echo "The power button: the system is going down..." | wall
+		! command -v wall >/dev/null || echo "The power button: the system is going down..." | wall
 	fi
 	exit 0
 fi
@@ -23,4 +23,4 @@ fi
 # Void's ctrlaltdel: on to stage 3, which reboots
 chmod 100 /run/runit/stopit
 chmod 100 /run/runit/reboot
-echo "System is going down..." | wall
+! command -v wall >/dev/null || echo "System is going down..." | wall

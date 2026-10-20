@@ -24,7 +24,13 @@ chronyc -n authdata 2>/dev/null | awk 'NR>2 && $2=="NTS" {n++} END {exit !(n>0)}
 
 sec "Power button and lid"
 if ls /sys/bus/acpi/drivers/tiny-power-button/ 2>/dev/null | grep -q ':'; then
-	bad "tiny_power_button took the power button (Ctrl+Alt+Del bypasses vh-acpid): module_blacklist needed"
+	# the fixed button alone (hwdb rule acpi.power-button.fixed): tiny_power_button is its only
+	# driver on 6.18, set to signal SIGINT, and /etc/runit/ctrlaltdel hands that to vh-acpid
+	if grep -qwF 'tiny_power_button.power_signal=2' /proc/cmdline && grep -q 'sv 1 vh-acpid' /etc/runit/ctrlaltdel 2>/dev/null; then
+		ok "the fixed power button: tiny_power_button signals init (SIGINT), /etc/runit/ctrlaltdel hands it to vh-acpid"
+	else
+		bad "tiny_power_button took the power button (Ctrl+Alt+Del bypasses vh-acpid): module_blacklist needed"
+	fi
 else
 	ok "the power button is not owned by tiny_power_button"
 fi
