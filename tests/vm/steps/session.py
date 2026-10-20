@@ -11,13 +11,14 @@ from vmlib import AUDIT_RX, as_user, boot, check, run, shutdown
 ROOT = "/var/lib/vh/roots/game"
 # what changes between two boots by itself: the logs, chrony's drift, dhcpcd's lease, the seed
 # of seedrng, the state unbound keeps in its DNSSEC root key (RFC 5011), the hardware clock's
-# drift that stage 3 writes. Directories are compared without their size (XFS keeps a
-# directory's size)
+# drift that stage 3 writes, runsv's state of the services whose supervise directory is on the
+# disk (the system's own, /etc/sv/vh-*: pid and status at every start). Directories are
+# compared without their size (XFS keeps a directory's size)
 # /root/.vh-game-test keeps this step's own files across the reboot (/var/tmp is in memory)
 TEST_DIR = "/root/.vh-game-test"
 VOLATILE = ("/var/log", "/var/lib/chrony", "/var/db/dhcpcd", "/var/lib/dhcpcd", "/var/lib/seedrng", "/etc/unbound/var",
-            "/etc/adjtime", "/root/.cache", TEST_DIR)
-PRUNE = " -o ".join(f"-path {p}" for p in VOLATILE)
+            "/etc/adjtime", "/etc/sv/*/supervise", "/root/.cache", TEST_DIR)
+PRUNE = " -o ".join(f"-path '{p}'" for p in VOLATILE)
 SNAPSHOT_CMD = ("{ find / -xdev \\( " + PRUNE + " \\) -prune -o \\( -type d -printf '%p\\td\\t%m\\t%U\\t%G\\n' \\) "
                 "-o -printf '%p\\t%y\\t%m\\t%U\\t%G\\t%s\\t%l\\n' | LC_ALL=C sort; "
                 "find / -xdev \\( " + PRUNE + " \\) -prune -o -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum; "
@@ -133,7 +134,8 @@ def step_game(a):
         rc, out = run(ser, "vh-game remove --yes 2>&1 | tail -5", timeout=1800)
         check("vh-game remove", "VH_GAME removed" in out, out[-500:].replace("\n", " | "))
         rc, out = run(ser, snapshot(f"{TEST_DIR}/after") + "; "
-                      f"if cmp -s {TEST_DIR}/before {TEST_DIR}/after; then echo FILES_SAME; else diff {TEST_DIR}/before {TEST_DIR}/after | head -40; fi; "
+                      f"if cmp -s {TEST_DIR}/before {TEST_DIR}/after; then echo FILES_SAME; else echo DIFFERS:; diff {TEST_DIR}/before {TEST_DIR}/after | "
+                      "sed -n 's/^[<>] //p' | awk -F'\\t|  ' '{print $1 ~ /^[0-9a-f]{64}$/ ? $2 : $1}' | LC_ALL=C sort -u | head -80; fi; "
                       f"nft list ruleset | cmp -s - {TEST_DIR}/nft-before && echo NFT_SAME; "
                       f"cmp -s /etc/vh/hw.zon {TEST_DIR}/hw-before && echo HW_SAME; "
                       "getent passwd game || echo NO_GAME", timeout=3600)
