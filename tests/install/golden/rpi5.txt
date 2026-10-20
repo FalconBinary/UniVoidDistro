@@ -129,6 +129,9 @@ vhci_hcd
 vivid
 x25
 ## noextract
+noextract=!/usr/lib/firmware/*/brcm/brcmfmac*
+noextract=!/usr/lib/firmware/*/cypress/cyfmac*
+noextract=!/usr/lib/firmware/*/regulatory.db*
 noextract=!/usr/lib/firmware/brcm/brcmfmac*
 noextract=!/usr/lib/firmware/cypress/cyfmac*
 noextract=!/usr/lib/firmware/regulatory.db*

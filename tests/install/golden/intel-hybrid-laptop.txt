@@ -141,6 +141,15 @@ vhci_hcd
 vivid
 x25
 ## noextract
+noextract=!/usr/lib/firmware/*/i915/adlp_*
+noextract=!/usr/lib/firmware/*/i915/tgl_huc*
+noextract=!/usr/lib/firmware/*/intel-ucode/*
+noextract=!/usr/lib/firmware/*/intel/ibt-*
+noextract=!/usr/lib/firmware/*/intel/ish/ish_*.bin*
+noextract=!/usr/lib/firmware/*/intel/ish/ish_lnlm.bin*
+noextract=!/usr/lib/firmware/*/intel/sof*
+noextract=!/usr/lib/firmware/*/iwlwifi-so-a0-gf*
+noextract=!/usr/lib/firmware/*/regulatory.db*
 noextract=!/usr/lib/firmware/i915/adlp_*
 noextract=!/usr/lib/firmware/i915/tgl_huc*
 noextract=!/usr/lib/firmware/intel-ucode/*

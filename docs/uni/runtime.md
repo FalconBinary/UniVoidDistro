@@ -161,7 +161,14 @@ command line) was made for the other one: compare `/run/vh/plan/plan-report.txt`
 new device but is not bound was refused by the module lock: run
 `doas /root/vh/install/30-lock.sh` with the device present, then reboot. A firmware file the
 trim left out: keep it in `/etc/xbps.d/40-vh-firmware.conf` (or `VH_FIRMWARE_KEEP`) and
-reinstall its package with `xbps-install -f`. The heuristics are **[VERIFY on hardware]**:
+reinstall its package with `xbps-install -f`. A file the plan keeps that is not on disk is
+usually the target of a link: linux-firmware keeps the names drivers ask for as links into
+vendor directories (`iwlwifi-*.ucode` into `intel/iwlwifi/` since 2025), some under another
+name. The trim keeps every pattern below any directory too, and at installation the targets
+of the links it keeps under another name, read from the packages' file lists
+(`install/lib.sh`, `vh_firmware_link_keep`); a target a later linux-firmware renames is kept
+the same way, by its path in the file. Until then the GF63's Wi-Fi went without its firmware
+on linux-firmware 20260810. The heuristics are **[VERIFY on hardware]**:
 the probe at installation runs in the live system, whose devices and drivers may differ a
 little from the installed system's.
 
@@ -226,7 +233,7 @@ it with `plan KEY`, the value of `VH_PLAN_KEY`.
 | the plan's services (iwd, dhcpcd-eth0, vh-acpid, vh-fstrim, bluetoothd) | enabled and running | not enabled, or not running | |
 | the refused modules | all in `module_blacklist=` of the command line, none loaded | missing from it, or loaded | |
 | the plan's command line (`intel_iommu=on`, `efi=disable_early_pci_dma`, `ia32_emulation=0` ...) | all present | missing | |
-| the firmware on disk | every pattern of the plan kept in `/etc/xbps.d/40-vh-firmware.conf`, every file under `/usr/lib/firmware` kept by one | a pattern missing; a file the plan does not keep | no trim (`VH_FIRMWARE_TRIM=no`) |
+| the firmware on disk | every pattern of the plan kept in `/etc/xbps.d/40-vh-firmware.conf` (each also below any directory, and the targets of its links), every file under `/usr/lib/firmware` kept by one | a pattern missing; a file the plan does not keep | no trim (`VH_FIRMWARE_TRIM=no`) |
 | `vh-kconf check` at this boot | the same machine, no finding | another machine; the fresh plan's tier differs from the installation's | devices or firmware found; the check did not run |
 
 The checks that depend on the hardware left the other areas for this one: `intel_iommu=on`

@@ -287,8 +287,18 @@ vh_module_blacklist() {
 # The linux-firmware packages hold hundreds of MB for every chip; the plan lists what the
 # modules of this machine's devices name (kernel/pins/modules.firmware), narrowed to the device
 # where a rule of hwdb/ knows it, plus the microcode and regulatory.db (VH_PLAN_FIRMWARE).
-# noextract also applies to updates; "!" re-includes a match (man xbps.d). docs/02.
-vh_firmware_noextract() {
+# noextract also applies to updates; "!" re-includes a match, and xbps matches with fnmatch
+# without FNM_PATHNAME, so "*" crosses "/" (man xbps.d; lib/util.c). docs/02.
+#
+# The names the drivers ask for are often links. linux-firmware keeps them as links into vendor
+# directories (iwlwifi-*.ucode -> intel/iwlwifi/, since 2025), some under another name
+# (amdgpu/vcn_4_0_4.bin -> vcn_4_0_0.bin; intel/ish/ -> the maker's ish/), some of them whole
+# directories (nvidia/ad104 -> ad102), some through chains. A kept link whose target the trim
+# cuts leaves the driver without its firmware: the GF63's Wi-Fi on linux-firmware 20260810. So
+# every pattern is kept in any directory too, which follows the files that moved and keeps
+# working when an update brings new versions of them; and FILES, the firmware packages' file
+# lists (vh_firmware_files), gives the targets under other names, kept by name.
+vh_firmware_noextract() { # [FILES]
 	local k
 	echo "# UniVoidDistro: firmware for this machine's hardware only (VH_FIRMWARE_TRIM=yes, docs/02, the plan)."
 	echo "# To get everything back: delete this file and run xbps-install -f linux-firmware-network linux-firmware-intel linux-firmware-amd"
@@ -296,7 +306,123 @@ vh_firmware_noextract() {
 	# shellcheck disable=SC2206 # intentional word splitting
 	for k in ${VH_PLAN_FIRMWARE:-} ${VH_FIRMWARE_KEEP:-}; do
 		echo "noextract=!/usr/lib/firmware/$k"
+		echo "noextract=!/usr/lib/firmware/*/$k"
 	done
+	if [ -n "${1:-}" ]; then
+		echo "# the targets of the links above under other names (the packages' file lists at installation)"
+		# shellcheck disable=SC2086 # the plan's list, one word per pattern
+		vh_firmware_link_keep "$1" ${VH_PLAN_FIRMWARE:-} ${VH_FIRMWARE_KEEP:-} | sed 's|^|noextract=!/usr/lib/firmware/|'
+	fi
+}
+
+# The packages that ship firmware, by name
+VH_FIRMWARE_PKGS='^(linux-firmware.*|.*-firmware|.*-ucode|wireless-regdb)$'
+
+# The file lists of the firmware packages this system gets from the repositories REPO...: those
+# of vh_packages, and the dependencies that ship firmware too (linux-firmware-network brings
+# -broadcom). "PATH" or "PATH -> TARGET" per line under /usr/lib/firmware; xbps-query -R -f reads
+# a package's file list, not the package, from the index the sync fetched (the live system's
+# own repository list may be another mirror, and has no nonfree).
+vh_firmware_files() { # REPO...
+	local r=() p todo next seen=" "
+	for p in "$@"; do r+=("--repository=$p"); done
+	xbps-install -S -i "${r[@]}" >/dev/null 2>&1 || true
+	todo=$(vh_packages | grep -E "$VH_FIRMWARE_PKGS" || true)
+	while [ -n "$todo" ]; do
+		next=""
+		for p in $todo; do
+			case $seen in *" $p "*) continue ;; esac
+			seen="$seen$p "
+			xbps-query -i "${r[@]}" -R -f "$p" 2>/dev/null | grep '^/usr/lib/firmware/' || true
+			next="$next $(xbps-query -i "${r[@]}" -R -x "$p" 2>/dev/null | sed 's/[<>=].*//' | grep -E "$VH_FIRMWARE_PKGS" || true)"
+		done
+		todo=$next
+	done
+}
+
+# An absolute path without its "." and ".." parts
+vh_normpath() {
+	local -a parts out=()
+	local seg
+	IFS=/ read -ra parts <<< "$1"
+	for seg in "${parts[@]}"; do
+		case $seg in
+			''|.) ;;
+			..) [ "${#out[@]}" = 0 ] || out=("${out[@]:0:${#out[@]}-1}") ;;
+			*) out+=("$seg") ;;
+		esac
+	done
+	printf '/%s' "${out[@]}"
+	echo
+}
+
+# What the links that PATTERN... keep lead to, relative to /usr/lib/firmware, beyond what the
+# patterns keep themselves (FILES: vh_firmware_files). A pattern below a directory link is also
+# a pattern below its target, and the link is kept (nvidia/ad104/gsp/* keeps nvidia/ad104 and
+# nvidia/ad102/gsp/*); the target of a kept file link is kept by name, through chains.
+vh_firmware_link_keep() { # FILES PATTERN...
+	local files=$1 fw=/usr/lib/firmware line path target p q e covered changed
+	shift
+	local -A link=() isdir=() kept=() emit=()
+	local -a pats=() all=()
+	while IFS= read -r line; do
+		case $line in
+			"$fw"/*" -> "*)
+				path=${line%% -> *} target=${line#* -> }
+				case $target in /*) ;; *) target=$(vh_normpath "${path%/*}/$target") ;; esac
+				link[$path]=$target
+				all+=("$path") ;;
+			"$fw"/*)
+				all+=("$line")
+				p=${line%/*}
+				while [ "$p" != "$fw" ] && [ -z "${isdir[$p]:-}" ]; do isdir[$p]=1; p=${p%/*}; done ;;
+		esac
+	done < "$files"
+	for p in "$@"; do pats+=("$fw/$p" "$fw/*/$p"); done
+	# directory links (and chains of them): the patterns below one, read below its target too
+	changed=1
+	while [ "$changed" = 1 ]; do
+		changed=0
+		for path in "${!link[@]}"; do
+			for p in "${pats[@]}"; do
+				[[ $p == "$path"/* ]] || continue
+				q=${link[$path]}${p#"$path"}
+				[ -z "${emit[${q#"$fw"/}]:-}" ] || continue
+				pats+=("$q")
+				# the link itself, and the pattern through it; not the whole target directory
+				emit[${q#"$fw"/}]=1 emit[${path#"$fw"/}]=1 kept[$path]=1 kept[${link[$path]}]=1
+				changed=1
+			done
+		done
+	done
+	# the entries the patterns keep
+	for path in "${all[@]}"; do
+		for p in "${pats[@]}"; do
+			# shellcheck disable=SC2053 # the pattern is a glob on purpose, as xbps matches it
+			if [[ $path == $p ]]; then kept[$path]=1; break; fi
+		done
+	done
+	# file links: their targets, through chains
+	changed=1
+	while [ "$changed" = 1 ]; do
+		changed=0
+		for path in "${!kept[@]}"; do
+			target=${link[$path]:-}
+			[ -n "$target" ] && [ -z "${kept[$target]:-}" ] || continue
+			kept[$target]=1
+			changed=1
+			if [ -n "${isdir[$target]:-}" ]; then emit[${target#"$fw"/}/*]=1; else emit[${target#"$fw"/}]=1; fi
+		done
+	done
+	# what the patterns keep already needs no line of its own
+	for e in "${!emit[@]}"; do
+		covered=0
+		for p in "$@"; do
+			# shellcheck disable=SC2053 # the pattern is a glob on purpose, as xbps matches it
+			if [[ $e == $p || $e == */$p ]]; then covered=1; break; fi
+		done
+		[ "$covered" = 1 ] || printf '%s\n' "$e"
+	done | LC_ALL=C sort
 }
 
 # Kernel command line embedded in the UKI. Under Secure Boot systemd-stub ignores

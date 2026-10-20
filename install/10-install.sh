@@ -207,7 +207,16 @@ for f in "$VH_ROOT"/rootfs/etc/xbps.d/*; do
 done
 if [ "$VH_FIRMWARE_TRIM" = yes ]; then
 	if [ "$DRY_RUN" = 1 ]; then echo "   + /etc/xbps.d/40-vh-firmware.conf (needed firmware only)"
-	else vh_firmware_noextract > "$MNT/etc/xbps.d/40-vh-firmware.conf"; fi
+	else
+		# the links the plan's firmware is reached through: the firmware packages' file lists
+		vh_firmware_files "$REPO" "$NONFREE" > /tmp/vh-firmware-files.txt
+		if [ -s /tmp/vh-firmware-files.txt ]; then
+			ok "firmware: $(grep -c . /tmp/vh-firmware-files.txt) entries of the firmware packages, $(grep -c ' -> ' /tmp/vh-firmware-files.txt) of them links"
+		else
+			warn "the firmware packages' file lists did not come: firmware the plan names through links under another name may be cut (vh-kconf check names it at the first boot)"
+		fi
+		vh_firmware_noextract /tmp/vh-firmware-files.txt > "$MNT/etc/xbps.d/40-vh-firmware.conf"
+	fi
 fi
 
 if [ -n "$PREBUILT" ]; then

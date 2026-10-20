@@ -40,12 +40,18 @@ cmdl=$(sed -n "s/^VH_PLAN_CMDLINE='\(.*\)'\$/\1/p" "$g/plan.env")
 for s in $(sed -n "s/^VH_PLAN_SERVICES='\(.*\)'\$/\1/p" "$g/plan.env"); do mkdir -p "/var/service/$s"; done
 {
 	echo "noextract=/usr/lib/firmware/*"
-	for p in $(sed -n "s/^VH_PLAN_FIRMWARE='\(.*\)'\$/\1/p" "$g/plan.env"); do echo "noextract=!/usr/lib/firmware/$p"; done
+	# as install/lib.sh writes it: each pattern, and the same below any directory
+	for p in $(sed -n "s/^VH_PLAN_FIRMWARE='\(.*\)'\$/\1/p" "$g/plan.env"); do echo "noextract=!/usr/lib/firmware/$p"; echo "noextract=!/usr/lib/firmware/*/$p"; done
 } > /etc/xbps.d/40-vh-firmware.conf
 mkdir -p /usr/lib/firmware/i915 /usr/lib/firmware/gpu
 : > /usr/lib/firmware/i915/kbl_dmc_ver1_04.bin.zst
 : > /usr/lib/firmware/regulatory.db
 : > /usr/lib/firmware/gpu/left-out.bin.zst
+# the GF63's Wi-Fi as linux-firmware 20260810 ships it: the name iwlwifi asks for is a link into
+# intel/iwlwifi/, whose file the trim keeps through */PATTERN (still 1 file the plan does not keep)
+mkdir -p /usr/lib/firmware/intel/iwlwifi
+: > /usr/lib/firmware/intel/iwlwifi/iwlwifi-Qu-c0-hr-b0-77.ucode.zst
+ln -sf intel/iwlwifi/iwlwifi-Qu-c0-hr-b0-77.ucode.zst /usr/lib/firmware/iwlwifi-Qu-c0-hr-b0-77.ucode.zst
 echo "VH_CHECK machine=same devices=0 firmware=0 lost=0" > /run/vh/check.done
 out=$(audit "root=UUID=x module_blacklist=sctp,$(echo "$deny" | tr ' ' ',') $cmdl quiet" "xfs dm_crypt")
 has "the tier" "$out" "[ ok ] protection tier: full (strict mode)"
