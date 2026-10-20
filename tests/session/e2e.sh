@@ -28,9 +28,11 @@ printf 'repository=%s\n' "$repo" > /etc/xbps.d/00-repository-main.conf
 install -m 0755 "$src/build/st/bin/vh-game-enter" /usr/local/bin/
 install -m 0755 "$src/build/st/bin/vh-game" "$src/build/st/bin/vh-root" /usr/local/sbin/
 [ -d /etc/sv/agetty-tty3 ] || mkdir -p /etc/sv/agetty-tty3
-# /var/lib/vh as vh-limine-update makes it, for root alone: vh-root lets game pass through it
-# while the root exists, and gives it its mode back with the removal
+# /var/lib/vh as vh-limine-update makes it, for root alone: vh-root lets game, and nobody else,
+# pass through it while the root exists (an ACL), and takes that away with the removal
 mkdir -p /var/lib/vh && chmod 0700 /var/lib/vh
+# getfacl for the snapshots (the system has acl-progs; this image does not)
+command -v getfacl >/dev/null || xbps-install -Sy acl-progs >/dev/null 2>&1 || xbps-install -Sy acl-progs
 mkdir -p /tmp/stub
 cat > /tmp/stub/thor <<'EOF'
 #!/bin/sh
@@ -47,11 +49,14 @@ EOF
 chmod 0755 /tmp/stub/thor
 printf "# vh-plan\nVH_PLAN_GAME_PACKAGES='mesa-vulkan-lavapipe'\n" > /tmp/plan.env
 
-snap() { # the whole system but the pseudo-file systems, the logs and this test's own files
-	find / -xdev \( -path /proc -o -path /sys -o -path /dev -o -path /run -o -path /tmp -o -path /src \
-		-o -path /var/log -o -path /var/cache -o -path /root/.cache \) -prune -o -printf '%p\t%y\t%m\t%U\t%G\t%s\t%l\n' | LC_ALL=C sort > "$1"
-	find / -xdev \( -path /proc -o -path /sys -o -path /dev -o -path /run -o -path /tmp -o -path /src \
-		-o -path /var/log -o -path /var/cache -o -path /root/.cache \) -prune -o -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum >> "$1"
+snap() { # the whole system but the pseudo-file systems, the logs and this test's own files:
+	# every path's type, mode, owner, size, link target, every file's sha256, every extended ACL
+	set -- "$1" \( -path /proc -o -path /sys -o -path /dev -o -path /run -o -path /tmp -o -path /src \
+		-o -path /var/log -o -path /var/cache -o -path /root/.cache \) -prune
+	out=$1; shift
+	find / -xdev "$@" -o -printf '%p\t%y\t%m\t%U\t%G\t%s\t%l\n' | LC_ALL=C sort > "$out"
+	find / -xdev "$@" -o -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum >> "$out"
+	find / -xdev "$@" -o -print0 | LC_ALL=C sort -z | xargs -0 getfacl -s -p 2>/dev/null >> "$out"
 }
 snap /tmp/before
 echo "files: $(grep -c . /tmp/before)"
@@ -91,7 +96,10 @@ grep -q "^game:x:$uid:$uid:" "$root/etc/passwd" && ok "game in the root's passwd
 # game reaches its root (and only through the search bit of /var/lib/vh)
 setpriv --reuid=game --regid=game --init-groups sh -c "test -r $root/etc/passwd && test -x $root/usr/bin" \
 	&& ok "game reads its root, though doas's umask is 077" || bad "game cannot read $root" "$(stat -c '%a %n' /var/lib/vh /var/lib/vh/roots "$root" "$root/etc" 2>&1 | tr '\n' '|')"
-[ "$(stat -c %a /var/lib/vh)" = 701 ] && ok "/var/lib/vh: the search bit for others while a root exists" || bad "/var/lib/vh" "$(stat -c %a /var/lib/vh)"
+acl=$(getfacl -p /var/lib/vh 2>/dev/null)
+case $acl in *"user:game:--x"*"other::---"*) ok "/var/lib/vh: game passes by its ACL, others do not" ;; *) bad "/var/lib/vh's ACL" "$(echo "$acl" | tr '\n' '|')" ;; esac
+setpriv --reuid=user --regid=user --init-groups sh -c "test -x /var/lib/vh/roots" 2>/dev/null \
+	&& bad "another user passes /var/lib/vh" || ok "another user does not pass /var/lib/vh"
 missing=""
 for d in proc sys dev run tmp var/tmp home/game bin/bash; do [ -e "$root/$d" ] || missing="$missing $d"; done
 [ -z "$missing" ] && ok "the mount points vh-game-enter needs are in the root" || bad "missing in the root:$missing"

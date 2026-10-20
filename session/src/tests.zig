@@ -6,6 +6,7 @@ test {
     _ = @import("lines.zig");
     _ = @import("accounts.zig");
     _ = @import("rmtree.zig");
+    _ = @import("acl.zig");
     _ = @import("roots.zig");
     _ = @import("sys.zig");
     _ = @import("enter.zig");

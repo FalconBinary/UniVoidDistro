@@ -197,3 +197,19 @@ pub fn bindKeep(src: []const u8, dst: []const u8, rec: bool, extra: u32) vh.Erro
     const flags = try mountFlags(dst);
     try mount(null, dst, null, MS.REMOUNT | MS.BIND | flags | extra, null);
 }
+
+/// an xattr of PATH itself (not of a symlink's target); null when it has none of that name
+pub fn getXattr(path: []const u8, name: []const u8) ?[]u8 {
+    var buf: [4096]u8 = undefined;
+    const rc = linux.lgetxattr(vh.z(path).ptr, vh.z(name).ptr, &buf, buf.len);
+    if (linux.errno(rc) != .SUCCESS) return null;
+    return vh.dupe(buf[0..rc]);
+}
+
+pub fn setXattr(path: []const u8, name: []const u8, value: []const u8) vh.Error!void {
+    _ = try vh.sys(linux.lsetxattr(vh.z(path).ptr, vh.z(name).ptr, value.ptr, value.len, 0));
+}
+
+pub fn removeXattr(path: []const u8, name: []const u8) vh.Error!void {
+    _ = vh.sys(linux.lremovexattr(vh.z(path).ptr, vh.z(name).ptr)) catch |e| if (vh.errno != .NODATA) return e;
+}

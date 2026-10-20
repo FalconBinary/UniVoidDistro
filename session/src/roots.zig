@@ -14,6 +14,7 @@ const common = @import("common.zig");
 const lines = @import("lines.zig");
 const rmtree = @import("rmtree.zig");
 const sys = @import("sys.zig");
+const acl = @import("acl.zig");
 const linux = std.os.linux;
 const mem = std.mem;
 
@@ -37,10 +38,8 @@ pub fn exists(o: Opts, name: []const u8) bool {
 }
 
 /// The directory of every root, its fstab line and its mount (nosuid, nodev), made with the
-/// first root; /var/lib/vh too when it was not there, so that the last root's removal can take
-/// away exactly what the first one brought. A root's own user (game) has to pass through
-/// /var/lib/vh: one that only root may enter (vh-limine-update makes it 0700) gets the search
-/// bit for others while a root exists, and its mode back with the last one.
+/// first root; /var/lib/vh too when it was not there (for root alone, 0700), so that the last
+/// root's removal can take away exactly what the first one brought.
 fn ensureRootsDir(o: Opts) void {
     const roots = o.sys.path(common.roots_dir);
     if (!vh.isDir(roots)) {
@@ -48,16 +47,9 @@ fn ensureRootsDir(o: Opts) void {
         text.appendSlice(vh.gpa, "# vh-root: what the first root brought, which the last one's removal takes away\n") catch vh.oom();
         const vd = o.sys.path(common.vh_dir);
         if (!vh.isDir(vd)) {
-            sys.mkdir(vd, 0o755) catch vh.die("{s}: {s}", .{ vd, vh.serr() });
-            sys.chmod(vd, 0o755) catch vh.die("{s}: {s}", .{ vd, vh.serr() });
+            sys.mkdir(vd, 0o700) catch vh.die("{s}: {s}", .{ vd, vh.serr() });
+            sys.chmod(vd, 0o700) catch vh.die("{s}: {s}", .{ vd, vh.serr() });
             text.print(vh.gpa, "made {s}\n", .{common.vh_dir}) catch vh.oom();
-        } else {
-            const st = vh.stat(vd, false) catch vh.die("{s}: {s}", .{ vd, vh.serr() });
-            const mode = st.mode & 0o7777;
-            if (mode & 0o001 == 0) {
-                sys.chmod(vd, mode | 0o001) catch vh.die("{s}: {s}", .{ vd, vh.serr() });
-                text.print(vh.gpa, "mode {s} {o}\n", .{ common.vh_dir, mode }) catch vh.oom();
-            }
         }
         sys.mkdir(roots, 0o755) catch vh.die("{s}: {s}", .{ roots, vh.serr() });
         sys.chmod(roots, 0o755) catch vh.die("{s}: {s}", .{ roots, vh.serr() });
@@ -68,6 +60,23 @@ fn ensureRootsDir(o: Opts) void {
     const text = vh.readFile(fstab) catch vh.die("{s}: {s}", .{ fstab, vh.serr() });
     if (!lines.has(text, line)) writeKeeping(fstab, lines.append(text, line));
     if (!isMountPoint(roots)) sys.bind(roots, roots, sys.MS.NOSUID | sys.MS.NODEV) catch vh.die("mount {s}: {s}", .{ roots, vh.serr() });
+}
+
+/// The root's own user UID passes through /var/lib/vh, and nobody else gains anything: a
+/// named-user entry of its access ACL with the search bit (the system's state lives there:
+/// vh-kconf check's, the boot assessment's, the kernel records). The ACL and the mode as they
+/// were go to the marker, and the last root's removal puts them back.
+fn allowThrough(o: Opts, uid: u32) void {
+    const vd = o.sys.path(common.vh_dir);
+    const old = sys.getXattr(vd, acl.name);
+    if (old) |x| if (acl.lets(x, uid)) return;
+    const st = vh.stat(vd, false) catch vh.die("{s}: {s}", .{ vd, vh.serr() });
+    const new = acl.withUser(old, st.mode & 0o7777, uid, 1) orelse vh.die("{s}: an access ACL this program cannot read", .{vd});
+    const mk = vh.fmt("{s}{s}", .{ o.sys.path(common.roots_dir), marker });
+    const text = vh.readFile(mk) catch vh.die("{s}: {s}", .{ mk, vh.serr() });
+    // recorded before the change: a failure after it still has the way back
+    vh.writeAtomic(mk, vh.fmt("{s}acl {s} {o} {s}\n", .{ text, common.vh_dir, st.mode & 0o7777, if (old) |x| acl.hex(x) else "-" }), 0o644);
+    sys.setXattr(vd, acl.name, new) catch vh.die("{s}: the ACL: {s}", .{ vd, vh.serr() });
 }
 
 /// the roots directory, its mount and fstab line, and what the first root made, after the last
@@ -89,10 +98,18 @@ fn dropRootsDir(o: Opts) void {
             const d = o.sys.path(l[5..]);
             // only when empty: something else may have moved in meanwhile
             _ = linux.rmdir(vh.z(d).ptr);
-        } else if (vh.startsWith(l, "mode ")) {
-            var f = mem.tokenizeScalar(u8, l[5..], ' ');
+        } else if (vh.startsWith(l, "acl ")) {
+            // the ACL as it was (none: no xattr), then the mode, whose group bits the ACL's mask set
+            var f = mem.tokenizeScalar(u8, l[4..], ' ');
             const d = o.sys.path(f.next() orelse continue);
             const m = std.fmt.parseInt(u32, f.next() orelse continue, 8) catch continue;
+            const x = f.next() orelse continue;
+            if (!vh.isDir(d)) continue;
+            if (vh.eql(x, "-")) {
+                sys.removeXattr(d, acl.name) catch vh.die("{s}: the ACL: {s}", .{ d, vh.serr() });
+            } else {
+                sys.setXattr(d, acl.name, acl.unhex(x) orelse continue) catch vh.die("{s}: the ACL: {s}", .{ d, vh.serr() });
+            }
             sys.chmod(d, m) catch vh.die("{s}: {s}", .{ d, vh.serr() });
         }
     }
@@ -116,10 +133,14 @@ fn copyFile(src: []const u8, dst: []const u8, mode: u32) void {
     vh.writeAtomic(dst, data, mode);
 }
 
+/// the user a root is made for: its group owns the root, and it alone passes /var/lib/vh to it
+pub const Owner = struct { uid: u32, gid: u32 };
+
 /// Create the root NAME of PROFILE with its packages and EXTRA (the plan's packages for this
 /// machine). The root stays 0700 root:root while thor fills it; at the end it gets the
-/// profile's mode and the group GID. A failure removes what was made.
-pub fn create(o: Opts, name: []const u8, profile: Profile, extra: []const []const u8, gid: ?u32) void {
+/// profile's mode and OWNER's group, and OWNER the way through /var/lib/vh. A failure removes
+/// what was made.
+pub fn create(o: Opts, name: []const u8, profile: Profile, extra: []const []const u8, owner: ?Owner) void {
     if (!common.validName(name)) vh.die("{s}: a root's name is lowercase letters, digits and -", .{name});
     if (exists(o, name)) vh.die("the root {s} exists already: {s}", .{ name, path(o, name) });
     ensureRootsDir(o);
@@ -169,7 +190,10 @@ pub fn create(o: Opts, name: []const u8, profile: Profile, extra: []const []cons
     dropCache(root);
 
     sys.chmod(root, profile.mode) catch vh.die("{s}: {s}", .{ root, vh.serr() });
-    if (gid) |g| sys.chown(root, 0, g) catch vh.die("{s}: {s}", .{ root, vh.serr() });
+    if (owner) |w| {
+        sys.chown(root, 0, w.gid) catch vh.die("{s}: {s}", .{ root, vh.serr() });
+        allowThrough(o, w.uid);
+    }
     vh.log("created the root {s} ({s}): {d} packages asked for, {d} MiB", .{ name, profile.name, pkgs.len(), sizeMiB(root) });
 }
 

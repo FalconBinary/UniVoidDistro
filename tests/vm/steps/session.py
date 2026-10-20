@@ -20,7 +20,9 @@ VOLATILE = ("/var/log", "/var/lib/chrony", "/var/db/dhcpcd", "/var/lib/dhcpcd", 
 PRUNE = " -o ".join(f"-path {p}" for p in VOLATILE)
 SNAPSHOT_CMD = ("{ find / -xdev \\( " + PRUNE + " \\) -prune -o \\( -type d -printf '%p\\td\\t%m\\t%U\\t%G\\n' \\) "
                 "-o -printf '%p\\t%y\\t%m\\t%U\\t%G\\t%s\\t%l\\n' | LC_ALL=C sort; "
-                "find / -xdev \\( " + PRUNE + " \\) -prune -o -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum; } > ")
+                "find / -xdev \\( " + PRUNE + " \\) -prune -o -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum; "
+                # every extended ACL too (vh-root gives game one entry on /var/lib/vh)
+                "find / -xdev \\( " + PRUNE + " \\) -prune -o -print0 | LC_ALL=C sort -z | xargs -0 getfacl -s -p 2>/dev/null; } > ")
 
 
 def snapshot(out):
@@ -72,6 +74,9 @@ def step_game(a):
         rc, out = run(ser, as_user("game", f"test -r {ROOT}/etc/passwd && test -x {ROOT}/usr/bin && echo REACHES") +
                       f"; stat -c '%a %n' /var/lib/vh /var/lib/vh/roots {ROOT} {ROOT}/etc")
         check("game reaches its root (doas's umask is 077)", "REACHES" in out, out[-300:].replace("\n", " | "))
+        rc, out = run(ser, as_user("user", f"test -x {ROOT} && echo USER_REACHES; true") + "; getfacl -p /var/lib/vh")
+        check("another user does not reach it: /var/lib/vh lets game alone through (an ACL)",
+              "USER_REACHES" not in out and "user:game:--x" in out, out[-300:].replace("\n", " | "))
         n_fails, lines = fails(ser, "vh-audit with the gaming session")
         check("vh-audit: no new FAIL with the gaming session", n_fails == base_fails and n_fails >= 0,
               " | ".join(l for l in lines if l not in base_lines))

@@ -32,6 +32,11 @@ if [ -d "$groot" ]; then
 else
 	bad "the user game exists but not its root $groot (doas vh-game remove, then install)"
 fi
+# game passes /var/lib/vh by its own ACL entry; the system's state there is nobody else's
+getfacl -p /var/lib/vh 2>/dev/null | grep -qx 'user:game:--x' && ok "/var/lib/vh: game passes by its ACL" \
+	|| bad "/var/lib/vh: no ACL entry for game (vh-game-enter cannot reach the root)"
+[ "$(( 0$(stat -c %a /var/lib/vh) & 1 ))" = 1 ] && unk "/var/lib/vh: every user may pass (mode $(stat -c %a /var/lib/vh)); game needs only its ACL entry" \
+	|| ok "/var/lib/vh: no other user passes"
 for m in /var/lib/vh/roots /home/game; do
 	case ",$(findmnt -no OPTIONS "$m" 2>/dev/null)," in
 		*,nosuid,*) case ",$(findmnt -no OPTIONS "$m")," in *,nodev,*) ok "$m: nosuid, nodev" ;; *) bad "$m: no nodev" ;; esac ;;

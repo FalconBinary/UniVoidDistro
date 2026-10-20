@@ -157,7 +157,7 @@ fn install(c: Cfg) void {
     // the root
     const profile = profiles.get(G.root).?;
     roots.after_failure = "the account and the home of game are made, the root is not: doas vh-game remove takes them away";
-    roots.create(c.o, G.root, profile, pkgs, id);
+    roots.create(c.o, G.root, profile, pkgs, .{ .uid = id, .gid = id });
     const root = roots.path(c.o, G.root);
     // the game user inside it (programs look their user up), and the place its home is bound to
     for ([_][2][]const u8{

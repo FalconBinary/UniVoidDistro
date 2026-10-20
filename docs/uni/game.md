@@ -96,9 +96,10 @@ doas vh-game remove       everything install made, the home with it
   (`game_packages`: `mesa-vulkan-intel`, `-radeon`, `-nouveau`; `mesa-vulkan-lavapipe` without a
   GPU that has one, as on the VM rig). Documentation and firmware are not extracted; the package
   cache is emptied after each install. `/var/lib/vh/roots` is a bind mount of itself with nosuid and
-  nodev; thor strips SUID bits and file capabilities in every root as in the system. `/var/lib/vh`,
-  when only root may enter it (vh-limine-update makes it 0700), gets the search bit for others
-  while a root exists, and its mode back with the last one. vh-root and vh-game work with umask
+  nodev; thor strips SUID bits and file capabilities in every root as in the system. `game`, and
+  nobody else, passes through `/var/lib/vh` (the system's state: vh-kconf check's, the boot
+  assessment's, the kernel records) by one named-user entry of its ACL with the search bit; the
+  ACL and the mode as they were are recorded, and the last root's removal puts them back. vh-root and vh-game work with umask
   022 whatever doas leaves them (the admin's 077), so that the root's directories and the caches
   its package scripts write stay readable to `game`.
 - **The account**: `game`, its own group, the groups `_seatd` (seatd's socket) and `render` (the
@@ -119,8 +120,8 @@ doas vh-game remove       everything install made, the home with it
   on` starts the getty under its own runsv until the next boot.
 - **The removal** takes away every line it added, the root, the home, the mounts and their fstab
   lines, and the directories the first root brought. The test compares the whole file system
-  before the install and after the removal: path, type, mode, owner, size, link target and the
-  sha256 of every file.
+  before the install and after the removal: path, type, mode, owner, size, link target, the
+  sha256 of every file and every extended ACL.
 
 ## The cost (G1, the GF63 of the fixtures)
 
