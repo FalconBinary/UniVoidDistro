@@ -21,7 +21,11 @@ echo "== running in a container"
 tar -C "$repo" -cf - kernel/pins kernel/profiles kernel/hw hwdb vh.conf.example tests/kernel/fixtures tests/adapt/golden build/kt | docker run --rm -i alpine:3.20 sh -c '
 	set -e
 	mkdir -p /src && cd /src && tar -xf -
-	for t in /src/build/kt/test/*; do printf "%s: " "$(basename "$t")"; "$t" 2>&1 | tail -1; done
+	# a test binary that fails fails the run: its last line is the count, its failures above it
+	for t in /src/build/kt/test/*; do
+		printf "%s: " "$(basename "$t")"
+		if "$t" > /tmp/unit.out 2>&1; then tail -1 /tmp/unit.out; else tail -1 /tmp/unit.out; grep -E "FAIL|error:|expected|panic" /tmp/unit.out | head -30; exit 1; fi
+	done
 	echo "== the fixture through the installed binary"
 	/src/build/kt/bin/vh-kconf probe --from /src/tests/kernel/fixtures/gf63 > /tmp/gf63.zon
 	echo "devices: $(grep -c "modalias" /tmp/gf63.zon)"
