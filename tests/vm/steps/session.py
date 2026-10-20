@@ -15,9 +15,14 @@ ROOT = "/var/lib/vh/roots/game"
 # directory's size)
 VOLATILE = ("/var/log", "/var/lib/chrony", "/var/db/dhcpcd", "/var/lib/seedrng", "/etc/unbound/var", "/etc/adjtime", "/root/.cache")
 PRUNE = " -o ".join(f"-path {p}" for p in VOLATILE)
-SNAPSHOT = (f"{{ find / -xdev \\( {PRUNE} \\) -prune -o \\( -type d -printf '%p\\td\\t%m\\t%U\\t%G\\n' \\) "
-            f"-o -printf '%p\\t%y\\t%m\\t%U\\t%G\\t%s\\t%l\\n' | LC_ALL=C sort; "
-            f"find / -xdev \\( {PRUNE} \\) -prune -o -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum; }} > {{out}}")
+SNAPSHOT_CMD = ("{ find / -xdev \\( " + PRUNE + " \\) -prune -o \\( -type d -printf '%p\\td\\t%m\\t%U\\t%G\\n' \\) "
+                "-o -printf '%p\\t%y\\t%m\\t%U\\t%G\\t%s\\t%l\\n' | LC_ALL=C sort; "
+                "find / -xdev \\( " + PRUNE + " \\) -prune -o -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum; } > ")
+
+
+def snapshot(out):
+    """every file of the system but the volatile ones: path, type, mode, owner, size, link, sha256"""
+    return SNAPSHOT_CMD + out
 NS = ("user", "mnt", "pid", "net", "ipc", "uts", "cgroup")
 
 
@@ -48,7 +53,7 @@ def step_game(a):
     vm, ser = boot(a)
     try:
         base_fails, base_lines = fails(ser, "vh-audit before the gaming session")
-        rc, out = run(ser, SNAPSHOT.format(out="/var/tmp/vh-game-before") + "; grep -c . /var/tmp/vh-game-before; "
+        rc, out = run(ser, snapshot("/var/tmp/vh-game-before") + "; grep -c . /var/tmp/vh-game-before; "
                            "nft list ruleset > /var/tmp/vh-game-nft-before; cp /etc/vh/hw.zon /var/tmp/vh-game-hw-before", timeout=3600)
         check("snapshot of the system before the install", rc == 0, out.strip().splitlines()[-1] if out.strip() else "")
         rc, out = run(ser, f"printf '%s\\n' '{vhvm.USER_PASS}' | vh-game install --password-stdin 2>&1 | tail -40", timeout=5400)
@@ -115,7 +120,7 @@ def step_game(a):
         vm.monitor("sendkey ctrl-alt-f1")
         rc, out = run(ser, "vh-game remove --yes 2>&1 | tail -5", timeout=1800)
         check("vh-game remove", "VH_GAME removed" in out, out[-500:].replace("\n", " | "))
-        rc, out = run(ser, SNAPSHOT.format(out="/var/tmp/vh-game-after") + "; "
+        rc, out = run(ser, snapshot("/var/tmp/vh-game-after") + "; "
                            "if cmp -s /var/tmp/vh-game-before /var/tmp/vh-game-after; then echo FILES_SAME; else diff /var/tmp/vh-game-before /var/tmp/vh-game-after | head -40; fi; "
                            "nft list ruleset | cmp -s - /var/tmp/vh-game-nft-before && echo NFT_SAME; "
                            "cmp -s /etc/vh/hw.zon /var/tmp/vh-game-hw-before && echo HW_SAME; "
