@@ -218,9 +218,10 @@ test "the memory floor (hwdb): 1.5 GiB in either mode, 2 GiB in strict" {
     const two = plan.compute(.{ .hw = h, .db = d, .config = &cfg });
     try t.expectEqualStrings("full", two.plan.tier);
     try t.expectEqual(@as(u64, 1048576), two.plan.luks.pbkdf_memory_kib);
-    // 1.5 GiB (the rig with VH_MEM=1536): strict refuses it, tiered installs it with Argon2id at
-    // a quarter of the RAM, rounded down to 64 MiB
-    h.memory.total_kib = 1350 * 1024;
+    // 1.5 GiB (the rig with VH_MEM=1536 shows MemTotal 1428 MiB, kvm-smoke run 39409288166):
+    // strict refuses it, tiered installs it with Argon2id at a quarter of the RAM, rounded down
+    // to 64 MiB
+    h.memory.total_kib = 1428 * 1024;
     const strict = plan.compute(.{ .hw = h, .db = d, .config = &cfg });
     try t.expectEqualStrings("reduced", strict.plan.tier);
     try t.expectEqual(@as(u8, 3), strict.status);

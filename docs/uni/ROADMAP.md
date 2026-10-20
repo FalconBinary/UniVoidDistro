@@ -232,11 +232,16 @@ sees. `check.py base` passed 19 of 19 (run 39381993073), the step `machine` 23 o
 39382001559). The install-time probe is made by the system's own kernel (6.18.57), and `vh-kconf
 check` on the stock kernel finds nothing lost. What the first build found: mklive runs tools of
 the build host and goes on without them (without `mkfs.vfat` it made an unformatted EFI boot
-image); they are installed and checked before it, and the ISO's UEFI boot image after it.
+image); they are installed and checked before it, and the ISO's UEFI boot image after it. At
+the new floor, 1.5 GiB in tiered mode (MemTotal 1428 MiB; kvm-smoke run 39409288166 on
+live-image run 39405682930): the gate marks the machine reduced and the memory requirement is
+acknowledged, Argon2id gets 320 MiB, the lowest MemAvailable is 789 MiB (the UKI build), the
+installation takes 2.5 minutes, `check.py base` passes 19 of 19, and zram gives the installed
+system 713 MiB of swap.
 
 U6 not verified: the ISO booted by UEFI from a USB stick on real hardware (the rig boots the
 image's kernel directly); the x86-64-v1 builds on a CPU below v3 (the rig is v3); the release on
-a `v*` tag; the floor of 1.5 GiB (decided on 2026-10-20) on the rig at 1.5 GiB.
+a `v*` tag; a real machine at the floor.
 
 From the system, found on the rig with Void's image as with ours: `vh-kconf check` reported
 `regulatory.db` as firmware that failed to load, at every boot of a rig without Wi-Fi. The stock

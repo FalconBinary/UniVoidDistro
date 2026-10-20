@@ -105,6 +105,10 @@ directly and would not see a broken UEFI boot.
   | the lowest MemAvailable sampled | 756 MiB (building the Zig tools) | 1902 MiB (LUKS2: Argon2id, 1 GiB) |
   | tmpfs at most | 1091 MiB | 30 MiB |
 
+  At the floor that followed, 1.5 GiB in tiered mode (MemTotal 1428 MiB, run 39409288166):
+  Argon2id gets 320 MiB, the lowest MemAvailable is 789 MiB, in the UKI build (dracut), the
+  installation takes 2.5 minutes, and `check.py base` passes.
+
   The sampler reads MemAvailable every 2 seconds and sees part of the Argon2id peak: the live
   system's own 325 MiB and the 1 GiB of Argon2id put the real peak near 1.4 GiB. Without
   Argon2id, the largest step is the UKI (dracut: about 280 MiB).
