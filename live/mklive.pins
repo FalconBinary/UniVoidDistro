@@ -11,3 +11,7 @@ LIVE_PKGS_OFFICIAL="dialog cryptsetup lvm2 mdadm void-docs-browse xtools-minimal
 LIVE_SERVICES="sshd chronyd dhcpcd wpa_supplicant acpid"
 # what install/10-install.sh would otherwise install into the live system's RAM
 LIVE_PKGS_INSTALLER="xfsprogs dosfstools minisign xz"
+# what build-image.sh and mklive run on the build host, beyond a Void base container: mkfs.vfat
+# (the EFI boot image), mkfs.ext3 (the root image), and the libraries of the mksquashfs and
+# xorriso that mklive installs into its void-host directory but runs with this host's loader
+LIVE_HOST_PKGS="bash git dosfstools e2fsprogs squashfs-tools xorriso"

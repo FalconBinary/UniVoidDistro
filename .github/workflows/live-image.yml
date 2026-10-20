@@ -29,12 +29,18 @@ jobs:
       - name: the image (void-mklive in a privileged Void container)
         run: |
           set -euo pipefail
+          # the kernel's modules for mklive's loop mounts (the EFI image's FAT, the root image's
+          # ext3), loaded here: the container has no /lib/modules, so mklive's own "modprobe -q
+          # loop || :" finds no modprobe there and goes on
+          sudo modprobe -a loop vfat ext4
           docker run --rm --privileged -e GITHUB_RUN_ID \
             -v "$GITHUB_WORKSPACE:/src" -v "$RUNNER_TEMP:/w" \
             ghcr.io/void-linux/void-glibc-full:latest sh -c '
               set -e
+              . /src/live/mklive.pins
               xbps-install -Syu xbps >/dev/null
-              xbps-install -Sy bash git >/dev/null
+              xbps-install -Syu >/dev/null
+              xbps-install -Sy $LIVE_HOST_PKGS >/dev/null
               git config --global --add safe.directory /src
               bash /src/live/build-image.sh /w/prebuilt /w/out'
           sudo chown -R "$(id -u):$(id -g)" "$RUNNER_TEMP/out"

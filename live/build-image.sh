@@ -12,6 +12,12 @@ pre=${1:?"the prebuilt directory (live/prebuilt.sh)"} out=${2:?"output directory
 . "$repo/live/mklive.pins"
 die() { echo "live/build-image.sh: $*" >&2; exit 1; }
 [ "$(id -u)" = 0 ] || die "run as root"
+# mklive does not stop when mkfs.vfat or mkfs.ext3 is missing: it made an unformatted EFI boot
+# image and root image (live-image run 39375727335)
+for t in mkfs.vfat mkfs.ext3 losetup mksquashfs xorriso; do
+	command -v "$t" >/dev/null || die "no $t on this host: xbps-install -S $LIVE_HOST_PKGS (live/mklive.pins)"
+done
+losetup -f >/dev/null || die "no free loop device (a privileged container: docker run --privileged)"
 [ -r "$pre/BUILD" ] && [ -r "$pre/SHA256SUMS" ] || die "$pre: no BUILD or SHA256SUMS (live/prebuilt.sh)"
 ( cd "$pre" && sha256sum -c --quiet SHA256SUMS ) || die "$pre: a file does not match SHA256SUMS"
 commit=$(sed -n 's/^COMMIT=//p' "$pre/BUILD")
@@ -57,6 +63,21 @@ echo "== mklive.sh: $iso"
 	-p "$LIVE_PKGS_OFFICIAL $LIVE_PKGS_INSTALLER" -S "$LIVE_SERVICES" \
 	-I "$inc" -x "$work/postsetup.sh" -T "UniVoidDistro $short" -o "$iso" )
 [ -s "$iso" ] || die "no $iso"
+
+# UEFI starts the ISO from its El Torito image boot/grub/efiboot.img, a FAT with GRUB in it;
+# mklive fills it on a loop mount whose failure it does not check
+echo "== the EFI boot image: El Torito UEFI, FAT, EFI/BOOT/BOOTX64.EFI"
+xorriso -indev "$iso" -report_el_torito plain 2>/dev/null | grep -E '^El Torito (boot img|img path)'
+xorriso -indev "$iso" -report_el_torito plain 2>/dev/null | grep -Eq '^El Torito boot img : +[0-9]+ +UEFI ' \
+	|| die "$iso: no UEFI El Torito image"
+xorriso -osirrox on -indev "$iso" -extract /boot/grub/efiboot.img "$work/efiboot.img" >/dev/null 2>&1 \
+	|| die "$iso: no /boot/grub/efiboot.img"
+mkdir "$work/efi"
+mount -o loop,ro "$work/efiboot.img" "$work/efi" || die "$iso: the EFI boot image is not a FAT file system"
+efi=$(cd "$work/efi" && find . -type f -size +0 | sed 's|^\./||' | LC_ALL=C sort | tr '\n' ' ')
+umount "$work/efi"
+echo "efiboot.img: $efi"
+case " ${efi,,}" in *" efi/boot/bootx64.efi "*) ;; *) die "$iso: no EFI/BOOT/BOOTX64.EFI in the EFI boot image" ;; esac
 
 echo "== SHA256SUMS, the package list, BUILD"
 ( cd "$out" && sha256sum "$(basename "$iso")" > SHA256SUMS )
