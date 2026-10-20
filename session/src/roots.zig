@@ -273,6 +273,8 @@ pub fn list(o: Opts) void {
 
 // a failure while a root is made takes it away again (and the roots directory, if it was the first)
 var errdefer_remove: ?struct { o: Opts, name: []const u8 } = null;
+/// what a caller that made more than the root says after such a failure (vh-game: its account)
+pub var after_failure: []const u8 = "";
 
 fn fail(comptime f: []const u8, args: anytype) noreturn {
     vh.warn(f, args);
@@ -281,6 +283,7 @@ fn fail(comptime f: []const u8, args: anytype) noreturn {
         vh.warn("removing the unfinished root {s}", .{r.name});
         remove(r.o, r.name);
     }
+    if (after_failure.len > 0) vh.warn("{s}", .{after_failure});
     vh.exit(1);
 }
 
