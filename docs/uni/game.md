@@ -14,7 +14,7 @@ another, the user chooses. The user's decisions of 2026-10-20 are in the table b
 
 | Phase | What | State |
 |---|---|---|
-| **G1** | `vh-root`, the gaming root, the login of `game` on tty3; Vulkan through Mesa (the GPU's driver from the plan); no network, no sound, no 32-bit, no kernel change; the remove-and-compare test | built; container end to end; the VM rig [below](#what-is-verified) |
+| **G1** | `vh-root`, the gaming root, the login of `game` on tty3; Vulkan through Mesa (the GPU's driver from the plan); no network, no sound, no 32-bit, no kernel change; the remove-and-compare test | built; verified in a container and on the VM rig, 23 of 23 ([below](#what-is-verified)); not yet on hardware |
 | G2 | sound: a second restricted pulse socket of the user's PipeWire for the group `game` (playback, no microphone), or the root's own PipeWire when no desktop runs [a spike] | planned |
 | G3 | the gaming boot, on any GPU: a Limine entry of its own with ia32 for Steam and 32-bit games ([without NVIDIA](#machines-without-a-discrete-gpu-and-amd) no build and no key); where the plan finds an NVIDIA GPU, the gaming kernel (modules for NVIDIA only, ia32, NTSYNC, controllers) with the NVIDIA kernel module built on the machine in an isolated build root and signed with the user's own key under a passphrase, and the NVIDIA userspace (with 32-bit) in the gaming root | planned |
 | G4 | Steam: multilib, the 32-bit Mesa, the network of the UID `game`, controllers | planned |
@@ -164,10 +164,22 @@ NVIDIA userspace with its 32-bit part adds 869 MiB, the build root's clang toolc
   AMD desktop: RADV; the Intel laptop with its iGPU alone: ANV; the q35 rig: lavapipe; ARM: none;
   the GF63 without its dGPU: ANV, no dGPU tag; the AMD desktop without its card: RADV of the
   Ryzen's iGPU).
-- On the VM rig: `kvm-smoke` with `step=game` ([tests/vm/steps/session.py](../../tests/vm/steps/session.py)):
-  install with the rig's own plan and thor from the mirrors, the session from inside, Vulkan on
-  lavapipe, the mounts after a reboot, the login of `game` on tty3 typed on the VM's keyboard, its
-  namespaces, tty off, remove, and the system before and after compared across the reboot.
+- On the VM rig, `kvm-smoke` with `step=game` ([tests/vm/steps/session.py](../../tests/vm/steps/session.py)):
+  23 of 23 (run 39500995500, 2026-10-21). vh-game install through doas with the rig's own plan
+  and thor from the mirrors (175 packages, 583 MiB, lavapipe); the root 0750 root:game; game
+  reaches it, another user does not (the ACL of `/var/lib/vh`); vh-audit without a new FAIL (170
+  ok before, 182 with the session's area, the one FAIL Secure Boot before `20-firstboot.sh`);
+  `vh-game-enter --check` from inside, 24 of 24; Vulkan in the root (llvmpipe, Vulkan 1.4); after a
+  reboot both mounts from fstab with nosuid and nodev and tty3 off; `vh-game tty on`, the login of
+  `game` on tty3 typed on the VM's keyboard: a session in namespaces of its own (user, mount, PID,
+  network, IPC, UTS, cgroup), no capability, no new privileges, no seccomp filter, in the root,
+  on `/dev/tty3`; `tty off` ends the getty and the session; remove; the whole system before the
+  install and after the removal, across the reboot, the same byte for byte (with every extended
+  ACL), the nft ruleset and hw.zon too; vh-audit as before. What the runs before it found, each
+  fixed: doas's umask 077 made `/var/lib/vh` and the root's directories root's alone (vh-game-enter
+  found no root); the search bit for every user that first fixed it became an ACL entry for game
+  alone; and the step's own scaffolding (its snapshot in `/var/tmp`, which the reboot empties;
+  runsv's state files of the system's own services on the disk).
 
 [VERIFY on hardware]: gamescope on the GF63's UHD 630 (ANV) and, with `VH_GPU=nouveau`, on its GTX
 1650 (NVK); the switch between tty1 and tty3 under seatd (DRM master and the input devices taken
