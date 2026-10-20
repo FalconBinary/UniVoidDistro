@@ -26,6 +26,10 @@ MAP=(
 	"vh-open          /root/vh/optional/viewers/vh-open                /usr/local/bin/vh-open"
 	"vh-usb-udev      /root/vh/optional/usb-auth/vh-usb-udev           /usr/local/libexec/vh/vh-usb-udev"
 	"pin-fetch        /root/vh/optional/dns-pin/pin-fetch              /usr/local/libexec/vh/pin-fetch"
+	# the gaming session (session/, track G): nothing of it runs before doas vh-game install
+	"vh-root          /usr/local/sbin/vh-root"
+	"vh-game          /usr/local/sbin/vh-game"
+	"vh-game-enter    /usr/local/bin/vh-game-enter"
 )
 
 need_root
@@ -42,6 +46,10 @@ else
 	cp -R "$VH_ROOT/zig" "$BUILD/src"
 	( cd "$BUILD/src" && ZIG_GLOBAL_CACHE_DIR=$BUILD/gcache ZIG_LOCAL_CACHE_DIR=$BUILD/cache \
 		"$ZIG" build -Dtarget=native -Dcpu=baseline -Dlibc-tools=true --prefix "$BUILD/out" )
+	# session/ reads ../zig/lib in place: the same layout
+	mkdir -p "$BUILD/s" && cp -R "$VH_ROOT/zig" "$VH_ROOT/session" "$BUILD/s/"
+	( cd "$BUILD/s/session" && ZIG_GLOBAL_CACHE_DIR=$BUILD/gcache ZIG_LOCAL_CACHE_DIR=$BUILD/cache \
+		"$ZIG" build -Dtarget=native -Dcpu=baseline --prefix "$BUILD/out" )
 	mv "$BUILD/out/bin"/* "$BUILD/"
 	"$BUILD/vh-seccomp" --selftest >/dev/null || die "vh-seccomp --selftest failed"
 fi

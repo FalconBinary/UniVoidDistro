@@ -20,6 +20,10 @@ cp "$b"/zx/bin/* "$b/"
 rm -rf "$b/kx"
 (cd "$repo/kernel" && zig build -Dtarget=x86_64-linux -Dcpu=baseline --prefix "$b/kx")
 cp "$b/kx/bin/vh-kconf" "$b/"
+# the gaming session (session/): build-tools.sh --prebuilt installs it with the tools
+rm -rf "$b/sx"
+(cd "$repo/session" && zig build -Dtarget=x86_64-linux -Dcpu=baseline --prefix "$b/sx")
+cp "$b"/sx/bin/* "$b/"
 
 # pin-fetch, vh-hashpw and thor are cross-compiled in a native container: Zig under amd64
 # emulation in docker on Apple Silicon crashes (SIGSEGV), while cross-building is its strength.

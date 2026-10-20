@@ -1,0 +1,133 @@
+"""Track G: the gaming session (vh-game, docs/uni/game.md): install with the plan of the rig
+(lavapipe: the rig has no 3D), the session vh-game-enter makes, the login of game on tty3 through
+the VM's keyboard, remove, and the whole system compared before the install and after the
+removal, across a reboot."""
+import re
+import time
+
+import vhvm
+from vmlib import AUDIT_RX, as_user, boot, check, run, shutdown
+
+ROOT = "/var/lib/vh/roots/game"
+# what changes between two boots by itself: the logs, chrony's drift, dhcpcd's lease, the seed
+# of seedrng, the state unbound keeps in its DNSSEC root key (RFC 5011), the hardware clock's
+# drift that stage 3 writes. Directories are compared without their size (XFS keeps a
+# directory's size)
+VOLATILE = ("/var/log", "/var/lib/chrony", "/var/db/dhcpcd", "/var/lib/seedrng", "/etc/unbound/var", "/etc/adjtime", "/root/.cache")
+PRUNE = " -o ".join(f"-path {p}" for p in VOLATILE)
+SNAPSHOT = (f"{{ find / -xdev \\( {PRUNE} \\) -prune -o \\( -type d -printf '%p\\td\\t%m\\t%U\\t%G\\n' \\) "
+            f"-o -printf '%p\\t%y\\t%m\\t%U\\t%G\\t%s\\t%l\\n' | LC_ALL=C sort; "
+            f"find / -xdev \\( {PRUNE} \\) -prune -o -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum; }} > {{out}}")
+NS = ("user", "mnt", "pid", "net", "ipc", "uts", "cgroup")
+
+
+def enter(cmd):
+    """a command through the session vh-game-enter makes, as game (the same code as the login)"""
+    return as_user("game", f"/usr/local/bin/vh-game-enter {cmd}")
+
+
+def keys(vm, text):
+    """type TEXT on the VM's keyboard (QEMU's sendkey): letters, digits and '-'"""
+    for ch in text:
+        name = {"-": "minus", " ": "spc", ".": "dot", "/": "slash"}.get(ch, ch)
+        vm.monitor(f"sendkey {name}")
+        time.sleep(0.2)
+
+
+def fails(ser, name):
+    """vh-audit's FAIL count (and the FAIL lines)"""
+    rc, out = run(ser, "doas vh-audit", timeout=900)
+    m = AUDIT_RX.search(out)
+    lines = [l for l in out.splitlines() if l.startswith("[FAIL]")]
+    print(f"--- {name}: {m.group(0) if m else 'no summary'}\n" + "\n".join(lines))
+    return (int(m.group(2)) if m else -1), lines
+
+
+def step_game(a):
+    """vh-game: install, the session, the login on tty3, remove: the system as before"""
+    vm, ser = boot(a)
+    try:
+        base_fails, base_lines = fails(ser, "vh-audit before the gaming session")
+        rc, out = run(ser, SNAPSHOT.format(out="/var/tmp/vh-game-before") + "; grep -c . /var/tmp/vh-game-before; "
+                           "nft list ruleset > /var/tmp/vh-game-nft-before; cp /etc/vh/hw.zon /var/tmp/vh-game-hw-before", timeout=3600)
+        check("snapshot of the system before the install", rc == 0, out.strip().splitlines()[-1] if out.strip() else "")
+        rc, out = run(ser, f"printf '%s\\n' '{vhvm.USER_PASS}' | vh-game install --password-stdin 2>&1 | tail -40", timeout=5400)
+        m = re.search(r"VH_GAME installed user=game uid=(\d+) root=\S+ packages=(\S+)", out)
+        check("vh-game install", m is not None, out[-1500:].replace("\n", " | "))
+        check("the plan's Vulkan driver of a VM without 3D: lavapipe", m is not None and "mesa-vulkan-lavapipe" in m.group(2),
+              m.group(2) if m else "")
+        rc, out = run(ser, f"vh-game status; vh-root list; id game; findmnt -no TARGET,OPTIONS /home/game /var/lib/vh/roots; "
+                           f"stat -c '%a %U %G' {ROOT}; du -sm {ROOT}; ls {ROOT}/var/cache/xbps 2>/dev/null | wc -l")
+        print(out)
+        check("vh-game status: installed, tty3 off", "VH_GAME status installed=yes tty=off" in out, out[-300:].replace("\n", " | "))
+        check("the root: 0750 root:game", "750 root game" in out)
+        n_fails, lines = fails(ser, "vh-audit with the gaming session")
+        check("vh-audit: no new FAIL with the gaming session", n_fails == base_fails and n_fails >= 0,
+              " | ".join(l for l in lines if l not in base_lines))
+        # the session as the login makes it (the same program), from inside
+        rc, out = run(ser, enter("--check"), timeout=300)
+        print(out)
+        check("vh-game-enter --check: every check", "VH_GAME_ENTER ok=" in out and re.search(r"VH_GAME_ENTER ok=\d+ fail=0", out) is not None,
+              " | ".join(l for l in out.splitlines() if l.startswith("FAIL")))
+        rc, out = run(ser, enter("-c 'vulkaninfo --summary 2>&1 | grep -E \"deviceName|driverName|apiVersion\" | head -6'"), timeout=300)
+        print(out)
+        check("Vulkan in the gaming root (lavapipe on the CPU)", "llvmpipe" in out.lower() or "lavapipe" in out.lower(), out[-300:].replace("\n", " | "))
+        rc, out = run(ser, enter("-c 'ls /home; cat /proc/self/uid_map; ls /etc/vh 2>&1; ls /dev | tr \"\\n\" \" \"'"))
+        check("the session sees its home only, not the system's /etc/vh", "No such file" in out and re.search(r"^game\r?$", out, re.M) is not None,
+              out[-300:].replace("\n", " | "))
+    finally:
+        shutdown(vm, ser)
+
+    vm, ser = boot(a)
+    try:
+        rc, out = run(ser, "findmnt -no OPTIONS /home/game; findmnt -no OPTIONS /var/lib/vh/roots; pgrep -a agetty")
+        mounts = [l for l in out.splitlines() if "nosuid" in l]
+        check("after a reboot: both mounts from fstab, nosuid, nodev", len(mounts) >= 2 and all("nodev" in l for l in mounts), out[-300:].replace("\n", " | "))
+        check("after a reboot: no getty on tty3 (vh-game tty on starts it)", "tty3" not in out, out[-300:].replace("\n", " | "))
+        rc, out = run(ser, "vh-game tty on; sleep 3; pgrep -a agetty")
+        check("vh-game tty on: a getty on tty3", "tty3" in out, out[-300:].replace("\n", " | "))
+        # the login of game on tty3, typed on the VM's keyboard: agetty, login, PAM (pam_access,
+        # pam_shells, the password), then vh-game-enter as the login shell
+        vm.monitor("sendkey ctrl-alt-f3")
+        time.sleep(3)
+        keys(vm, "game")
+        vm.monitor("sendkey ret")
+        time.sleep(4)
+        keys(vm, vhvm.USER_PASS)
+        vm.monitor("sendkey ret")
+        rc, out = run(ser, "p=; for i in $(seq 1 40); do p=$(pgrep -u game -x bash | head -1); [ -n \"$p\" ] && break; sleep 1; done; echo pid=$p; "
+                           "[ -n \"$p\" ] && { for n in " + " ".join(NS) + "; do echo \"$n $(readlink /proc/1/ns/$n) $(readlink /proc/$p/ns/$n)\"; done; "
+                           "grep -E '^(NoNewPrivs|Seccomp|CapEff|CapBnd)' /proc/$p/status; cat /proc/$p/root/etc/vh-root; "
+                           "readlink /proc/$p/fd/0; ps -o pid,ppid,user,args -u game; }", timeout=300)
+        print(out)
+        got = re.search(r"pid=(\d+)", out)
+        check("the login of game on tty3 starts its session", got is not None, out[-400:].replace("\n", " | "))
+        if got:
+            same = [l.split()[0] for l in out.splitlines() if len(l.split()) == 3 and l.split()[0] in NS and l.split()[1] == l.split()[2]]
+            check("the login's session: user, mount, PID, network, IPC, UTS and cgroup namespaces of its own", not same, " ".join(same))
+            check("the login's session: no new privileges, no capability, no seccomp filter",
+                  re.search(r"NoNewPrivs:\s*1", out) and re.search(r"Seccomp:\s*0", out) and re.search(r"CapEff:\s*0+\b", out) is not None,
+                  out[-400:].replace("\n", " | "))
+            check("the login's session runs in the gaming root, on tty3", "profile=game" in out and "/dev/tty3" in out)
+        # tty off: the getty goes, and with its hangup the session
+        rc, out = run(ser, "vh-game tty off; sleep 3; echo procs=$(pgrep -u game | wc -l); pgrep -a agetty")
+        check("vh-game tty off: the getty and the session end", "procs=0" in out and "tty3" not in out, out[-300:].replace("\n", " | "))
+        vm.monitor("sendkey ctrl-alt-f1")
+        rc, out = run(ser, "vh-game remove --yes 2>&1 | tail -5", timeout=1800)
+        check("vh-game remove", "VH_GAME removed" in out, out[-500:].replace("\n", " | "))
+        rc, out = run(ser, SNAPSHOT.format(out="/var/tmp/vh-game-after") + "; "
+                           "if cmp -s /var/tmp/vh-game-before /var/tmp/vh-game-after; then echo FILES_SAME; else diff /var/tmp/vh-game-before /var/tmp/vh-game-after | head -40; fi; "
+                           "nft list ruleset | cmp -s - /var/tmp/vh-game-nft-before && echo NFT_SAME; "
+                           "cmp -s /etc/vh/hw.zon /var/tmp/vh-game-hw-before && echo HW_SAME; "
+                           "getent passwd game || echo NO_GAME", timeout=3600)
+        print(out)
+        check("after the removal the system is the system before the install, byte for byte", "FILES_SAME" in out,
+              out[-1200:].replace("\n", " | "))
+        check("the nft ruleset, hw.zon, no user game", "NFT_SAME" in out and "HW_SAME" in out and "NO_GAME" in out)
+        n_fails, lines = fails(ser, "vh-audit after the removal")
+        check("vh-audit after the removal: as before", n_fails == base_fails, " | ".join(lines))
+    finally:
+        shutdown(vm, ser)
+
+
+STEPS = {"game": step_game}
