@@ -1,7 +1,8 @@
-//! vh-hashpw: a yescrypt password hash through libcrypt (libxcrypt), for the automated VM tests only.
-//! chpasswd from shadow 4.8.1 cannot do yescrypt.
+//! vh-hashpw: a yescrypt password hash through libcrypt (libxcrypt), for the automated VM tests and
+//! for vh-game (session/), which writes the game user's shadow line itself so that its removal
+//! leaves /etc/shadow- untouched. chpasswd from shadow 4.8.1 cannot do yescrypt.
 //!   printf '%s' PASSWORD | vh-hashpw [cost]  -> $y$...
-//! On a real machine passwords are set interactively with passwd.
+//! The installer's accounts get their passwords interactively with passwd.
 const std = @import("std");
 const vh = @import("vh");
 

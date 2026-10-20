@@ -15,7 +15,7 @@ const tracks = [_][]const u8{
     "sched", // track S: vh-sched (the loader; the BPF objects are built inside sched/ by the same Zig)
     "adapt", // track A: vh-plan, the plan of this machine from hw.zon and hwdb/
     // "installer", track N: vh-install
-    // "session",   track G: vh-root, vh-game
+    "session", // track G: vh-root, vh-game, vh-game-enter
 };
 
 pub fn build(b: *std.Build) void {

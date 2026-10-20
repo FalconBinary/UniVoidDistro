@@ -1,0 +1,8 @@
+.{
+    .name = .vh_session,
+    .version = "0.1.0",
+    .fingerprint = 0x3e4855d5d9a8a482,
+    .minimum_zig_version = "0.17.0",
+    .dependencies = .{},
+    .paths = .{ "build.zig", "build.zig.zon", "src", "profiles" },
+}

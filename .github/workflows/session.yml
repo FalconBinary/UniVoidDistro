@@ -1,0 +1,28 @@
+# Track G: the gaming session (session/, docs/uni/game.md). The unit tests of vh-root, vh-game and
+# vh-game-enter, then the session end to end in a privileged Void container whose own root plays
+# the installed system (tests/session/run.sh): vh-game install, the session as the game user
+# without privileges, vh-game remove, and the file system compared before and after, byte for
+# byte. The runner's Ubuntu restricts unprivileged user namespaces through AppArmor; the job lifts
+# that on its own throwaway VM so that the unprivileged session runs. On an installed system on
+# the VM rig: kvm-smoke with step=game.
+name: session
+on:
+  push:
+    branches: [main]
+    paths: ["session/**", "tests/session/**", "zig/lib/**", ".github/workflows/session.yml"]
+  pull_request:
+    paths: ["session/**", "tests/session/**", "zig/lib/**", ".github/workflows/session.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  session:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-zig
+      - name: unprivileged user namespaces on this throwaway runner (Ubuntu's AppArmor restricts them)
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+      - name: unit tests and the session end to end
+        run: sh tests/session/run.sh

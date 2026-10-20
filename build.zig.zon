@@ -10,6 +10,7 @@
         .init = .{ .path = "init" },
         .sched = .{ .path = "sched" },
         .adapt = .{ .path = "adapt" },
+        .session = .{ .path = "session" },
     },
     .paths = .{
         "build.zig",
