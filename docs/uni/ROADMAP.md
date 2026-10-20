@@ -210,12 +210,35 @@ hardware enters: N shows the plan and the tier and runs the gate; G is GPU-vendo
 | **U6: live image** | x86_64 and aarch64 images | U1 |
 | **V (continuous)** | the VM matrix, the fixture corpus from real snapshots, runbooks per vendor | — |
 
-### State (2026-10-19)
+### State (2026-10-20)
 
-M0, U1 and U2 are done. U3 is done but for what waits: the local build in the kbuild root
-(upstream v0.3; designed in [kernel.md](kernel.md#the-local-build-later)). `vh-kconf install`,
-the signed UKI from a CI kernel, exists ([kernel.md](kernel.md#the-machine-uki-vh-kconf-install)),
-with its follow-ups in vh-uki-verify and vh-audit; no machine UKI has booted yet.
+M0, U1, U2 and U3 are done; U3 but for what waits: the local build in the kbuild root
+(upstream v0.3; designed in [kernel.md](kernel.md#the-local-build-later)). On 2026-10-20 all of
+it ran on GitHub's KVM rig for the first time.
+
+On the VM rig (`kvm-smoke` under KVM; the EPYC-Milan CPU that `tests/vm/vhvm.py` pins, 4 GiB):
+the installation from the Void live image to a system that boots through Limine, the signed UKI
+and LUKS2; `check.py base` with every check passing (lockdown, AppArmor, every runit service,
+DoT, NTS, nftables, RefursWM and RefursLine, vh-bench, xbps-pkgdb; vh-audit 170 ok, its one FAIL
+Secure Boot before `20-firstboot.sh`); the fixed ACPI power button pressed as a hypervisor does
+(`system_powerdown`) ending in a regular poweroff; and the step `machine`: `vh-kconf install` of
+the q35 machine kernel of a `kernel-custom` run, three trial boots through Limine's one-shot
+entry, each with no loadable module and `vh-kconf check` finding every driver, the machine
+kernel Limine's default after the third, `--demote` and the removal giving the stock UKI back.
+`kernel-custom hw=all` built the four x86_64 machines, every requested symbol surviving, each
+with its `-march` (skylake, znver4, alderlake, x86-64-v3). The `adapt`, `zig-test`,
+`docker-tests` and `init-tests` workflows pass on every push.
+
+What the rig found, each fixed by a commit: its own bugs from upstream (Void's BSD-format
+`sha256sum.txt`, `bsdtar` for the live ISO, the ISO kept out of the VM's copies of the
+repository, `udevadm settle`); `fetch-zig.sh` installing before xbps had updated itself (the
+20250202 image's xbps refuses every other package); the kernel.org keys (from WKD now); the
+fragments asking for drivers without their cores (DRM, HW_RANDOM, USB, HID, SCSI and sd, SND);
+the synthesised q35 fixture (now the rig's own hw.zon); the fixed power button on 6.18 (`button`
+became a platform driver: `tiny_power_button`, SIGINT, `/etc/runit/ctrlaltdel`, `vh-acpid`);
+`vh-kconf check` judging a machine kernel against the live image's kernel instead of the stock
+one; a test harness that hid failing unit tests. The installer needs 2.1 GiB of RAM at its peak
+(the RefursWM build): the gate's memory floor is 3 GiB in both modes until U6.
 
 U3 verified, in containers on the Mac: `tests/kernel/matrix.sh` plans every x86_64 machine of
 `kernel/hw` (gf63, amd-desktop, intel-hybrid-laptop, qemu-q35) in tiered mode and resolves it,
@@ -241,20 +264,12 @@ waits for the initramfs, an unknown dotted parameter is dropped and one without 
 PID 1, `modules.builtin*` are written with every vmlinux); vh-audit's plan area without
 `/proc/modules` in `audit_test.sh`, its boot area by hand.
 
-U3 not verified: no GitHub run (gh is not logged in here): the adapt workflow with the matrix,
-`kernel-custom` with `hw=all` (no kernel has been built yet for amd-desktop,
-intel-hybrid-laptop or qemu-q35, so whether their class symbols survive olddefconfig is open),
-and whether the runner's clang knows every `-march`; the workflows were parsed and their shell
-checked, not linted with actionlint (not installed). The tests/vm step `assess` is written but
-not run (the rig needs an installation: hours under TCG on the Mac; kvm-smoke runs it with
-`step=assess`). No machine kernel has booted anywhere: the step `machine` (kvm-smoke with
-`step=machine` and `kernel_run`, the id of a kernel-custom run that built qemu-q35) installs one
-with `vh-kconf install` and boots it through the assessment; it is written, not run, and so is
-the first kernel-custom run that writes BUILD's hw.zon line and `modules.builtin*`. vh-uki-verify's
-machine references have unit tests only (the first install asks on /dev/tty). Nothing on real
-hardware. [VERIFY]: Limine erasing the one-shot entry on each firmware (the `assess` step checks
-OVMF), `sbctl sign` leaving a signed file unchanged, clang 19 for `znver5`, the speed of each
-`-march` by class.
+U3 not verified: the step `assess` (kvm-smoke `step=assess`); a machine kernel for any machine
+but the rig; vh-uki-verify's machine references beyond their unit tests (the first install asks
+on /dev/tty); the workflows linted with actionlint (not installed). Nothing on real hardware.
+[VERIFY]: Limine erasing the one-shot entry on each firmware (OVMF does), `sbctl sign` leaving a
+signed file unchanged, clang 19 for `znver5`, the speed of each `-march` by class; a machine
+with only the fixed power button and a GPU driver that selects `ACPI_BUTTON` (none in 6.18.57).
 
 U2 verified, in containers on the Mac (aarch64; the `adapt` workflow repeats it on x86_64 once
 the repository is on GitHub): the unit tests of `kernel/` (30), `adapt/` (12), `init/` (27) and
@@ -270,15 +285,15 @@ GF63 and the Raspberry Pi 5 in a mocked installed system; the GF63 oracle with t
 schedulers named in `perf` (its `.config` unchanged); the installer's lists; the lint with no
 U2 entry left in `tests/adapt/lint.allow`.
 
-U2 not verified: nothing of it on a real machine or on the VM rig. The udev scheduler rule has
-no test (no udev in the containers); the schedulers and the platform profiles are [VERIFY by
+U2 on the VM rig: `vh-audit` on the installed system (no FAIL but Secure Boot), `vh-kconf check`
+at every boot (on the stock kernel it found the fixed power button without a driver, a real
+loss on 6.18, now fixed), the power button. U2 not verified: nothing on a real machine. The udev
+scheduler rule has no test of its own; the schedulers and the platform profiles are [VERIFY by
 measurement per class]; `vh-power` at a real plug event; the watchdog timeouts of each driver
-(sbsa_gwdt, bcm2835_wdt, sp5100_tco) through WDIOC on hardware; how noisy `vh-kconf check` is
-on an installed system (the probe of the installation runs in the live system) and whether its
-5 s delay catches the asynchronous firmware loads; a built-in USB keyboard that the kernel calls
-`fixed`; the backlight on a hybrid laptop; `vh-audit` on an installed system (`tests/vm`
-expects no FAIL on the rig, which the plan area must keep); `install/00-probe.sh` on a live
-system.
+(sbsa_gwdt, bcm2835_wdt, sp5100_tco) through WDIOC on hardware; whether the 5 s delay of
+`vh-kconf check` catches the asynchronous firmware loads; a built-in USB keyboard that the kernel
+calls `fixed`; the backlight on a hybrid laptop; `install/00-probe.sh` on a live system; the
+control-method power button (`PNP0C0C`) on 6.18 through the `button` platform driver.
 
 U1 verified: the unit tests of `kernel/` (24) and `adapt/` (10) in a container;
 the golden plans of the six machines of `kernel/hw`, each planned twice with the same bytes; the
@@ -287,11 +302,10 @@ installed in tiered); the GF63 oracle (the classes reassemble upstream's 264 fra
 and `.config`, one explained difference in LSMOD); the installer's packages, blacklist,
 firmware and command line, which for the GF63 are exactly upstream's; the lint.
 
-U1 not verified yet: a full installation (`kvm-smoke` runs once the repository is on GitHub, or
-`vhvm.py install` under TCG on the Mac: hours and disk space); any real machine; the five
-synthesised fixtures; the [VERIFY] items of `hwdb/` (the firmware narrowed for amdgpu, i915 and
-iwlwifi on hardware, the Secure Boot menu names) and of `tests/vm/vhvm.py` (intel-iommu under
-TCG and KVM).
+U1 not verified yet: any real machine; the four synthesised fixtures (qemu-q35 is the rig's own
+since kvm-smoke run 39342292948); the installation in 3 GiB, the floor (the rig runs with 4); the
+[VERIFY] items of `hwdb/` (the firmware narrowed for amdgpu, i915 and iwlwifi on hardware, the
+Secure Boot menu names); intel-iommu under TCG (KVM runs it).
 
 ## Measurements
 
