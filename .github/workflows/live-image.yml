@@ -76,7 +76,10 @@ jobs:
         run: |
           set -euo pipefail
           cd out && sha256sum -c SHA256SUMS
+          notes="UniVoidDistro $GITHUB_REF_NAME for x86_64 UEFI machines. The live image: verify it with sha256sum -c SHA256SUMS and gh attestation verify ISO --repo $GH_REPO, then install as docs/uni/install.md says. vh-tools-x86_64.tar.gz (the zig-test workflow) holds the Zig tools."
           gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 \
-            || gh release create "$GITHUB_REF_NAME" --verify-tag --title "$GITHUB_REF_NAME" \
-                 --notes "UniVoidDistro $GITHUB_REF_NAME. The live image: verify with sha256sum -c SHA256SUMS and gh attestation verify ISO --repo $GH_REPO (docs/uni/live-image.md)."
+            || gh release create "$GITHUB_REF_NAME" --verify-tag --title "UniVoidDistro $GITHUB_REF_NAME" --notes "$notes"
+          # zig-test, ten minutes into the same tag, usually makes the release first with notes of
+          # its own (v0.1.0): the image's notes say what the release is and how to check it
+          gh release edit "$GITHUB_REF_NAME" --title "UniVoidDistro $GITHUB_REF_NAME" --notes "$notes"
           gh release upload "$GITHUB_REF_NAME" ./*.iso SHA256SUMS BUILD live-packages.txt --clobber

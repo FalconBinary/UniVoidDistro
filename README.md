@@ -30,9 +30,12 @@ verify   the stock signed UKI always stays in Limine; vh-audit shows the protect
 | speed | built-in drivers, a stage 1 without a shell, no waiting for hardware that is not there |
 | optimisation per machine | every decision is a rule in `hwdb/` with its reason; `vh-plan explain ITEM` says why |
 
-**Current state: M0 and U1 are done** (detect and decide: the probe, `vh-plan` with `hwdb/`, the
-kernel's class fragments, the installer driven by the plan); next is U2, the runtime rules. What
-is verified and what is not: [docs/uni/ROADMAP.md](docs/uni/ROADMAP.md#state-2026-10-19).
+**Current state: M0, U1, U2, U3 and U6 for x86_64 are done** (detect and decide; the runtime
+rules; the machine kernel; our own live image), verified on a KVM rig, not yet on real hardware.
+Next: the first real machine (the GF63), then U5 (ARM64); U4, the scheduler (`vh-sched`), comes
+after them. What is verified and what is not:
+[docs/uni/ROADMAP.md](docs/uni/ROADMAP.md#state-2026-10-20). How to install it on a machine:
+[docs/uni/install.md](docs/uni/install.md).
 The rules every change follows are in [docs/uni/principles.md](docs/uni/principles.md); what
 hardware is supported, and how each piece is detected, is in [docs/uni/hardware.md](docs/uni/hardware.md).
 

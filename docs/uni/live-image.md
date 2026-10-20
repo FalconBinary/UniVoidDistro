@@ -1,5 +1,7 @@
 # UniVoidDistro: our own live image (U6)
 
+How to install from it: [install.md](install.md).
+
 The installation starts from a live image. Until now that is Void's official one (20250202),
 and the rig showed what it costs ([ROADMAP](ROADMAP.md#state-2026-10-20)):
 
