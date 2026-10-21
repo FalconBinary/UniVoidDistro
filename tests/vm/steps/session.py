@@ -3,14 +3,17 @@
 card for this step: the session's own PipeWire plays through it, the card's output lands in a WAV
 file on this host; the everyday user's PipeWire and the session's take the card in turn), the
 login of game on tty3 through the VM's keyboard, remove, and the whole system compared before
-the install and after the removal, across a reboot."""
+the install and after the removal, across a reboot. Step gameboot (G3): the gaming boot, the
+twin of the stock UKI and its entry, vh-game play, the x86_64 filter on every process tree but
+tty3's, a 32-bit program, and the system and the ESP compared before and after."""
 import array
 import os
 import re
+import struct
 import time
 
 import vhvm
-from vmlib import AUDIT_RX, VM_SRC, as_user, boot, check, run, shq, shutdown
+from vmlib import AUDIT_RX, VM_SRC, as_user, boot, check, put_file, run, shq, shutdown
 
 ROOT = "/var/lib/vh/roots/game"
 # what changes between two boots by itself: the logs, chrony's drift, dhcpcd's lease, the seed
@@ -251,4 +254,169 @@ def step_game(a):
         shutdown(vm, ser)
 
 
-STEPS = {"game": step_game}
+# ---------------------------------------------------------------- G3: the gaming boot
+
+def ia32_elf():
+    """A 32-bit program without libc, made here: write(1, "IA32_OK\n") and exit(0) through
+    int $0x80. The everyday boot cannot load it (ia32_emulation=0), the gaming boot's x86_64
+    filter kills it outside the gaming session, the session runs it."""
+    base, at = 0x08048000, 52 + 32
+    msg = b"IA32_OK\n"
+    code = (b"\xb8\x04\x00\x00\x00" + b"\xbb\x01\x00\x00\x00"          # eax = 4 (write), ebx = 1 (stdout)
+            + b"\xb9" + struct.pack("<I", base + at + 31)              # ecx = the message
+            + b"\xba" + struct.pack("<I", len(msg)) + b"\xcd\x80"       # edx = its length; int $0x80
+            + b"\xb8\x01\x00\x00\x00" + b"\x31\xdb" + b"\xcd\x80")       # eax = 1 (exit), ebx = 0; int $0x80
+    assert len(code) == 31
+    size = at + len(code) + len(msg)
+    ehdr = b"\x7fELF\x01\x01\x01" + bytes(9) + struct.pack("<HHIIIIIHHHHHH", 2, 3, 1, base + at, 52, 0, 0, 52, 32, 1, 0, 0, 0)
+    phdr = struct.pack("<IIIIIIII", 1, 0, base, base, size, size, 5, 0x1000)
+    return ehdr + phdr + code + msg
+
+
+def esp_snap(out):
+    """every path of the ESP and every file's sha256 (the ESP is noauto: mounted read-only for it)"""
+    return ("mount -o ro /boot/efi && { find /boot/efi -print | LC_ALL=C sort; "
+            "find /boot/efi -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum; } > " + out + "; umount /boot/efi")
+
+
+def seccomp_of(label, pattern):
+    """'LABEL: Seccomp:N' of the first process whose command line matches PATTERN (pgrep -f)"""
+    return ("p=$(pgrep -f " + shq(pattern) + " | head -1); echo \"" + label + ": $(grep -s '^Seccomp:' /proc/$p/status | tr -d '\\t ')\"")
+
+
+def step_gameboot(a):
+    """vh-game boot on: the twin of the stock UKI and its entry; vh-game play: the gaming boot,
+    once, with ia32 for the gaming session alone (the x86_64 filter on every other process
+    tree), the login of game on tty3 by itself; the everyday boot after it as before; remove:
+    the system and the ESP as before the install."""
+    vm, ser = boot(a)
+    try:
+        base_fails, base_lines = fails(ser, "vh-audit before the gaming session")
+        rc, out = run(ser, "for i in $(seq 1 60); do test -e /run/vh/check.done && break; sleep 2; done; cat /run/vh/check.done; "
+                           "echo \"SECURE_BOOT=$(od -An -tu1 /sys/firmware/efi/efivars/SecureBoot-* 2>/dev/null | awk '{print $NF}')\"")
+        print(out)
+        rc, out = run(ser, f"rm -rf {TEST_DIR} && install -d -m 0700 {TEST_DIR} && " + snapshot(f"{TEST_DIR}/before") + "; " +
+                      esp_snap(f"{TEST_DIR}/esp-before") + f"; grep -c . {TEST_DIR}/before {TEST_DIR}/esp-before", timeout=3600)
+        check("snapshots of the system and of the ESP before the install", rc == 0, out.strip().splitlines()[-1] if out.strip() else "")
+        rc, out = run(ser, f"printf '%s\\n' '{vhvm.USER_PASS}' | vh-game install --password-stdin 2>&1 | tail -5", timeout=5400)
+        check("vh-game install", "VH_GAME installed" in out, out[-800:].replace("\n", " | "))
+        rc, out = run(ser, "vh-game boot on 2>&1 | tail -12", timeout=900)
+        print(out)
+        check("vh-game boot on", "VH_GAME boot on" in out, out[-800:].replace("\n", " | "))
+        rc, out = run(ser, "mount -o ro /boot/efi && { s=$(ls /boot/efi/EFI/void/linux-*.efi | grep -v -- -vh_ | sort -V | tail -1); "
+                           "t=/boot/efi/EFI/vh-game/$(basename $s); echo \"FILES=$(ls /boot/efi/EFI/vh-game | tr '\\n' ' ')\"; echo \"TWIN=$(basename $t)\"; "
+                           "echo \"CMD_STOCK=$(grep -ao 'ia32_emulation=[01]' $s | tr '\\n' ' ')\"; echo \"CMD_TWIN=$(grep -ao 'ia32_emulation=[01]' $t | tr '\\n' ' ')\"; "
+                           "echo \"SIZES=$(stat -c %s $s $t | tr '\\n' ' ')\"; grep '^/' /boot/efi/EFI/BOOT/limine.conf; }; umount /boot/efi")
+        print(out)
+        twin = re.search(r"TWIN=(linux-\S+\.efi)", out)
+        files = re.search(r"FILES=(.*)", out)
+        check("the twin of the newest stock UKI alone in EFI/vh-game", twin is not None and files is not None and files.group(1).split() == [twin.group(1)],
+              out[-400:].replace("\n", " | "))
+        check("its command line: ia32_emulation=1 where the stock UKI's has 0",
+              re.search(r"^CMD_STOCK=ia32_emulation=0 *$", out, re.M) is not None and re.search(r"^CMD_TWIN=ia32_emulation=1 *$", out, re.M) is not None,
+              out[-400:].replace("\n", " | "))
+        entries = [l.strip() for l in out.splitlines() if l.startswith("/")]
+        check("the gaming entry last in Limine's menu", bool(entries) and entries[-1].endswith("(games)") and not entries[0].endswith("(games)"), " | ".join(entries))
+        put_file(ser, "/home/game/ia32-test", ia32_elf())
+        # the session runs it at its login: a login shell reads ~/.bash_profile
+        rc, out = run(ser, "chown game:game /home/game/ia32-test && chmod 0755 /home/game/ia32-test && "
+                           "echo '/home/game/ia32-test > /home/game/ia32.out 2>&1; echo \"rc=$?\" >> /home/game/ia32.out' > /home/game/.bash_profile && "
+                           "chown game:game /home/game/.bash_profile && /home/game/ia32-test; echo \"EVERYDAY_RC=$?\"")
+        print(out)
+        check("the everyday boot cannot run a 32-bit program (ia32_emulation=0)", re.search(r"EVERYDAY_RC=126", out) is not None and "IA32_OK" not in out,
+              out[-300:].replace("\n", " | "))
+        rc, out = run(ser, "vh-game play --no-reboot 2>&1 | tail -3; vh-limine-update --status")
+        print(out)
+        check("vh-game play: the next boot is the gaming one (Limine's one-shot entry)",
+              re.search(r"LoaderEntryOneShot: \S+--games-;", out) is not None, out[-500:].replace("\n", " | "))
+    finally:
+        shutdown(vm, ser)
+
+    # the gaming boot
+    vm, ser = boot(a)
+    try:
+        rc, out = run(ser, "vh-limine-update --status; cat /proc/cmdline; vh-game status | tail -2; findmnt /etc/runit/2 || echo NOT_A_MOUNT")
+        print(out)
+        check("Limine started the gaming entry", re.search(r"started: \S+--games-;", out) is not None and "this boot is the gaming one" in out,
+              out[-500:].replace("\n", " | "))
+        check("its command line: ia32_emulation=1", " ia32_emulation=1" in out and " ia32_emulation=0" not in out)
+        check("vh-game status: the gaming boot, the login of game on tty3 by itself",
+              re.search(r"VH_GAME status installed=yes tty=on .* boot=on this=game ", out) is not None, out[-300:].replace("\n", " | "))
+        check("stage 2 runs runit-void's /etc/runit/2 again (the bind mount is gone)", "NOT_A_MOUNT" in out)
+        rc, out = run(ser, "; ".join([seccomp_of("runsvdir", "^runsvdir"), seccomp_of("runsv-tty3", "^runsv /etc/sv/agetty-tty3"),
+                                      seccomp_of("getty-tty3", "agetty.* tty3"), seccomp_of("getty-tty1", "agetty.* tty1"),
+                                      seccomp_of("runsv-udevd", "^runsv udevd"), "echo \"shell: $(grep '^Seccomp:' /proc/$$/status | tr -d '\\t ')\""]) +
+                      "; echo \"PADS=$(lsmod | grep -cE '^(xpad|joydev|hid_playstation|hid_nintendo|hid_steam) ')\"")
+        print(out)
+        check("every process tree under the x86_64 filter: runsvdir, the services, the gettys, this shell",
+              all(re.search(p, out) for p in (r"runsvdir: Seccomp:2", r"getty-tty1: Seccomp:2", r"runsv-udevd: Seccomp:2", r"shell: Seccomp:2")),
+              out[-600:].replace("\n", " | "))
+        check("but the login of game on tty3: its runsv and agetty without it",
+              re.search(r"runsv-tty3: Seccomp:0", out) is not None and re.search(r"getty-tty3: Seccomp:0", out) is not None, out[-600:].replace("\n", " | "))
+        pads = re.search(r"PADS=(\d+)", out)
+        check("the controllers' drivers loaded before the module lock", pads is not None and int(pads.group(1)) >= 3, out[-200:])
+        rc, out = run(ser, "/home/game/ia32-test; echo \"FILTERED_RC=$?\"")
+        print(out)
+        check("outside the gaming session a 32-bit program is killed at its first system call (SIGSYS)",
+              re.search(r"FILTERED_RC=159", out) is not None and "IA32_OK" not in out, out[-300:].replace("\n", " | "))
+        # the login of game on tty3, typed on the VM's keyboard: its session runs the program
+        vm.monitor("sendkey ctrl-alt-f3")
+        time.sleep(3)
+        keys(vm, "game")
+        vm.monitor("sendkey ret")
+        time.sleep(4)
+        keys(vm, vhvm.USER_PASS)
+        vm.monitor("sendkey ret")
+        rc, out = run(ser, "for i in $(seq 1 60); do grep -q '^rc=' /home/game/ia32.out 2>/dev/null && break; sleep 1; done; cat /home/game/ia32.out; "
+                           "p=$(pgrep -u game -x bash | head -1); grep -E '^(Seccomp|NoNewPrivs):' /proc/$p/status", timeout=300)
+        print(out)
+        check("the gaming session runs the 32-bit program", "IA32_OK" in out and re.search(r"^rc=0$", out, re.M) is not None, out[-300:].replace("\n", " | "))
+        check("the gaming session: no seccomp filter, no new privileges",
+              re.search(r"Seccomp:\s*0", out) is not None and re.search(r"NoNewPrivs:\s*1", out) is not None, out[-300:].replace("\n", " | "))
+        rc, out = run(ser, "vh-game tty off >/dev/null 2>&1; vh-game tty on 2>&1 | tail -2; echo \"GETTYS=$(pgrep -a agetty | grep -c tty3)\"")
+        print(out)
+        check("vh-game tty on from a filtered shell of the gaming boot is refused",
+              "starts with the boot only" in out and "GETTYS=0" in out, out[-300:].replace("\n", " | "))
+        vm.monitor("sendkey ctrl-alt-f1")
+        n_fails, lines = fails(ser, "vh-audit in the gaming boot")
+        check("vh-audit in the gaming boot: no new FAIL", n_fails == base_fails and n_fails >= 0, " | ".join(l for l in lines if l not in base_lines))
+    finally:
+        shutdown(vm, ser)
+
+    # the everyday boot after it
+    vm, ser = boot(a)
+    try:
+        rc, out = run(ser, "vh-limine-update --status; cat /proc/cmdline; vh-game status | tail -1; " + seccomp_of("runsvdir", "^runsvdir") +
+                      "; echo \"GETTYS=$(pgrep -a agetty | grep -c tty3)\"; /home/game/ia32-test; echo \"EVERYDAY_RC=$?\"")
+        print(out)
+        sel = re.search(r"started: (\S+);", out)
+        check("the boot after the gaming one is the everyday one, ia32 off",
+              sel is not None and not sel.group(1).endswith("--games-") and " ia32_emulation=0" in out and "this=everyday" in out, out[-500:].replace("\n", " | "))
+        check("the everyday boot: no filter, no getty on tty3, no 32-bit program",
+              re.search(r"runsvdir: Seccomp:0", out) is not None and "GETTYS=0" in out and re.search(r"EVERYDAY_RC=126", out) is not None,
+              out[-500:].replace("\n", " | "))
+        rc, out = run(ser, "vh-game remove --yes 2>&1 | tail -6", timeout=1800)
+        check("vh-game remove, the gaming boot off with it", "VH_GAME boot off" in out and "VH_GAME removed" in out, out[-500:].replace("\n", " | "))
+        rc, out = run(ser, snapshot(f"{TEST_DIR}/after") + "; " + esp_snap(f"{TEST_DIR}/esp-after") + "; "
+                      f"if cmp -s {TEST_DIR}/before {TEST_DIR}/after; then echo FILES_SAME; else echo DIFFERS:; diff {TEST_DIR}/before {TEST_DIR}/after | "
+                      "sed -n 's/^[<>] //p' | awk -F'\\t|  ' '{print $1 ~ /^[0-9a-f]{64}$/ ? $2 : $1}' | LC_ALL=C sort -u | head -60; fi; "
+                      f"cmp -s {TEST_DIR}/esp-before {TEST_DIR}/esp-after && echo ESP_SAME || {{ echo ESP_DIFF:; diff {TEST_DIR}/esp-before {TEST_DIR}/esp-after; }}",
+                      timeout=3600)
+        print(out)
+        check("after the removal the system is the system before the install, byte for byte", "FILES_SAME" in out, out[-1200:].replace("\n", " | "))
+        # Limine's BOOTX64.EFI is a clean copy with limine.conf's hash enrolled, signed anew at every
+        # run of vh-limine-update: with limine.conf the same, only a signature with a time in it
+        # could differ
+        diff = [l for l in out.split("ESP_DIFF:")[-1].splitlines() if l.startswith(("<", ">"))] if "ESP_DIFF:" in out else []
+        check("and the ESP: the same files, byte for byte (the twin gone, limine.conf and every UKI as before)",
+              "ESP_SAME" in out or (diff and all(l.rstrip().endswith("/EFI/BOOT/BOOTX64.EFI") for l in diff)), " | ".join(diff[:12]))
+        if diff:
+            print("note: Limine's BOOTX64.EFI differs after the removal (signed anew), limine.conf and every other file do not")
+        n_fails, lines = fails(ser, "vh-audit after the removal")
+        check("vh-audit after the removal: as before", n_fails == base_fails, " | ".join(lines))
+        run(ser, f"rm -rf {TEST_DIR}")
+    finally:
+        shutdown(vm, ser)
+
+
+STEPS = {"game": step_game, "gameboot": step_gameboot}
