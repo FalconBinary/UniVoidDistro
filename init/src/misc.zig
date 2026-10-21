@@ -303,18 +303,14 @@ pub fn runitControl() void {
 
 // ---------------------------------------------------------------- 97-dmesg.sh
 
-/// the kernel log into /var/log/dmesg.log (0600 when dmesg_restrict is on), through syslog(2)
+/// the kernel log into /var/log/dmesg.log (0600 when dmesg_restrict is on), through syslog(2):
+/// every record the ring holds, as the dmesg of 97-dmesg.sh saves them
 pub fn dmesgLog() void {
-    const size = vh.sys(linux.syscall3(.syslog, 10, 0, 0)) catch {
-        sys.fail("dmesg: syslog(SIZE_BUFFER): {s}", .{vh.serr()});
+    const log = sys.kernelLog() orelse {
+        sys.fail("dmesg: syslog: {s}", .{vh.serr()});
         return;
     };
-    const buf = vh.gpa.alloc(u8, size) catch vh.oom();
-    const n = vh.sys(linux.syscall3(.syslog, 3, @intFromPtr(buf.ptr), buf.len)) catch {
-        sys.fail("dmesg: syslog(READ_ALL): {s}", .{vh.serr()});
-        return;
-    };
-    const text = stripLevels(buf[0..n]);
+    const text = stripLevels(log);
     const mode: linux.mode_t = if (vh.eql(vh.rd(sys.p("/proc/sys/kernel/dmesg_restrict")), "1")) 0o600 else 0o644;
     if (!sys.writeFile(sys.p("/var/log/dmesg.log"), text, mode)) sys.fail("/var/log/dmesg.log: {s}", .{vh.serr()});
 }

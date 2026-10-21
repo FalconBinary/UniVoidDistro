@@ -44,7 +44,7 @@ doas vh-stage1 --rollback    # /etc/runit/1.orig back
 | runit-control | 10-runit-control.sh | /run/runit/stopit, /run/runit/reboot |
 | vh-runtime | 11-vh-runtime.sh | /run/vh-sandbox (2750 user:browser), the power profile of `vh-power boot` natively |
 | vh-suid | 12-vh-suid.sh (vh-suid-strip) | chmod and the `security.capability` attribute removed natively |
-| dmesg | 97-dmesg.sh | syslog(2) into /var/log/dmesg.log (0600 under dmesg_restrict) |
+| dmesg | 97-dmesg.sh | syslog(2) into /var/log/dmesg.log, every record the ring holds (0600 under dmesg_restrict) |
 | sbin-merge | 98-sbin-merge.sh | the /usr/sbin symlink of old installations |
 | cleanup | 99-cleanup.sh | wtmp/btmp/lastlog, /tmp/.X11-unix, the one-shot flag files removed |
 | vh-game | 98-vh-game.sh (`vh-game boot on`, [docs/uni/game.md](../docs/uni/game.md#g3a-the-gaming-boot)) | with the script there and `ia32_emulation=1` on the command line, `vh-game stage1` by argv: the controllers' drivers, the marker bound over /etc/runit/2 |

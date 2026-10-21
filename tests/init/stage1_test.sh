@@ -137,7 +137,21 @@ chk "THP defrag" "$(cat $R/sys/kernel/mm/transparent_hugepage/defrag)" "defer+ma
 chk "module lock: modules_disabled" "$(cat $R/proc/sys/kernel/modules_disabled)" 1
 has "module lock: one modprobe -a with the list" "$(cat /tmp/fake.log)" 'exec: modprobe -a vfat fat nls_utf8'
 chk "dmesg.log: 0600 under dmesg_restrict" "$(stat -c %a $R/var/log/dmesg.log)" 600
-chk "dmesg.log: the first kernel line, without the level prefix" "$(head -1 $R/var/log/dmesg.log)" "$(dmesg | head -1)"
+# the oracle: dmesg (util-linux) through the same syslog(2) READ_ALL, with a buffer far larger
+# than any ring (READ_ALL returns only the newest records whose text fits the buffer). A full
+# ring (a long-running host) drops its oldest record at every new kernel message: the oracle
+# reads before and after a run of the step alone, and a run during which the start moved is redone.
+ring_first() { dmesg -S -s 67108864 | head -1; }
+moved=1
+for try in 1 2 3 4 5; do
+	want=$(ring_first)
+	rm -f $R/var/log/dmesg.log
+	"$S" --root $R --step dmesg > /tmp/dmesg-step.log 2>&1
+	if [ "$(ring_first)" = "$want" ]; then moved=0; break; fi
+done
+if [ "$moved" = 0 ]; then
+	chk "dmesg.log: the first line of the kernel's ring, without the level prefix" "$(head -1 $R/var/log/dmesg.log 2>&1)" "$want"
+else bad "dmesg.log: the kernel's ring lost its first line during each of 5 runs; nothing compared"; fi
 [ -e $R/fastboot ] && bad "cleanup: /fastboot remains" || ok "cleanup: /fastboot removed"
 chk "cleanup: /tmp/.X11-unix 1777" "$(stat -c %a $R/tmp/.X11-unix)" 1777
 chk "cleanup: /var/log/btmp 0600 root:utmp" "$(stat -c '%a %G' $R/var/log/btmp)" "600 utmp"

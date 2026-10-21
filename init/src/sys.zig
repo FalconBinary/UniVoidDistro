@@ -84,6 +84,25 @@ pub fn kmsg(comptime f: []const u8, args: anytype) bool {
     return true;
 }
 
+/// the kernel log as syslog(2) READ_ALL gives it ("<6>[    0.000000] text" lines, the oldest
+/// first); null on an error (vh.errno). READ_ALL returns only the newest records whose text
+/// fits the buffer, and that text is longer than the ring SIZE_BUFFER gives (a prefix on every
+/// line): a buffer of the ring's size drops the oldest records of a nearly full ring. This one
+/// is twice the ring plus the largest record (1 KiB of text, at most 48 bytes of prefix per
+/// line: under 64 KiB) and doubles while a read left less room than that, so every record the
+/// ring holds is read, as dmesg (util-linux) reads them from /dev/kmsg.
+pub fn kernelLog() ?[]u8 {
+    const record_max = 64 * 1024;
+    const len_max: usize = std.math.maxInt(i32); // the length is an int
+    const ring = vh.sys(linux.syscall3(.syslog, 10, 0, 0)) catch return null; // SIZE_BUFFER
+    var size = @min(2 * ring + record_max, len_max);
+    while (true) : (size = @min(2 * size, len_max)) {
+        const buf = vh.gpa.alloc(u8, size) catch vh.oom();
+        const n = vh.sys(linux.syscall3(.syslog, 3, @intFromPtr(buf.ptr), buf.len)) catch return null; // READ_ALL
+        if (n + record_max <= size or size == len_max) return buf[0..n];
+    }
+}
+
 /// CLOCK_MONOTONIC in microseconds
 pub fn monoUs() u64 {
     var ts: linux.timespec = undefined;

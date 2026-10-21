@@ -86,11 +86,9 @@ pub fn status() u8 {
 
 /// the "vh-stage1: done in N ms" line of this boot from the kernel log, if readable
 pub fn kernelMarker() ?[]const u8 {
-    const size = vh.sys(linux.syscall3(.syslog, 10, 0, 0)) catch return null;
-    const buf = vh.gpa.alloc(u8, size) catch vh.oom();
-    const n = vh.sys(linux.syscall3(.syslog, 3, @intFromPtr(buf.ptr), buf.len)) catch return null;
+    const log = sys.kernelLog() orelse return null;
     var found: ?[]const u8 = null;
-    var lines = mem.tokenizeScalar(u8, buf[0..n], '\n');
+    var lines = mem.tokenizeScalar(u8, log, '\n');
     while (lines.next()) |l| if (mem.indexOf(u8, l, "vh-stage1: done in") != null) {
         found = l;
     };
