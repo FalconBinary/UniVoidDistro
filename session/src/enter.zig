@@ -300,8 +300,13 @@ fn soundNodes() vh.Error!void {
 /// opens and the root has PipeWire. No privilege and no capability, as the session's programs;
 /// no terminal; its output in the runtime directory. PID 1 waits for its pulse socket, at most
 /// 5 seconds; it ends with the session.
+///
+/// The server's process gives up its privileges first and only then looks at the sound cards:
+/// PID 1 itself makes no access check. access(2) runs with the real user's credentials, and
+/// after one in PID 1 a child forked from it could no longer drop its capabilities (EPERM, on
+/// the session workflow's kernel).
 fn sound(s: Session) void {
-    if (!vh.isRegular("/usr/bin/pipewire") or !playable()) return;
+    if (!vh.isRegular("/usr/bin/pipewire")) return;
     const runtime = vh.fmt("/run/user/{d}", .{s.uid});
     const envp = sessionEnv(s, false);
     vh.flush();
@@ -311,6 +316,8 @@ fn sound(s: Session) void {
         sys.noNewPrivs() catch soundFailed("no_new_privs");
         sys.dropCaps() catch soundFailed("capabilities");
         sys.umask(0o077);
+        // no sound card game plays through: no server, and nothing to say
+        if (!playable()) linux.exit_group(0);
         const null_fd = vh.openFd("/dev/null", .{ .ACCMODE = .RDWR, .CLOEXEC = true }, 0) catch soundFailed("/dev/null");
         const log = vh.openFd(vh.fmt("{s}/vh-sound.log", .{runtime}), .{ .ACCMODE = .WRONLY, .CREAT = true, .TRUNC = true, .NOFOLLOW = true, .CLOEXEC = true }, 0o600) catch soundFailed("its log");
         _ = linux.dup2(null_fd, 0);
@@ -322,13 +329,13 @@ fn sound(s: Session) void {
         vh.errno = linux.errno(rc);
         soundFailed("/usr/bin/pipewire");
     }
-    // until its pulse socket is there, or the server has ended (it is reaped here then)
+    // until its pulse socket is there, or the process has ended (it is reaped here then)
     const sock = vh.fmt("{s}/pulse/native", .{runtime});
     var i: usize = 0;
-    while (i < 250 and !vh.pathExists(sock)) : (i += 1) {
+    while (i < 1000 and !vh.pathExists(sock)) : (i += 1) {
         var st: i32 = 0;
         if (linux.wait4(@intCast(pid), &st, linux.W.NOHANG, null) == pid) return;
-        sys.sleepMs(20);
+        sys.sleepMs(5);
     }
 }
 
