@@ -284,6 +284,15 @@ def seccomp_of(label, pattern):
     return ("p=$(pgrep -f " + shq(pattern) + " | head -1); echo \"" + label + ": $(grep -s '^Seccomp:' /proc/$p/status | tr -d '\\t ')\"")
 
 
+# vh-kconf check writes the stock kernel's view of the machine (/var/lib/vh/check/stock.zon) a
+# few seconds into every boot of the stock kernel; each boot's copy stays in TEST_DIR for the end
+CHECK_WAIT = "for i in $(seq 1 60); do test -e /run/vh/check.done && break; sleep 2; done"
+
+
+def keep_view(n):
+    return CHECK_WAIT + f"; cp /var/lib/vh/check/stock.zon {TEST_DIR}/stock-{n}.zon; cat /run/vh/check.done"
+
+
 def step_gameboot(a):
     """vh-game boot on: the twin of the stock UKI and its entry; vh-game play: the gaming boot,
     once, with ia32 for the gaming session alone (the x86_64 filter on every other process
@@ -296,7 +305,7 @@ def step_gameboot(a):
                            "echo \"SECURE_BOOT=$(od -An -tu1 /sys/firmware/efi/efivars/SecureBoot-* 2>/dev/null | awk '{print $NF}')\"")
         print(out)
         rc, out = run(ser, f"rm -rf {TEST_DIR} && install -d -m 0700 {TEST_DIR} && " + snapshot(f"{TEST_DIR}/before") + "; " +
-                      esp_snap(f"{TEST_DIR}/esp-before") + f"; grep -c . {TEST_DIR}/before {TEST_DIR}/esp-before", timeout=3600)
+                      esp_snap(f"{TEST_DIR}/esp-before") + f"; grep -c . {TEST_DIR}/before {TEST_DIR}/esp-before; " + keep_view(1), timeout=3600)
         check("snapshots of the system and of the ESP before the install", rc == 0, out.strip().splitlines()[-1] if out.strip() else "")
         rc, out = run(ser, f"printf '%s\\n' '{vhvm.USER_PASS}' | vh-game install --password-stdin 2>&1 | tail -5", timeout=5400)
         check("vh-game install", "VH_GAME installed" in out, out[-800:].replace("\n", " | "))
@@ -335,8 +344,12 @@ def step_gameboot(a):
     # the gaming boot
     vm, ser = boot(a)
     try:
-        rc, out = run(ser, "vh-limine-update --status; cat /proc/cmdline; vh-game status | tail -2; findmnt /etc/runit/2 || echo NOT_A_MOUNT")
+        rc, out = run(ser, "vh-limine-update --status; cat /proc/cmdline; vh-game status | tail -2; findmnt /etc/runit/2 || echo NOT_A_MOUNT; "
+                           "echo \"HOME_OPTS=$(findmnt -no OPTIONS /home/game)\"; " + keep_view(2))
         print(out)
+        home = re.search(r"HOME_OPTS=(\S*)", out)
+        check("the home of game after a reboot (fstab): nosuid, nodev, exec",
+              home is not None and "nosuid" in home.group(1) and "nodev" in home.group(1) and "noexec" not in home.group(1), home.group(1) if home else out[-300:])
         check("Limine started the gaming entry", re.search(r"started: \S+--games-;", out) is not None and "this boot is the gaming one" in out,
               out[-500:].replace("\n", " | "))
         check("its command line: ia32_emulation=1", " ia32_emulation=1" in out and " ia32_emulation=0" not in out)
@@ -395,7 +408,11 @@ def step_gameboot(a):
         check("the everyday boot: no filter, no getty on tty3, no 32-bit program",
               re.search(r"runsvdir: Seccomp:0", out) is not None and "GETTYS=0" in out and re.search(r"EVERYDAY_RC=126", out) is not None,
               out[-500:].replace("\n", " | "))
-        rc, out = run(ser, "vh-game remove --yes 2>&1 | tail -6", timeout=1800)
+        rc, out = run(ser, keep_view(3) + f"; echo '--- the stock view: the first boot against the gaming boot'; diff {TEST_DIR}/stock-1.zon {TEST_DIR}/stock-2.zon | head -30; "
+                           f"echo '--- the first boot against this one'; diff {TEST_DIR}/stock-1.zon {TEST_DIR}/stock-3.zon | head -30; echo VIEWS_DONE")
+        print(out)
+        rc, out = run(ser, "vh-game remove --yes 2>&1 | grep -E '^VH_GAME|vh-game:|limine.conf|gaming'", timeout=1800)
+        print(out)
         check("vh-game remove, the gaming boot off with it", "VH_GAME boot off" in out and "VH_GAME removed" in out, out[-500:].replace("\n", " | "))
         rc, out = run(ser, snapshot(f"{TEST_DIR}/after") + "; " + esp_snap(f"{TEST_DIR}/esp-after") + "; "
                       f"if cmp -s {TEST_DIR}/before {TEST_DIR}/after; then echo FILES_SAME; else echo DIFFERS:; diff {TEST_DIR}/before {TEST_DIR}/after | "
