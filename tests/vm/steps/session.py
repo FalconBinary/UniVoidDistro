@@ -19,12 +19,14 @@ ROOT = "/var/lib/vh/roots/game"
 # what changes between two boots by itself: the logs, chrony's drift, dhcpcd's lease, the seed
 # of seedrng, the state unbound keeps in its DNSSEC root key (RFC 5011), the hardware clock's
 # drift that stage 3 writes, runsv's state of the services whose supervise directory is on the
-# disk (the system's own, /etc/sv/vh-*: pid and status at every start). Directories are
-# compared without their size (XFS keeps a directory's size)
+# disk (the system's own, /etc/sv/vh-*: pid and status at every start), and vh-kconf check's
+# view of the machine, which every boot of the stock kernel writes anew with the modules it has
+# loaded (they differ from one boot to the next: kvm-smoke 39633551498; each boot's copy is kept
+# and compared below). Directories are compared without their size (XFS keeps a directory's size)
 # /root/.vh-game-test keeps this step's own files across the reboot (/var/tmp is in memory)
 TEST_DIR = "/root/.vh-game-test"
 VOLATILE = ("/var/log", "/var/lib/chrony", "/var/db/dhcpcd", "/var/lib/dhcpcd", "/var/lib/seedrng", "/etc/unbound/var",
-            "/etc/adjtime", "/etc/sv/*/supervise", "/root/.cache", TEST_DIR)
+            "/etc/adjtime", "/etc/sv/*/supervise", "/root/.cache", "/var/lib/vh/check/stock.zon", TEST_DIR)
 PRUNE = " -o ".join(f"-path '{p}'" for p in VOLATILE)
 SNAPSHOT_CMD = ("{ find / -xdev \\( " + PRUNE + " \\) -prune -o \\( -type d -printf '%p\\td\\t%m\\t%U\\t%G\\n' \\) "
                 "-o -printf '%p\\t%y\\t%m\\t%U\\t%G\\t%s\\t%l\\n' | LC_ALL=C sort; "
@@ -104,7 +106,8 @@ def step_game(a):
         rc, out = run(ser, "for i in $(seq 1 60); do test -e /run/vh/check.done && break; sleep 2; done; cat /run/vh/check.done")
         check("this boot's vh-kconf check is done before the snapshot", "VH_CHECK " in out, out[-200:].replace("\n", " | "))
         rc, out = run(ser, f"rm -rf {TEST_DIR} && install -d -m 0700 {TEST_DIR} && " + snapshot(f"{TEST_DIR}/before") +
-                      f"; grep -c . {TEST_DIR}/before; nft list ruleset > {TEST_DIR}/nft-before; cp /etc/vh/hw.zon {TEST_DIR}/hw-before", timeout=3600)
+                      f"; grep -c . {TEST_DIR}/before; nft list ruleset > {TEST_DIR}/nft-before; cp /etc/vh/hw.zon {TEST_DIR}/hw-before; "
+                      f"cp /var/lib/vh/check/stock.zon {TEST_DIR}/stock-1.zon", timeout=3600)
         check("snapshot of the system before the install", rc == 0, out.strip().splitlines()[-1] if out.strip() else "")
         rc, out = run(ser, f"printf '%s\\n' '{vhvm.USER_PASS}' | vh-game install --password-stdin 2>&1 | tail -40", timeout=5400)
         m = re.search(r"VH_GAME installed user=game uid=(\d+) root=\S+ packages=(\S+)", out)
@@ -231,6 +234,8 @@ def step_game(a):
         rc, out = run(ser, "vh-game tty off; sleep 3; echo procs=$(pgrep -u game | wc -l) gettys=$(pgrep -a agetty | grep -c tty3)")
         check("vh-game tty off: the getty and the session end", "procs=0 gettys=0" in out, out[-300:].replace("\n", " | "))
         vm.monitor("sendkey ctrl-alt-f1")
+        rc, out = run(ser, keep_view(2) + f"; echo '--- the stock view: the first boot against this one'; diff {TEST_DIR}/stock-1.zon {TEST_DIR}/stock-2.zon | head -30; echo VIEWS_DONE")
+        print(out)
         rc, out = run(ser, "vh-game remove --yes 2>&1 | tail -5", timeout=1800)
         check("vh-game remove", "VH_GAME removed" in out, out[-500:].replace("\n", " | "))
         rc, out = run(ser, snapshot(f"{TEST_DIR}/after") + "; "
