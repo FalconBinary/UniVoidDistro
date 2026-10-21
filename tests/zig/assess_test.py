@@ -458,6 +458,23 @@ def game_scenario():
            rc != 0 and "no gaming UKI" in out and f.read() == before and sorted(os.listdir(GAME)) == ["linux-6.18.59_1.efi"], out)
     os.remove(f"{UKI}/linux-6.18.60_1.efi")
 
+    # the gaming kernels built on the machine (vh-kconf install puts them in EFI/vh-game): before
+    # the twin, the newest first, the newest two kept; play boots the newest
+    for n, seed in (("linux-6.18.59-vh-game_1.efi", 11), ("linux-6.18.59-vh-game_2.efi", 12), ("linux-6.18.58-vh-game_1.efi", 13)):
+        with open(f"{GAME}/{n}", "wb") as f:
+            f.write(bytes([seed]) * (2000 + seed))
+    rc, out = run()
+    ok("game: the gaming kernels, the newest two, before the twin",
+       rc == 0 and menu()[-3:] == [gid("6.18.59-vh-game_2"), gid("6.18.59-vh-game_1"), gid("6.18.59_1")], str(menu()))
+    ok("game: the oldest gaming kernel deleted, the gaming kernels signed",
+       sorted(os.listdir(GAME)) == ["linux-6.18.59-vh-game_1.efi", "linux-6.18.59-vh-game_2.efi", "linux-6.18.59_1.efi"]
+       and read(f"{GAME}/linux-6.18.59-vh-game_2.efi").endswith(b"vh-test-signed\n"), str(sorted(os.listdir(GAME))) + out)
+    sel, rc, out = boot()
+    rc, out = run("--game-once")
+    ok("game: --game-once boots the newest gaming kernel", rc == 0 and getvar("LoaderEntryOneShot") == gid("6.18.59-vh-game_2"), out)
+    sel, rc, out = boot()
+    ok("game: and the boot is it", sel == gid("6.18.59-vh-game_2"), sel)
+
     # off: the twin, the directory, the entry and a one-shot entry of play go
     run("--game-once")
     os.remove(MARK)
