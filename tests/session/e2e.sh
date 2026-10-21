@@ -8,7 +8,10 @@
 #   3. vh-game install, with a stand-in for thor (xbps-install with thor's arguments; the
 #      packages cut to base-files, bash and coreutils unless VH_TEST_FULL=1) and a plan.env;
 #   4. the session as game, without privileges: vh-game-enter --check and -c;
-#   5. vh-game remove, and the snapshot again: the same, byte for byte.
+#   5. vh-game boot on and off (G3) with a stand-in for vh-limine-update (a container has no
+#      ESP): the marker, the stage-1 script, stage 1 in a boot that is not the gaming one;
+#   6. vh-game remove (the gaming boot on: remove turns it off), and the snapshot again: the
+#      same, byte for byte.
 #   bash tests/session/e2e.sh /src
 set -u
 src=${1:?"the repository copy"}
@@ -30,6 +33,11 @@ install -m 0755 "$src/build/st/bin/vh-game-enter" /usr/local/bin/
 install -m 0755 "$src/build/st/bin/vh-game" "$src/build/st/bin/vh-root" /usr/local/sbin/
 [ -d /etc/sv/agetty-tty3 ] || mkdir -p /etc/sv/agetty-tty3
 mkdir -p /etc/udev/rules.d
+# runit-void's stage 2 and core-services, and the system's /etc/vh, which the gaming boot needs
+# (the image may lack runit)
+install -d -m 0755 /etc/vh
+[ -d /etc/runit/core-services ] || mkdir -p /etc/runit/core-services
+[ -e /etc/runit/2 ] || { printf '#!/bin/sh\nexec runsvdir -P /run/runit/runsvdir/current\n' > /etc/runit/2; chmod 0755 /etc/runit/2; }
 # a sound card's nodes as udev makes them, root:audio 0660: its control node, a playback and a
 # capture PCM, its codec's hwdep, the timer and the sequencer
 getent group audio >/dev/null || groupadd -r audio
@@ -60,6 +68,13 @@ root=$2; shift 2
 exec xbps-install -Sy -r "$root" "$@"
 EOF
 chmod 0755 /tmp/stub/thor
+# vh-limine-update's stand-in: what it was run with, and whether the gaming boot was on
+cat > /tmp/stub/limine-update <<'EOF'
+#!/bin/sh
+[ -e /etc/vh/game-boot ] && on=on || on=off
+echo "limine-update $* game=$on" >> /tmp/limine.calls
+EOF
+chmod 0755 /tmp/stub/limine-update
 printf "# vh-plan\nVH_PLAN_GAME_PACKAGES='mesa-vulkan-lavapipe'\n" > /tmp/plan.env
 
 snap() { # the whole system but the pseudo-file systems, the logs and this test's own files:
@@ -184,8 +199,33 @@ game" ] && ok "vh-game-enter -c: game, host game, PID 2, only its home" || bad "
 	[ -z "$(pgrep -u game)" ] && ok "no process of game after the session" || bad "processes left" "$(pgrep -a -u game)"
 fi
 
+echo "== the gaming boot (G3)"
+lu="--limine-update /tmp/stub/limine-update"
+: > /tmp/limine.calls
+# shellcheck disable=SC2086
+(umask 077; vh-game boot on --any-arch $lu) > /tmp/boot.out 2>&1 && grep -qx 'VH_GAME boot on' /tmp/boot.out \
+	&& ok "vh-game boot on" || bad "boot on" "$(tail -5 /tmp/boot.out | tr '\n' '|')"
+[ "$(head -1 /etc/vh/game-boot 2>/dev/null)" = '#!/usr/local/sbin/vh-game stage2' ] && [ "$(stat -c %a /etc/vh/game-boot)" = 755 ] \
+	&& ok "the marker: the stage 2 of the gaming boot, 0755" || bad "the marker" "$(ls -l /etc/vh/game-boot 2>&1; head -1 /etc/vh/game-boot 2>&1)"
+grep -q '/usr/local/sbin/vh-game stage1' /etc/runit/core-services/98-vh-game.sh 2>/dev/null && [ "$(stat -c %a /etc/runit/core-services/98-vh-game.sh)" = 644 ] \
+	&& ok "the stage-1 script, 0644" || bad "the stage-1 script" "$(ls -l /etc/runit/core-services 2>&1 | tr '\n' '|')"
+[ "$(cat /tmp/limine.calls)" = "limine-update  game=on" ] && ok "vh-limine-update ran with the gaming boot on" || bad "vh-limine-update's run" "$(cat /tmp/limine.calls)"
+vh-game status | tail -1 | grep -q ' boot=on this=everyday ' && ok "vh-game status: the gaming boot on, this boot an everyday one" || bad "status" "$(vh-game status | tail -1)"
+# this container's kernel command line is no gaming boot's: stage 1 does nothing, stage 2 by hand is refused
+vh-game stage1 > /tmp/stage1.out 2>&1 && [ ! -s /tmp/stage1.out ] && ! mountpoint -q /etc/runit/2 \
+	&& ok "vh-game stage1 outside the gaming boot: nothing" || bad "stage1" "$(cat /tmp/stage1.out)"
+vh-game stage2 > /tmp/stage2.out 2>&1 && bad "vh-game stage2 by hand runs" || { grep -q 'which runit runs' /tmp/stage2.out && ok "vh-game stage2 by hand is refused" || bad "stage2" "$(cat /tmp/stage2.out)"; }
+# shellcheck disable=SC2086
+vh-game boot off $lu > /tmp/off.out 2>&1 && [ ! -e /etc/vh/game-boot ] && [ ! -e /etc/runit/core-services/98-vh-game.sh ] \
+	&& [ "$(tail -1 /tmp/limine.calls)" = "limine-update  game=off" ] && ok "vh-game boot off: the marker and the script gone, vh-limine-update ran" \
+	|| bad "boot off" "$(tail -3 /tmp/off.out | tr '\n' '|') $(tail -1 /tmp/limine.calls)"
+# shellcheck disable=SC2086
+vh-game boot on --any-arch $lu > /dev/null 2>&1 || bad "boot on again"
+
 echo "== vh-game remove"
-(umask 077; vh-game remove --yes) > /tmp/remove.out 2>&1 && ok "remove" || bad "remove" "$(tail -5 /tmp/remove.out | tr '\n' '|')"
+# shellcheck disable=SC2086
+(umask 077; vh-game remove --yes $lu) > /tmp/remove.out 2>&1 && ok "remove" || bad "remove" "$(tail -5 /tmp/remove.out | tr '\n' '|')"
+grep -q '^VH_GAME boot off' /tmp/remove.out && [ ! -e /etc/vh/game-boot ] && ok "remove turns the gaming boot off" || bad "remove and the gaming boot" "$(grep VH_GAME /tmp/remove.out | tr '\n' '|')"
 grep -E '^VH_GAME|vh-game:|vh-root:' /tmp/remove.out
 snap /tmp/after
 if cmp -s /tmp/before /tmp/after; then
@@ -200,6 +240,8 @@ findmnt /home/game >/dev/null || findmnt /var/lib/vh/roots >/dev/null && bad "a 
 [ -z "$(getfacl -s -p /dev/snd/* 2>/dev/null)" ] && [ "$(stat -c %a /dev/snd/* | sort -u)" = 660 ] \
 	&& ok "the sound nodes: no ACL left, 0660 as udev made them" || bad "the sound nodes after the removal" "$(getfacl -s -p /dev/snd/* 2>&1 | tr '\n' '|')"
 vh-game remove --yes > /tmp/remove2.out 2>&1 && ok "a second removal changes nothing" || bad "second removal" "$(cat /tmp/remove2.out)"
+# shellcheck disable=SC2086
+vh-game boot on --any-arch $lu > /tmp/boot2.out 2>&1 && bad "boot on without the session" || { grep -q 'not installed' /tmp/boot2.out && [ ! -e /etc/vh/game-boot ] && ok "boot on without the session is refused" || bad "boot on without the session" "$(cat /tmp/boot2.out)"; }
 snap /tmp/after2
 cmp -s /tmp/before /tmp/after2 && ok "still the same" || bad "the second removal changed the system"
 

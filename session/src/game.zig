@@ -8,13 +8,19 @@
 //!   doas vh-game tty on     the getty of tty3, until the next boot or tty off: no process of the
 //!                           gaming session runs before this
 //!   doas vh-game tty off
-//!   doas vh-game remove     everything install made, the home with it; the system is then what
-//!                           it was before the install, byte for byte
+//!   doas vh-game boot on    the gaming boot (G3): the stock UKI's twin with ia32 on, the last
+//!                           entry of Limine's menu; in that boot every process but the gaming
+//!                           session's is under a filter that kills a 32-bit system call (boot.zig)
+//!   doas vh-game boot off
+//!   doas vh-game play       the next boot, once, is the gaming one: reboot into it now
+//!   doas vh-game remove     everything install and boot on made, the home with it; the system
+//!                           is then what it was before the install, byte for byte
 //!   vh-game status
 //!
-//! install takes --password-stdin, --password-hash HASH, --plan-env FILE; remove takes --yes.
-//! --prefix DIR acts on a system root in DIR, --thor PATH runs another thor, --any-arch
-//! installs on another architecture than x86_64 (the tests).
+//! install takes --password-stdin, --password-hash HASH, --plan-env FILE; remove takes --yes;
+//! play takes --no-reboot. --prefix DIR acts on a system root in DIR, --thor PATH runs another
+//! thor, --limine-update PATH another vh-limine-update, --any-arch installs on another
+//! architecture than x86_64 (the tests). stage1 and stage2 are the gaming boot's own (runit).
 //! Every change of a system file is a line added and taken away again exactly (lines.zig,
 //! accounts.zig). Static PIE, ReleaseSafe, std.os.linux only (zig/README.md).
 const std = @import("std");
@@ -28,6 +34,7 @@ const roots = @import("roots.zig");
 const rmtree = @import("rmtree.zig");
 const sys = @import("sys.zig");
 const acl = @import("acl.zig");
+const boot = @import("boot.zig");
 const linux = std.os.linux;
 const mem = std.mem;
 const G = common.game;
@@ -35,6 +42,8 @@ const G = common.game;
 const usage =
     \\usage: doas vh-game install [--password-stdin | --password-hash HASH] [--plan-env FILE]
     \\       doas vh-game tty on|off
+    \\       doas vh-game boot on|off
+    \\       doas vh-game play [--no-reboot]
     \\       doas vh-game remove [--yes]
     \\       vh-game status
     \\
@@ -48,6 +57,10 @@ const Cfg = struct {
     yes: bool = false,
     /// the tests of another architecture (tests/session/run.sh on an ARM Mac)
     any_arch: bool = false,
+    /// play: the one-shot entry only, the reboot left to the user (the VM rig)
+    no_reboot: bool = false,
+    /// vh-limine-update, or a stand-in for the tests (the ESP is not mounted for one)
+    limine: ?[]const u8 = null,
 };
 
 pub fn main(init: std.process.Init.Minimal) void {
@@ -67,7 +80,9 @@ pub fn main(init: std.process.Init.Minimal) void {
             c.yes = true;
         } else if (vh.eql(a, "--any-arch")) {
             c.any_arch = true;
-        } else if (vh.eql(a, "--prefix") or vh.eql(a, "--thor") or vh.eql(a, "--password-hash") or vh.eql(a, "--plan-env")) {
+        } else if (vh.eql(a, "--no-reboot")) {
+            c.no_reboot = true;
+        } else if (vh.eql(a, "--prefix") or vh.eql(a, "--thor") or vh.eql(a, "--password-hash") or vh.eql(a, "--plan-env") or vh.eql(a, "--limine-update")) {
             if (i + 1 >= all.len) vh.die("{s} needs a value", .{a});
             i += 1;
             const v = all[i];
@@ -75,6 +90,7 @@ pub fn main(init: std.process.Init.Minimal) void {
             if (vh.eql(a, "--thor")) c.o.thor = v;
             if (vh.eql(a, "--password-hash")) c.password_hash = v;
             if (vh.eql(a, "--plan-env")) c.plan_env = v;
+            if (vh.eql(a, "--limine-update")) c.limine = v;
         } else args.append(vh.gpa, a) catch vh.oom();
     }
     const argv = args.items;
@@ -95,6 +111,13 @@ pub fn main(init: std.process.Init.Minimal) void {
     }
     if (vh.eql(cmd, "tty") and argv.len == 2 and vh.eql(argv[1], "on")) vh.exit(ttyOn(c));
     if (vh.eql(cmd, "tty") and argv.len == 2 and vh.eql(argv[1], "off")) vh.exit(ttyOff(c));
+    if (vh.eql(cmd, "boot") and argv.len == 2 and vh.eql(argv[1], "on")) vh.exit(bootOn(c));
+    if (vh.eql(cmd, "boot") and argv.len == 2 and vh.eql(argv[1], "off")) vh.exit(bootOff(c));
+    if (vh.eql(cmd, "play") and argv.len == 1) vh.exit(play(c));
+    // the gaming boot's own: stage 1 (98-vh-game.sh, vh-stage1) and stage 2 (runit, through the
+    // marker's first line)
+    if (vh.eql(cmd, "stage1") and argv.len == 1) vh.exit(boot.stage1());
+    if (vh.eql(cmd, "stage2")) boot.stage2();
     vh.warn("unknown command {s}", .{cmd});
     vh.outs(usage);
     vh.exit(2);
@@ -196,7 +219,7 @@ fn install(c: Cfg) void {
     const nodes = if (S.prefix.len == 0) soundAcl(id, true) else 0;
     vh.log("sound: {d} playback and control node(s) of the sound cards for {s} (an ACL entry each; {s})", .{ nodes, G.user, G.sound_rule });
 
-    vh.log("installed: log in as {s} on {s} after doas vh-game tty on (until the next boot)", .{ G.user, G.tty });
+    vh.log("installed: log in as {s} on {s} after doas vh-game tty on (until the next boot); the gaming boot with ia32: doas vh-game boot on", .{ G.user, G.tty });
     vh.out("VH_GAME installed user={s} uid={d} root={s} packages={s} sound={d}\n", .{ G.user, id, roots.path(.{}, G.root), mem.join(vh.gpa, ",", pkgs) catch vh.oom(), nodes });
 }
 
@@ -410,7 +433,10 @@ fn remove(c: Cfg) void {
     }
     const uid: ?u32 = if (accounts.find(passwd0, G.user)) |l| std.fmt.parseInt(u32, accounts.field(l, 2) orelse "", 10) catch null else null;
 
-    // the session first: the getty, then every process of game
+    // the gaming boot first: its entry and the twin off the ESP, its files out of /etc
+    if (vh.pathExists(S.path(boot.marker)) or vh.pathExists(S.path(boot.core_script))) _ = bootOff(c);
+
+    // the session: the getty, then every process of game
     if (S.prefix.len == 0) _ = ttyOff(c);
     if (uid) |id| endProcesses(id);
 
@@ -458,17 +484,6 @@ fn endProcesses(uid: u32) void {
 
 // ---------------------------------------------------------------- tty3
 
-/// our runsv of the getty: its command line is exactly "runsv /etc/sv/agetty-tty3"
-fn gettyRunsv() ?linux.pid_t {
-    const want = "runsv\x00" ++ G.getty ++ "\x00";
-    const names = vh.listDir("/proc") catch return null;
-    for (names) |n| {
-        const pid = std.fmt.parseInt(linux.pid_t, n, 10) catch continue;
-        if (vh.eql(sys.cmdline(pid), want)) return pid;
-    }
-    return null;
-}
-
 fn ttyOn(c: Cfg) u8 {
     if (c.o.sys.prefix.len > 0) vh.die("tty on acts on the running system only", .{});
     const f = accounts.Files.lock("");
@@ -479,39 +494,108 @@ fn ttyOn(c: Cfg) u8 {
         vh.log("{s} has a getty at every boot already (a link in /etc/runit/runsvdir/default)", .{G.tty});
         return 0;
     }
-    if (gettyRunsv() != null) {
+    if (boot.gettyRunsv() != null) {
         vh.log("the login of {s} on {s} is on already", .{ G.user, G.tty });
         return 0;
     }
-    // runsv keeps its state in /run/runit/supervise.agetty-tty3, beside the boot's services
-    sys.mkdir("/run/runit", 0o755) catch vh.die("/run/runit: {s}", .{vh.serr()});
-    const pid = vh.sys(linux.fork()) catch vh.die("fork: {s}", .{vh.serr()});
-    if (pid == 0) {
-        _ = linux.setsid();
-        const null_fd = vh.openFd("/dev/null", .{ .ACCMODE = .RDWR }, 0) catch linux.exit_group(127);
-        for ([_]i32{ 0, 1, 2 }) |fd| _ = linux.dup2(null_fd, fd);
-        _ = linux.chdir("/");
-        const argv = [_:null]?[*:0]const u8{ "runsv", G.getty };
-        const envp = [_:null]?[*:0]const u8{"PATH=/usr/bin:/usr/sbin:/bin:/sbin"};
-        _ = linux.execve("/usr/bin/runsv", &argv, &envp);
-        linux.exit_group(127);
-    }
+    // in the gaming boot a getty started from here would inherit the x86_64 filter: tty3's login
+    // runs outside it only as the boot starts it
+    if (boot.gamingBoot(.{}) and boot.filtered())
+        vh.die("this is the gaming boot: its login on {s} starts with the boot only, outside the x86_64 filter; it comes back with the next gaming boot (doas vh-game play)", .{G.tty});
+    boot.spawnGetty() catch vh.die("runsv {s}: {s}", .{ G.getty, vh.serr() });
     sys.sleepMs(500);
-    if (gettyRunsv() == null) vh.die("runsv {s} did not start", .{G.getty});
+    if (boot.gettyRunsv() == null) vh.die("runsv {s} did not start", .{G.getty});
     vh.log("the login of {s} is on {s} until the next boot (doas vh-game tty off ends it)", .{ G.user, G.tty });
     return 0;
 }
 
 fn ttyOff(c: Cfg) u8 {
     if (c.o.sys.prefix.len > 0) return 0;
-    const pid = gettyRunsv() orelse return 0;
+    const pid = boot.gettyRunsv() orelse return 0;
     // TERM makes runsv stop the getty and exit (as sv exit)
     _ = linux.kill(pid, .TERM);
     var i: usize = 0;
-    while (i < 50 and gettyRunsv() != null) : (i += 1) sys.sleepMs(100);
-    if (gettyRunsv() != null) vh.die("runsv {s} does not end", .{G.getty});
+    while (i < 50 and boot.gettyRunsv() != null) : (i += 1) sys.sleepMs(100);
+    if (boot.gettyRunsv() != null) vh.die("runsv {s} does not end", .{G.getty});
     vh.log("the login of {s} on {s} is off", .{ G.user, G.tty });
     return 0;
+}
+
+// ---------------------------------------------------------------- the gaming boot
+
+/// vh-game boot on: the marker and the stage-1 script, then vh-limine-update makes the twin of
+/// the newest stock UKI and its entry. A failure leaves the gaming boot off.
+fn bootOn(c: Cfg) u8 {
+    const S = c.o.sys;
+    if (!c.any_arch and builtin.cpu.arch != .x86_64) vh.die("the gaming boot is for x86_64 machines", .{});
+    // the session first: a gaming boot without it would only open ia32
+    const passwd = vh.readFile(S.path("/etc/passwd")) catch "";
+    if (accounts.find(passwd, G.user) == null or !roots.exists(c.o, G.root)) vh.die("the gaming session is not installed (doas vh-game install)", .{});
+    if (!vh.isRegular(S.path(boot.stage2_path))) vh.die("{s}: missing (runit-void)", .{S.path(boot.stage2_path)});
+    if (!vh.isDir(S.path("/etc/runit/core-services"))) vh.die("{s}: missing (runit-void)", .{S.path("/etc/runit/core-services")});
+    if (!vh.isDir(S.path("/etc/vh"))) vh.die("{s}: missing: the system is not one UniVoidDistro installed", .{S.path("/etc/vh")});
+    vh.writeAtomic(S.path(boot.marker), boot.marker_text, 0o755);
+    vh.writeAtomic(S.path(boot.core_script), boot.core_script_text, 0o644);
+    const rc = limineUpdate(c, &.{});
+    if (rc != 0) {
+        vh.unlink(S.path(boot.marker)) catch {};
+        vh.unlink(S.path(boot.core_script)) catch {};
+        _ = limineUpdate(c, &.{});
+        vh.die("vh-limine-update failed ({d}): the gaming boot stays off", .{rc});
+    }
+    vh.log("the gaming boot is on: the last entry of Limine's menu; doas vh-game play reboots into it once", .{});
+    vh.outs("VH_GAME boot on\n");
+    return 0;
+}
+
+/// vh-game boot off: the marker and the stage-1 script go, then vh-limine-update takes the
+/// twin and its entry away (and a one-shot entry of play that waits for it)
+fn bootOff(c: Cfg) u8 {
+    const S = c.o.sys;
+    for ([_][]const u8{ boot.marker, boot.core_script }) |p| if (vh.pathExists(S.path(p)))
+        vh.unlink(S.path(p)) catch vh.die("{s}: {s}", .{ S.path(p), vh.serr() });
+    const rc = limineUpdate(c, &.{});
+    if (rc != 0) vh.die("vh-limine-update failed ({d}): the gaming entry is still in the menu until it runs (doas vh-game boot off)", .{rc});
+    vh.log("the gaming boot is off: its entry and its UKI are gone", .{});
+    vh.outs("VH_GAME boot off\n");
+    return 0;
+}
+
+/// vh-game play: the gaming entry is the next boot's, once (Limine's one-shot entry), then the
+/// reboot; the boot after the gaming one is the everyday one again
+fn play(c: Cfg) u8 {
+    if (c.o.sys.prefix.len > 0) vh.die("play acts on the running system only", .{});
+    if (!vh.pathExists(boot.marker)) vh.die("the gaming boot is off: doas vh-game boot on", .{});
+    const rc = vh.run(&.{ c.limine orelse "/usr/local/sbin/vh-limine-update", "--game-once" });
+    if (rc != 0) vh.die("vh-limine-update --game-once failed ({d})", .{rc});
+    if (c.no_reboot) {
+        vh.log("the next boot is the gaming one", .{});
+        return 0;
+    }
+    vh.log("rebooting into the gaming boot", .{});
+    vh.flush();
+    const r = vh.run(&.{"/usr/bin/reboot"});
+    if (r != 0) vh.die("reboot failed ({d}): the next boot is the gaming one all the same", .{r});
+    return 0;
+}
+
+/// vh-limine-update with the ESP mounted: it is noauto in fstab, so it is mounted for the run
+/// and unmounted after it, as the kernel hooks do (05-vh-esp, 99-vh-esp). A stand-in of the
+/// tests (--limine-update) runs without it.
+fn limineUpdate(c: Cfg, extra: []const []const u8) u8 {
+    var argv: std.ArrayList([]const u8) = .empty;
+    argv.append(vh.gpa, c.limine orelse "/usr/local/sbin/vh-limine-update") catch vh.oom();
+    argv.appendSlice(vh.gpa, extra) catch vh.oom();
+    if (c.limine != null) return vh.run(argv.items);
+    const esp = "/boot/efi";
+    const mounted = !roots.isMountPoint(esp);
+    if (mounted and vh.run(&.{ "/usr/bin/mount", esp }) != 0) vh.die("could not mount the ESP ({s})", .{esp});
+    const rc = vh.run(argv.items);
+    if (mounted) {
+        linux.sync();
+        if (vh.run(&.{ "/usr/bin/umount", esp }) != 0) vh.warn("{s} is still mounted: doas umount {s}", .{ esp, esp });
+    }
+    return rc;
 }
 
 // ---------------------------------------------------------------- status
@@ -528,7 +612,7 @@ fn status(c: Cfg) u8 {
         pol.read(vh.fmt("{s}/etc/thor/policy.conf", .{root}), false);
         vh.out("root: {s}, {d} packages, thor policy {s}\n", .{ root, roots.packageCount(root), pol.get("mode", "?") });
     } else vh.out("root: none\n", .{});
-    const tty_on = S.prefix.len == 0 and gettyRunsv() != null;
+    const tty_on = S.prefix.len == 0 and boot.gettyRunsv() != null;
     var sessions: usize = 0;
     var sound: usize = 0;
     if (line) |l| if (std.fmt.parseInt(u32, accounts.field(l, 2) orelse "", 10)) |id| {
@@ -537,7 +621,11 @@ fn status(c: Cfg) u8 {
     } else |_| {};
     vh.out("{s}: {s}; processes of {s}: {d}\n", .{ G.tty, if (tty_on) "on (until the next boot)" else "off", G.user, sessions });
     vh.out("sound: {d} playback and control node(s) for {s}; the udev rule {s}\n", .{ sound, G.user, if (vh.pathExists(S.path(G.sound_rule))) "in place" else "missing" });
-    vh.out("VH_GAME status installed={s} tty={s} processes={d} sound={d}\n", .{ if (installed) "yes" else "no", if (tty_on) "on" else "off", sessions, sound });
+    const boot_on = vh.pathExists(S.path(boot.marker));
+    const gaming = boot.gamingBoot(S);
+    vh.out("the gaming boot: {s}; this boot is {s}\n", .{ if (boot_on) "on (doas vh-game play)" else "off", if (gaming) "the gaming one" else "an everyday one" });
+    // sound stays last: the tests read the line's end
+    vh.out("VH_GAME status installed={s} tty={s} processes={d} boot={s} this={s} sound={d}\n", .{ if (installed) "yes" else "no", if (tty_on) "on" else "off", sessions, if (boot_on) "on" else "off", if (gaming) "game" else "everyday", sound });
     return 0;
 }
 
