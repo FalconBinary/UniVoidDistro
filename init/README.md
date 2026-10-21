@@ -47,6 +47,7 @@ doas vh-stage1 --rollback    # /etc/runit/1.orig back
 | dmesg | 97-dmesg.sh | syslog(2) into /var/log/dmesg.log (0600 under dmesg_restrict) |
 | sbin-merge | 98-sbin-merge.sh | the /usr/sbin symlink of old installations |
 | cleanup | 99-cleanup.sh | wtmp/btmp/lastlog, /tmp/.X11-unix, the one-shot flag files removed |
+| vh-game | 98-vh-game.sh (`vh-game boot on`, [docs/uni/game.md](../docs/uni/game.md#g3a-the-gaming-boot)) | with the script there and `ia32_emulation=1` on the command line, `vh-game stage1` by argv: the controllers' drivers, the marker bound over /etc/runit/2 |
 | vh-modlock | 99-zz-vh-modlock.sh | one `modprobe -a` with /etc/vh/modules.preload, then kernel.modules_disabled=1 |
 
 Markers: `vh-stage1: start`, `vh-stage1: done in N ms (E errors)` and `vh-stage1: steps a=1 b=2 ...`

@@ -1,8 +1,8 @@
 //! vh-stage1: the core-services of void-hardperf-light natively (rootfs/etc/runit/core-services):
 //! zram (05), nftables with the fail-closed ruleset (06), THP (07), AppArmor (09), the
 //! sandbox directory and the power profile (11, vh-power boot), the SUID strip (12,
-//! vh-suid-strip --quiet) and the module lock (99-zz). nft, apparmor_parser and modprobe
-//! are run by argv; everything else is system calls.
+//! vh-suid-strip --quiet), the gaming boot (98, vh-game boot on) and the module lock (99-zz).
+//! nft, apparmor_parser, modprobe and vh-game are run by argv; everything else is system calls.
 const std = @import("std");
 const linux = std.os.linux;
 const mem = std.mem;
@@ -332,6 +332,21 @@ fn stripCaps(path: []const u8, what: []const u8) void {
         return;
     };
     sys.detail("{s}: {s}", .{ what, path });
+}
+
+// ---------------------------------------------------------------- 98-vh-game.sh
+
+/// The gaming boot (vh-game boot on, docs/uni/game.md): vh-game stage1 by argv, while vh-game's
+/// stage-1 script is there and the command line turns ia32 on; vh-game itself decides (the last
+/// ia32_emulation= of the command line) and loads the controllers' drivers before the module
+/// lock below, then binds its marker over /etc/runit/2 for stage 2.
+pub fn game() void {
+    if (!vh.pathExists(sys.p("/etc/runit/core-services/98-vh-game.sh"))) return;
+    const cmdline = vh.readFile(sys.p("/proc/cmdline")) catch return;
+    if (mem.indexOf(u8, cmdline, "ia32_emulation=1") == null) return;
+    const prog = sys.p("/usr/local/sbin/vh-game");
+    if (!vh.isRegular(prog)) return sys.note("! the gaming boot: {s} is missing", .{prog});
+    if (sys.exec(&.{ prog, "stage1" }) != 0) sys.note("! vh-game stage1 failed: this gaming boot has no x86_64 filter", .{});
 }
 
 // ---------------------------------------------------------------- 99-zz-vh-modlock.sh

@@ -73,6 +73,7 @@ pub const steps = [_]Step{
     .{ .name = "vh-suid", .run = vhsteps.suid }, // 12-vh-suid.sh
     .{ .name = "dmesg", .run = misc.dmesgLog }, // 97-dmesg.sh
     .{ .name = "sbin-merge", .run = misc.sbinMerge }, // 98-sbin-merge.sh
+    .{ .name = "vh-game", .run = vhsteps.game }, // 98-vh-game.sh (vh-game boot on)
     .{ .name = "cleanup", .run = misc.cleanup }, // 99-cleanup.sh
     .{ .name = "vh-modlock", .run = vhsteps.modlock }, // 99-zz-vh-modlock.sh
 };
@@ -252,7 +253,7 @@ const testing = std.testing;
 
 test "steps: the order of the core-services" {
     var prev: usize = 0;
-    for ([_][]const u8{ "pseudofs", "udev-settle", "remount-root", "vh-mounts", "vh-zram", "vh-nftables", "sysctl", "vh-apparmor", "vh-suid", "cleanup", "vh-modlock" }) |name| {
+    for ([_][]const u8{ "pseudofs", "udev-settle", "remount-root", "vh-mounts", "vh-zram", "vh-nftables", "sysctl", "vh-apparmor", "vh-suid", "vh-game", "cleanup", "vh-modlock" }) |name| {
         var idx: usize = 0;
         for (steps, 0..) |s, i| if (vh.eql(s.name, name)) {
             idx = i;
