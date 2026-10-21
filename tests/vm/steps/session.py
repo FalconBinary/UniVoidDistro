@@ -20,9 +20,10 @@ ROOT = "/var/lib/vh/roots/game"
 # of seedrng, the state unbound keeps in its DNSSEC root key (RFC 5011), the hardware clock's
 # drift that stage 3 writes, runsv's state of the services whose supervise directory is on the
 # disk (the system's own, /etc/sv/vh-*: pid and status at every start), and vh-kconf check's
-# view of the machine, which every boot of the stock kernel writes anew with the modules it has
-# loaded (they differ from one boot to the next: kvm-smoke 39633551498; each boot's copy is kept
-# and compared below). Directories are compared without their size (XFS keeps a directory's size)
+# view of the machine, which every boot of the stock kernel writes anew: its MemTotal differs by
+# a few KiB from one boot to the next (kvm-smoke 39639874481), the gaming boot's lists the
+# controllers' drivers; each boot's copy is kept and compared below. Directories are compared
+# without their size (XFS keeps a directory's size)
 # /root/.vh-game-test keeps this step's own files across the reboot (/var/tmp is in memory)
 TEST_DIR = "/root/.vh-game-test"
 VOLATILE = ("/var/log", "/var/lib/chrony", "/var/db/dhcpcd", "/var/lib/dhcpcd", "/var/lib/seedrng", "/etc/unbound/var",
