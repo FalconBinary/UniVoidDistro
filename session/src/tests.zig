@@ -8,6 +8,8 @@ test {
     _ = @import("rmtree.zig");
     _ = @import("acl.zig");
     _ = @import("boot.zig");
+    _ = @import("key.zig");
+    _ = @import("kbuild.zig");
     _ = @import("roots.zig");
     _ = @import("sys.zig");
     _ = @import("enter.zig");

@@ -1,0 +1,10 @@
+// session/profiles/keys.zon: OpenSSL for the gaming kernel's module key (vh-game key, track G,
+// G3b): made for one use and removed after it, so that the system needs no openssl of its own.
+.{
+    .name = "keys",
+    .why = "OpenSSL for the module key of the gaming kernel, for one use",
+    .packages = .{ "base-files", "openssl" },
+    .noextract = .{ "/usr/share/doc/*", "/usr/share/man/*", "/usr/share/info/*", "/usr/lib/firmware/*" },
+    .repositories = .{"00-repository-main.conf"},
+    .mode = 0o700,
+}

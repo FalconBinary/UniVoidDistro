@@ -34,8 +34,9 @@ install -m 0755 "$src/build/st/bin/vh-game" "$src/build/st/bin/vh-root" /usr/loc
 [ -d /etc/sv/agetty-tty3 ] || mkdir -p /etc/sv/agetty-tty3
 mkdir -p /etc/udev/rules.d
 # runit-void's stage 2 and core-services, and the system's /etc/vh, which the gaming boot needs
-# (the image may lack runit)
+# (the image may lack runit); sbctl's keys, beside which the module key lives
 install -d -m 0755 /etc/vh
+install -d -m 0700 /var/lib/sbctl /var/lib/sbctl/keys
 [ -d /etc/runit/core-services ] || mkdir -p /etc/runit/core-services
 [ -e /etc/runit/2 ] || { printf '#!/bin/sh\nexec runsvdir -P /run/runit/runsvdir/current\n' > /etc/runit/2; chmod 0755 /etc/runit/2; }
 # a sound card's nodes as udev makes them, root:audio 0660: its control node, a playback and a
@@ -52,8 +53,10 @@ done
 # /var/lib/vh as vh-limine-update makes it, for root alone: vh-root lets game, and nobody else,
 # pass through it while the root exists (an ACL), and takes that away with the removal
 mkdir -p /var/lib/vh && chmod 0700 /var/lib/vh
-# getfacl for the snapshots (the system has acl-progs; this image does not)
+# getfacl for the snapshots (the system has acl-progs; this image does not); openssl to check
+# the module key (the system has none: vh-game brings its own for the key)
 command -v getfacl >/dev/null || xbps-install -Sy acl-progs >/dev/null 2>&1 || xbps-install -Sy acl-progs
+command -v openssl >/dev/null || xbps-install -Sy openssl >/dev/null 2>&1 || true
 mkdir -p /tmp/stub
 cat > /tmp/stub/thor <<'EOF'
 #!/bin/sh
@@ -64,7 +67,8 @@ cmd=$1; shift
 [ "$1" = -r ] || exit 2
 root=$2; shift 2
 [ "$cmd" = update ] && exec xbps-install -Syu -r "$root"
-[ "${VH_TEST_FULL:-0}" = 1 ] || set -- base-files bash coreutils
+# the gaming root cut short unless VH_TEST_FULL=1; the other profiles as they are
+case $root in */roots/game) [ "${VH_TEST_FULL:-0}" = 1 ] || set -- base-files bash coreutils ;; esac
 exec xbps-install -Sy -r "$root" "$@"
 EOF
 chmod 0755 /tmp/stub/thor
@@ -222,10 +226,33 @@ vh-game boot off $lu > /tmp/off.out 2>&1 && [ ! -e /etc/vh/game-boot ] && [ ! -e
 # shellcheck disable=SC2086
 vh-game boot on --any-arch $lu > /dev/null 2>&1 || bad "boot on again"
 
+echo "== the module key (G3b)"
+printf '%s\n' 'short' | vh-game key new --password-stdin --thor /tmp/stub/thor > /tmp/key3.out 2>&1; grep -q 'at least 12' /tmp/key3.out && [ ! -e /var/lib/sbctl/keys/vh-game ] \
+	&& ok "a short passphrase is refused, nothing made" || bad "short passphrase" "$(cat /tmp/key3.out)"
+# shellcheck disable=SC2086
+printf '%s\n' 'a passphrase of the test' | vh-game key new --password-stdin --thor /tmp/stub/thor > /tmp/key.out 2>&1 \
+	&& grep -q '^VH_GAME key fingerprint=' /tmp/key.out && ok "vh-game key new" || bad "key new" "$(tail -5 /tmp/key.out | tr '\n' '|')"
+k=/var/lib/sbctl/keys/vh-game
+[ "$(stat -c %a $k 2>/dev/null)" = 700 ] && [ "$(stat -c %a $k/module.key 2>/dev/null)" = 600 ] && head -1 $k/module.key | grep -qx -- '-----BEGIN ENCRYPTED PRIVATE KEY-----' \
+	&& ok "the module key: 0700, the private key 0600 and encrypted" || bad "the module key's files" "$(ls -l $k 2>&1 | tr '\n' '|')"
+fp=$(sed -n 's/^VH_GAME key fingerprint=//p' /tmp/key.out)
+vh-game key show | grep -q "^VH_GAME key fingerprint=$fp private=encrypted$" && ok "vh-game key show: the same fingerprint, encrypted" || bad "key show" "$(vh-game key show 2>&1 | tail -1)"
+if command -v openssl >/dev/null; then
+	openssl x509 -in $k/module.crt -noout -text > /tmp/cert.txt 2>&1
+	grep -q 'Public-Key: (4096 bit)' /tmp/cert.txt && grep -q 'sha512WithRSAEncryption' /tmp/cert.txt && grep -q 'CA:FALSE' /tmp/cert.txt && grep -q 'Digital Signature' /tmp/cert.txt \
+		&& ok "the certificate: RSA-4096, SHA-512, not a CA, digital signature" || bad "the certificate" "$(tr '\n' '|' < /tmp/cert.txt | head -c 600)"
+	openssl pkey -in $k/module.key -passin pass:'a passphrase of the test' -noout 2>/dev/null && ok "the passphrase opens the key" || bad "the passphrase does not open the key"
+	openssl pkey -in $k/module.key -passin pass:wrong -noout 2>/dev/null && bad "a wrong passphrase opens the key" || ok "a wrong passphrase does not"
+fi
+[ ! -e /var/lib/vh/roots/keys ] && ok "OpenSSL's root is gone after the key" || bad "the keys root stays"
+printf '%s\n' 'a passphrase of the test' | vh-game key new --password-stdin --thor /tmp/stub/thor > /tmp/key2.out 2>&1 \
+	&& bad "a second key new" || { grep -q 'exists already' /tmp/key2.out && ok "a second key new is refused" || bad "second key new" "$(cat /tmp/key2.out)"; }
+
 echo "== vh-game remove"
 # shellcheck disable=SC2086
 (umask 077; vh-game remove --yes $lu) > /tmp/remove.out 2>&1 && ok "remove" || bad "remove" "$(tail -5 /tmp/remove.out | tr '\n' '|')"
 grep -q '^VH_GAME boot off' /tmp/remove.out && [ ! -e /etc/vh/game-boot ] && ok "remove turns the gaming boot off" || bad "remove and the gaming boot" "$(grep VH_GAME /tmp/remove.out | tr '\n' '|')"
+[ ! -e /var/lib/sbctl/keys/vh-game ] && ok "remove takes the module key away" || bad "the module key stays after remove"
 grep -E '^VH_GAME|vh-game:|vh-root:' /tmp/remove.out
 snap /tmp/after
 if cmp -s /tmp/before /tmp/after; then

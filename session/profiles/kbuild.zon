@@ -1,0 +1,19 @@
+// session/profiles/kbuild.zon: the build root of the gaming kernel (vh-game kernel build, track G,
+// G3b). Compiled into vh-root and vh-game. Made for a build and removed after it: no compiler
+// stays on the disk between builds. The build runs in it without privileges and without network
+// (session/src/kbuild.zig).
+.{
+    .name = "kbuild",
+    .why = "the gaming kernel's build root: clang, lld, make and the kernel's build tools, for one build",
+    // the kernel's build with LLVM=1: clang, lld and LLVM's binutils; Kconfig's flex and bison;
+    // bc and perl of its scripts; pahole for BTF; libelf for objtool; OpenSSL for the signing tools;
+    // dash, the /bin/sh of its scripts and of make
+    .packages = .{ "base-files", "bash", "dash", "coreutils", "findutils", "diffutils", "grep", "sed", "gawk", "tar", "xz", "zstd", "gzip", "cpio", "make", "clang", "lld", "llvm", "flex", "bison", "bc", "perl", "pahole", "elfutils-devel", "openssl-devel", "kmod" },
+    // thor's deny list keeps compilers and interpreters out of the system and of the gaming root;
+    // inside this root, which lives for one build, they are the point
+    .allow = .{ "clang", "llvm", "make", "perl", "gcc", "python3" },
+    .noextract = .{ "/usr/share/doc/*", "/usr/share/man/*", "/usr/share/info/*", "/usr/lib/firmware/*" },
+    .repositories = .{"00-repository-main.conf"},
+    // the build's user reads it as its / (it owns nothing in it)
+    .mode = 0o755,
+}

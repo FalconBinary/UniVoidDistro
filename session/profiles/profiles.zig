@@ -20,6 +20,8 @@ pub const Profile = struct {
 
 pub const all = [_]Profile{
     @import("game.zon"),
+    @import("kbuild.zon"),
+    @import("keys.zon"),
 };
 
 pub fn get(name: []const u8) ?Profile {

@@ -13,6 +13,10 @@
 //!                           session's is under a filter that kills a 32-bit system call (boot.zig)
 //!   doas vh-game boot off
 //!   doas vh-game play       the next boot, once, is the gaming one: reboot into it now
+//!   doas vh-game key new    the gaming kernel's module key (G3b): RSA-4096 under a passphrase,
+//!                           beside the Secure Boot keys (key.zig); key show, key remove
+//!   doas vh-game kernel build   the gaming kernel, built here in a build root that is removed
+//!                           after it, without network or privileges (kbuild.zig)
 //!   doas vh-game remove     everything install and boot on made, the home with it; the system
 //!                           is then what it was before the install, byte for byte
 //!   vh-game status
@@ -35,6 +39,8 @@ const rmtree = @import("rmtree.zig");
 const sys = @import("sys.zig");
 const acl = @import("acl.zig");
 const boot = @import("boot.zig");
+const key = @import("key.zig");
+const kbuild = @import("kbuild.zig");
 const linux = std.os.linux;
 const mem = std.mem;
 const G = common.game;
@@ -44,6 +50,8 @@ const usage =
     \\       doas vh-game tty on|off
     \\       doas vh-game boot on|off
     \\       doas vh-game play [--no-reboot]
+    \\       doas vh-game key new [--password-stdin] | show | remove
+    \\       doas vh-game kernel build [--jobs N]
     \\       doas vh-game remove [--yes]
     \\       vh-game status
     \\
@@ -61,6 +69,11 @@ const Cfg = struct {
     no_reboot: bool = false,
     /// vh-limine-update, or a stand-in for the tests (the ESP is not mounted for one)
     limine: ?[]const u8 = null,
+    /// kernel build: make's jobs (0: the CPUs and the memory decide)
+    jobs: u32 = 0,
+    /// kernel build, the tests: a downloaded tarball, another vh-kconf
+    tarball: ?[]const u8 = null,
+    kconf: ?[]const u8 = null,
 };
 
 pub fn main(init: std.process.Init.Minimal) void {
@@ -82,7 +95,9 @@ pub fn main(init: std.process.Init.Minimal) void {
             c.any_arch = true;
         } else if (vh.eql(a, "--no-reboot")) {
             c.no_reboot = true;
-        } else if (vh.eql(a, "--prefix") or vh.eql(a, "--thor") or vh.eql(a, "--password-hash") or vh.eql(a, "--plan-env") or vh.eql(a, "--limine-update")) {
+        } else if (vh.eql(a, "--prefix") or vh.eql(a, "--thor") or vh.eql(a, "--password-hash") or vh.eql(a, "--plan-env") or vh.eql(a, "--limine-update") or
+            vh.eql(a, "--jobs") or vh.eql(a, "--tarball") or vh.eql(a, "--kconf"))
+        {
             if (i + 1 >= all.len) vh.die("{s} needs a value", .{a});
             i += 1;
             const v = all[i];
@@ -91,6 +106,9 @@ pub fn main(init: std.process.Init.Minimal) void {
             if (vh.eql(a, "--password-hash")) c.password_hash = v;
             if (vh.eql(a, "--plan-env")) c.plan_env = v;
             if (vh.eql(a, "--limine-update")) c.limine = v;
+            if (vh.eql(a, "--jobs")) c.jobs = std.fmt.parseInt(u32, v, 10) catch vh.die("--jobs: not a number: {s}", .{v});
+            if (vh.eql(a, "--tarball")) c.tarball = v;
+            if (vh.eql(a, "--kconf")) c.kconf = v;
         } else args.append(vh.gpa, a) catch vh.oom();
     }
     const argv = args.items;
@@ -100,6 +118,7 @@ pub fn main(init: std.process.Init.Minimal) void {
     }
     const cmd = argv[0];
     if (vh.eql(cmd, "status")) vh.exit(status(c));
+    if (vh.eql(cmd, "key") and argv.len == 2 and vh.eql(argv[1], "show")) vh.exit(key.show(c.o.sys));
     common.needRoot(vh.fmt("vh-game {s}", .{cmd}));
     if (vh.eql(cmd, "install")) {
         install(c);
@@ -114,6 +133,21 @@ pub fn main(init: std.process.Init.Minimal) void {
     if (vh.eql(cmd, "boot") and argv.len == 2 and vh.eql(argv[1], "on")) vh.exit(bootOn(c));
     if (vh.eql(cmd, "boot") and argv.len == 2 and vh.eql(argv[1], "off")) vh.exit(bootOff(c));
     if (vh.eql(cmd, "play") and argv.len == 1) vh.exit(play(c));
+    if (vh.eql(cmd, "key") and argv.len == 2 and vh.eql(argv[1], "new")) {
+        const pass = if (c.password_stdin) vh.readLine() orelse vh.die("no passphrase on stdin", .{}) else askTwice("The passphrase of the module key (asked again at every signing): ");
+        key.new(c.o, pass);
+        std.crypto.secureZero(u8, @constCast(pass));
+        vh.exit(0);
+    }
+    if (vh.eql(cmd, "key") and argv.len == 2 and vh.eql(argv[1], "remove")) {
+        key.remove(c.o.sys);
+        vh.exit(0);
+    }
+    if (vh.eql(cmd, "kernel") and argv.len == 2 and vh.eql(argv[1], "build")) {
+        const dir = kbuild.build(.{ .o = c.o, .jobs = c.jobs, .tarball = c.tarball, .kconf = c.kconf orelse "/usr/local/sbin/vh-kconf" });
+        vh.out("VH_GAME kernel built={s}\n", .{dir});
+        vh.exit(0);
+    }
     // the gaming boot's own: stage 1 (98-vh-game.sh, vh-stage1) and stage 2 (runit, through the
     // marker's first line)
     if (vh.eql(cmd, "stage1") and argv.len == 1) vh.exit(boot.stage1());
@@ -374,7 +408,7 @@ fn password(c: Cfg) []const u8 {
         if (!vh.startsWith(h, "$y$")) vh.die("--password-hash: not a yescrypt hash", .{});
         return h;
     }
-    const pw = if (c.password_stdin) vh.readLine() orelse vh.die("no password on stdin", .{}) else askTwice();
+    const pw = if (c.password_stdin) vh.readLine() orelse vh.die("no password on stdin", .{}) else askTwice("The password of game (its login on tty3): ");
     if (pw.len == 0) vh.die("an empty password is not allowed", .{});
     var o: std.ArrayList(u8) = .empty;
     const rc = vh.runOpts(&.{ c.o.sys.path("/root/vh/tools/vh-hashpw"), "7" }, .{ .in = pw, .out = &o });
@@ -384,16 +418,16 @@ fn password(c: Cfg) []const u8 {
     return h;
 }
 
-fn askTwice() []const u8 {
+fn askTwice(prompt: []const u8) []const u8 {
     const fd = vh.openFd("/dev/tty", .{ .ACCMODE = .RDWR }, 0) catch vh.die("/dev/tty: {s} (--password-stdin reads it from stdin)", .{vh.serr()});
     defer vh.close(fd);
     var old: linux.termios = undefined;
     _ = vh.sys(linux.tcgetattr(fd, &old)) catch vh.die("/dev/tty: {s}", .{vh.serr()});
     var quiet = old;
     quiet.lflag.ECHO = false;
-    const a = readSecret(fd, &old, &quiet, "The password of game (its login on tty3): ");
+    const a = readSecret(fd, &old, &quiet, prompt);
     const b = readSecret(fd, &old, &quiet, "The same again: ");
-    if (!vh.eql(a, b)) vh.die("the two passwords differ", .{});
+    if (!vh.eql(a, b)) vh.die("the two differ", .{});
     return a;
 }
 
@@ -426,7 +460,7 @@ fn remove(c: Cfg) void {
         if (!vh.eql(gecos, G.gecos) or !vh.eql(shell, G.shell)) vh.die("the user {s} is not the gaming session's (its comment or shell differs): nothing removed", .{G.user});
     }
     if (!c.yes) {
-        vh.out("This removes the gaming session: the user {s}, its home {s} with everything in it (games, saves, settings), the root {s} and the login on {s}.\nType \"remove\" to continue: ", .{ G.user, G.home, roots.path(.{}, G.root), G.tty });
+        vh.out("This removes the gaming session: the user {s}, its home {s} with everything in it (games, saves, settings), the root {s}, the login on {s}, the gaming boot, the gaming kernels built and their module key.\nType \"remove\" to continue: ", .{ G.user, G.home, roots.path(.{}, G.root), G.tty });
         vh.flush();
         const got = vh.readLine() orelse "";
         if (!vh.eql(vh.strip(got), "remove")) vh.die("cancelled", .{});
@@ -448,6 +482,12 @@ fn remove(c: Cfg) void {
     };
 
     roots.remove(c.o, G.root);
+    // the gaming kernel: its module key, the kernels built and vh-kconf install's records of
+    // them (with its lock and records directory when no machine kernel was ever installed)
+    key.remove(S);
+    const gd = S.path("/var/lib/vh/game");
+    if (vh.isDir(gd)) rmtree.removeTree(gd);
+    dropKernelRecords(S);
 
     const home = S.path(G.home);
     if (roots.isMountPoint(home)) sys.umount(home, 0) catch vh.die("umount {s}: {s}", .{ home, vh.serr() });
@@ -462,6 +502,23 @@ fn remove(c: Cfg) void {
     if (vh.isDir(S.path("/run/vh/game-plan"))) rmtree.removeTree(S.path("/run/vh/game-plan"));
     vh.log("removed: the system is as it was before vh-game install", .{});
     vh.outs("VH_GAME removed\n");
+}
+
+/// vh-kconf install's records of the gaming kernels (/var/lib/vh/kernels/A.B.C-vh-game_N); its
+/// lock and the records' directory too when nothing else is recorded there: they came with the
+/// first install, a gaming kernel's
+fn dropKernelRecords(S: common.System) void {
+    const kd = S.path("/var/lib/vh/kernels");
+    const names = vh.listDir(kd) catch return;
+    var others: usize = 0;
+    for (names) |n| {
+        if (mem.indexOf(u8, n, "-vh-game_") != null) {
+            rmtree.removeTree(vh.fmt("{s}/{s}", .{ kd, n }));
+        } else others += 1;
+    }
+    if (others > 0) return;
+    _ = vh.sys(linux.rmdir(vh.z(kd).ptr)) catch {};
+    vh.unlink(S.path("/var/lib/vh/kconf-install.lock")) catch {};
 }
 
 /// the line taken out of the file when it is there
