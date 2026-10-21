@@ -67,6 +67,24 @@ pub fn ukiId(uki: []const u8) []const u8 {
     return entryId(entryName(verOf(uki)));
 }
 
+/// The menu name of the gaming boot (vh-game boot on, docs/uni/game.md): the stock UKI VER
+/// with ia32 on, "Void Linux 6.18.58_1 (games)". Its identifier ends in game_id_suffix.
+pub fn gameEntryName(ver: []const u8) []const u8 {
+    return vh.fmt("Void Linux {s} (games)", .{ver});
+}
+
+pub const game_id_suffix = "--games-";
+
+/// the identifier of the gaming entry of the twin UKI (its file name is the stock UKI's)
+pub fn gameId(uki: []const u8) []const u8 {
+    return entryId(gameEntryName(verOf(uki)));
+}
+
+/// an identifier (or, from Limine before 12.7, a path) of the gaming entry
+pub fn isGameEntry(selected: []const u8) bool {
+    return vh.endsWith(selected, game_id_suffix) or vh.endsWith(selected, " (games)");
+}
+
 // ---------------------------------------------------------------- EFI variables
 
 /// a string as an EFI variable of the Boot Loader Interface holds it: UTF-16LE and a NUL
@@ -397,7 +415,10 @@ pub fn booted(st0: State, f: Facts, boots: u32) Action {
                 .bad => |why| o.ev.add(vh.fmt("the default machine kernel {s} booted, but {s}: doas vh-limine-update --demote makes the stock UKI the default again", .{ verOf(st.default), why })),
                 else => {},
             }
-        } else if (!promoted and f.loader.len > 0 and !(st.trial.len > 0 and f.started(st.trial))) {
+        } else if (!promoted and f.loader.len > 0 and !(st.trial.len > 0 and f.started(st.trial)) and
+            !(f.selected != null and isGameEntry(f.selected.?)))
+        {
+            // the gaming boot is chosen on purpose (vh-game play), not a fallback
             o.ev.add(vh.fmt("this boot is {s}, not the default machine kernel {s}: if {s} failed, doas vh-limine-update --demote makes the stock UKI the default again", .{ f.selected orelse "another entry", verOf(st.default), verOf(st.default) }));
         }
     } else if (f.default != null) {
@@ -592,6 +613,11 @@ test "entry names and Limine's identifiers" {
     try t.expectEqualStrings("Void-Linux-6.18.57-vh_2--machine-kernel-", ukiId("linux-6.18.57-vh_2.efi"));
     try t.expectEqualStrings("Void-Linux-6.18.57_1", entryId("Void Linux 6.18.57_1"));
     try t.expectEqualStrings("Void-Linux-6.18.56_1--previous-kernel-", entryId("Void Linux 6.18.56_1 (previous kernel)"));
+    // the gaming entry (vh-game boot on): the twin's file name is the stock UKI's
+    try t.expectEqualStrings("Void-Linux-6.18.58_1--games-", gameId("linux-6.18.58_1.efi"));
+    try t.expect(isGameEntry(gameId("linux-6.18.58_1.efi")) and isGameEntry("Void Linux 6.18.58_1 (games)"));
+    try t.expect(!isGameEntry("Void-Linux-6.18.58_1") and !isGameEntry(ukiId("linux-6.18.57-vh_2.efi")) and
+        !isGameEntry("Void-Linux-6.18.56_1--previous-kernel-"));
     // the escaped characters of a path, kept bytes, the empty and dot names
     try t.expectEqualStrings("a-.b--c--d", entryId("a/b#c\\d"));
     try t.expectEqualStrings("x+y@z.w_v-u", entryId("x+y@z.w_v-u"));
@@ -790,6 +816,11 @@ test "arming when the install's boot loader could not, and the default entry's u
     other.default = did;
     a = booted(dflt, other, 3);
     try t.expect(a.set_default == null and has(a.events, "not the default machine kernel"));
+    // the gaming entry (vh-game play) is no fallback: nothing told, nothing acted on
+    var game = limine("b7g", gameId("linux-6.18.58_1.efi"), .good);
+    game.default = did;
+    a = booted(dflt, game, 3);
+    try t.expect(a.set_default == null and !a.clear_default and a.events.len == 0);
     // a default entry while no machine kernel has passed: deleted
     var stray = limine("b8", stock_id, .good);
     stray.default = tid;

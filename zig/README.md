@@ -16,6 +16,7 @@ between releases, so building with another version is not supported.
 | `lib/seccomp.zig` | classic BPF assembler, the sandbox filters and an interpreter for the self-test |
 | `lib/input.zig` | the input devices built into the machine: vh-acpid's idle watchdog and vh-deadman's alarm combination listen to these only |
 | `lib/assess.zig` | the boot assessment of a machine UKI for vh-limine-update: Limine's Boot Loader Interface variables in efivarfs, its entry identifiers, the verdict of vh-kconf check, the state and the decisions ([docs/uni/kernel.md](../docs/uni/kernel.md#the-boot-assessment)) |
+| `lib/twin.zig` | the gaming boot's twin of a stock UKI for vh-limine-update: the same PE image with `ia32_emulation=1`, the signature cut off, and the comparison with a twin on the ESP ([docs/uni/game.md](../docs/uni/game.md#g3a-the-gaming-boot)) |
 
 Code rules (the full list, with the reasons, is in `docs/principles.md`):
 

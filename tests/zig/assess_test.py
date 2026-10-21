@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""The boot assessment of vh-limine-update, end to end (docs/uni/kernel.md).
+"""The boot assessment of vh-limine-update, end to end (docs/uni/kernel.md), and its gaming boot
+(vh-game boot on, docs/uni/game.md): the twin of the newest stock UKI, its entry, --game-once.
 
     python3 -I tests/zig/assess_test.py VH-LIMINE-UPDATE
 
@@ -12,8 +13,11 @@ and wins, else LoaderEntryDefault if it names an entry, else the first entry; th
 variables (LoaderInfo, LoaderFeatures, LoaderEntries, LoaderEntrySelected) are set anew; the
 verdict of vh-kconf check goes to /run/vh/check.done; then the late-boot service runs.
 """
+import hashlib
 import os
 import re
+import shutil
+import struct
 import subprocess
 import sys
 import uuid
@@ -27,6 +31,8 @@ CONF = ESP + "/EFI/BOOT/limine.conf"
 STATE = "/var/lib/vh/boot-assess"
 MSG = "/run/vh/boot-assess"
 BOOTID = "/tmp/vh-assess-bootid"
+GAME = ESP + "/EFI/vh-game"
+MARK = "/etc/vh/game-boot"
 GOOD = "VH_CHECK machine=same devices=0 firmware=2 lost=0"
 LOST = "VH_CHECK machine=same devices=1 firmware=0 lost=1"
 failures = 0
@@ -90,6 +96,36 @@ def uki(name, seed):
         f.write(bytes([seed]) * (1000 + seed))
 
 
+def pe_uki(name, cmdline, seed):
+    """a stock UKI as dracut lays it out with objcopy: a PE32+ image (the optional header with its
+    16 data directories), its sections at 512-byte boundaries, the command line NUL-ended"""
+    secs = [(b".osrel", b"ID=void\n"), (b".cmdline", cmdline.encode() + b"\0"),
+            (b".linux", bytes([seed]) * 3000), (b".initrd", bytes([seed ^ 0x55]) * 5000)]
+    opt_size = 240
+    data = bytearray(0x40 + 24 + opt_size + 40 * len(secs))
+    data[0:2] = b"MZ"
+    struct.pack_into("<I", data, 0x3C, 0x40)
+    data[0x40:0x44] = b"PE\0\0"
+    struct.pack_into("<HH", data, 0x44, 0x8664, len(secs))
+    struct.pack_into("<H", data, 0x54, opt_size)
+    opt = 0x40 + 24
+    struct.pack_into("<H", data, opt, 0x20B)
+    struct.pack_into("<I", data, opt + 108, 16)
+    table = opt + opt_size
+    for i, (sname, body) in enumerate(secs):
+        while len(data) % 512:
+            data.append(0)
+        at = len(data)
+        data += body
+        while len(data) % 512:
+            data.append(0)
+        h = table + i * 40
+        data[h:h + len(sname)] = sname
+        struct.pack_into("<IIII", data, h + 8, len(body), 0x1000 * (i + 1), len(data) - at, at)
+    with open(f"{UKI}/{name}", "wb") as f:
+        f.write(data)
+
+
 def run(*args):
     r = subprocess.run([TOOL, *args], capture_output=True, text=True)
     return r.returncode, r.stdout + r.stderr
@@ -142,6 +178,15 @@ def menu():
 
 def mid(ver):
     return ident(f"Void Linux {ver} (machine kernel)")
+
+
+def gid(ver):
+    return ident(f"Void Linux {ver} (games)")
+
+
+def read(path):
+    with open(path, "rb") as f:
+        return f.read()
 
 
 def state():
@@ -197,6 +242,7 @@ def main():
     setup()
     try:
         scenario()
+        game_scenario()
     finally:
         teardown()
     print(f"assess_test: {failures} failure(s)")
@@ -326,6 +372,103 @@ def scenario():
     rc, out = run()
     with open(CONF) as f:
         ok("without a stock UKI nothing is written", rc != 0 and "no stock UKI" in out and f.read() == before, out)
+
+
+
+def game_scenario():
+    """The gaming boot: the newest stock UKI's twin with ia32_emulation=1, the last entry of the
+    menu, never the default; --game-once; a kernel update; refused while a trial waits; off."""
+    for n in os.listdir(UKI):
+        os.remove(f"{UKI}/{n}")
+    for v in os.listdir(EFIVARS):
+        os.remove(f"{EFIVARS}/{v}")
+    for p in (STATE, MARK):
+        if os.path.exists(p):
+            os.remove(p)
+    shutil.rmtree(GAME, ignore_errors=True)
+    cmd = "root=UUID=x efi=disable_early_pci_dma ia32_emulation=0 module_blacklist=uhid"
+    pe_uki("linux-6.18.57_1.efi", cmd, 1)
+    pe_uki("linux-6.18.58_1.efi", cmd, 2)
+    rc, out = run()
+    with open(CONF) as f:
+        off_conf = f.read()
+    ok("game: off, no gaming entry and no directory", rc == 0 and "(games)" not in off_conf and not os.path.exists(GAME), out)
+
+    open(MARK, "w").close()
+    rc, out = run()
+    with open(CONF) as f:
+        on_conf = f.read()
+    ok("game: on, the twin of the newest stock UKI alone", rc == 0 and sorted(os.listdir(GAME)) == ["linux-6.18.58_1.efi"], out)
+    twin, stock = read(f"{GAME}/linux-6.18.58_1.efi"), read(f"{UKI}/linux-6.18.58_1.efi")
+    ok("game: the twin is the stock UKI with ia32_emulation=1, nothing else changed or moved",
+       len(twin) == len(stock) and twin.count(b"ia32_emulation=1") == 1 and twin.replace(b"ia32_emulation=1", b"ia32_emulation=0") == stock)
+    ok("game: the twin is signed (sbctl)", twin.endswith(b"vh-test-signed\n"))
+    ok("game: the stock entries as before, the gaming entry last",
+       on_conf.startswith(off_conf) and menu() == ["Void-Linux-6.18.58_1", "Void-Linux-6.18.57_1--previous-kernel-", gid("6.18.58_1")], str(menu()))
+    want = f"path: boot():/EFI/vh-game/linux-6.18.58_1.efi#{hashlib.blake2b(twin).hexdigest()}"
+    ok("game: its path carries the twin's BLAKE2B", want in on_conf, on_conf[-300:])
+    mtime = os.stat(f"{GAME}/linux-6.18.58_1.efi").st_mtime_ns
+    rc, out = run()
+    with open(CONF) as f:
+        ok("game: a second run keeps the twin and the menu as they are",
+           rc == 0 and os.stat(f"{GAME}/linux-6.18.58_1.efi").st_mtime_ns == mtime and f.read() == on_conf and "the gaming UKI" not in out, out)
+    rc, out = run("--status")
+    ok("game: --status names the gaming boot", rc == 0 and "the gaming boot (docs/uni/game.md): on" in out, out)
+
+    # vh-game play: the next boot, once
+    sel, rc, out = boot()
+    ok("game: the default boot is the stock entry", sel == "Void-Linux-6.18.58_1", sel)
+    rc, out = run("--game-once")
+    ok("game: --game-once sets the one-shot entry to the gaming entry, non-volatile",
+       rc == 0 and getvar("LoaderEntryOneShot") == gid("6.18.58_1") and attrs("LoaderEntryOneShot") == 7, out)
+    sel, rc, out = boot()
+    ok("game: the next boot is the gaming one, once; the service has nothing to judge",
+       sel == gid("6.18.58_1") and getvar("LoaderEntryOneShot") is None and rc == 0 and state() is None and message() == "", out)
+    sel, rc, out = boot()
+    ok("game: the boot after it is the everyday one", sel == "Void-Linux-6.18.58_1", sel)
+
+    # a kernel update between play and the reboot: the twin and the one-shot entry follow it
+    run("--game-once")
+    pe_uki("linux-6.18.59_1.efi", cmd, 3)
+    rc, out = run("--new", "6.18.59_1")
+    ok("game: a new stock kernel, its twin; the older twin deleted",
+       rc == 0 and sorted(os.listdir(GAME)) == ["linux-6.18.59_1.efi"] and "deleting the gaming UKI linux-6.18.58_1.efi" in out, out)
+    ok("game: the one-shot entry follows the new twin", getvar("LoaderEntryOneShot") == gid("6.18.59_1"), str(getvar("LoaderEntryOneShot")))
+    sel, rc, out = boot()
+    ok("game: and the next boot is its gaming entry", sel == gid("6.18.59_1"), sel)
+
+    # a machine kernel's trial waits for the next boot: play is refused, the trial kept
+    uki("linux-6.18.59-vh_1.efi", 7)
+    rc, out = run("--new", "6.18.59-vh_1")
+    ok("game: a trial is set for the next boot", getvar("LoaderEntryOneShot") == mid("6.18.59-vh_1"), out)
+    ok("game: the machine entry before the gaming one", menu()[-2:] == [mid("6.18.59-vh_1"), gid("6.18.59_1")], str(menu()))
+    rc, out = run("--game-once")
+    ok("game: --game-once while a trial waits is refused", rc != 0 and "trial" in out and getvar("LoaderEntryOneShot") == mid("6.18.59-vh_1"), out)
+    os.remove(f"{UKI}/linux-6.18.59-vh_1.efi")
+    rc, out = run()
+    ok("game: the machine UKI gone, the trial with it", rc == 0 and getvar("LoaderEntryOneShot") is None, out)
+
+    # a stock command line without ia32_emulation=0 makes no twin, and nothing is written
+    with open(CONF) as f:
+        before = f.read()
+    pe_uki("linux-6.18.60_1.efi", "root=UUID=x ro", 4)
+    rc, out = run()
+    with open(CONF) as f:
+        ok("game: no twin of a command line without ia32_emulation=0; limine.conf unchanged",
+           rc != 0 and "no gaming UKI" in out and f.read() == before and sorted(os.listdir(GAME)) == ["linux-6.18.59_1.efi"], out)
+    os.remove(f"{UKI}/linux-6.18.60_1.efi")
+
+    # off: the twin, the directory, the entry and a one-shot entry of play go
+    run("--game-once")
+    os.remove(MARK)
+    rc, out = run()
+    with open(CONF) as f:
+        conf = f.read()
+    ok("game: off, the twin and its directory are gone", rc == 0 and not os.path.exists(GAME), out)
+    ok("game: off, no gaming entry; a one-shot entry of play is taken away",
+       "(games)" not in conf and "vh-game" not in conf and getvar("LoaderEntryOneShot") is None, out)
+    rc, out = run("--game-once")
+    ok("game: --game-once while off is refused", rc != 0 and "off" in out, out)
 
 
 if __name__ == "__main__":
