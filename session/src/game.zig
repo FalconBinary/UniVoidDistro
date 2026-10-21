@@ -452,6 +452,7 @@ fn remove(c: Cfg) void {
     const home = S.path(G.home);
     if (roots.isMountPoint(home)) sys.umount(home, 0) catch vh.die("umount {s}: {s}", .{ home, vh.serr() });
     editFile(S.path("/etc/fstab"), common.fstabBind(G.home));
+    editFile(S.path("/etc/fstab"), common.fstabBindOld(G.home));
     if (vh.isDir(home)) rmtree.removeTree(home);
     editFile(S.path("/etc/security/access.conf"), accessLine());
     editFile(S.path("/etc/shells"), G.shell);

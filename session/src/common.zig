@@ -71,8 +71,17 @@ pub fn needRoot(what: []const u8) void {
     if (linux.geteuid() != 0) vh.die("run: doas {s}", .{what});
 }
 
-/// the fstab line of a bind mount of PATH onto itself: no SUID bit, no device node, exec allowed
+/// The fstab line of a bind mount of PATH onto itself: no SUID bit, no device node, exec
+/// allowed. "exec" is spelt out: a bind mount starts with the flags of the mount it comes from
+/// (/home is noexec), and util-linux's mount sets the line's flags with mount_setattr(2), which
+/// keeps every flag it is not told to change (found on the VM rig: no game ran from /home/game
+/// after a reboot).
 pub fn fstabBind(path: []const u8) []const u8 {
+    return vh.fmt("{s}\t{s}\tnone\tbind,nosuid,nodev,exec\t0 0", .{ path, path });
+}
+
+/// the line of an installation before "exec" was spelt out: the removal takes it away too
+pub fn fstabBindOld(path: []const u8) []const u8 {
     return vh.fmt("{s}\t{s}\tnone\tbind,nosuid,nodev\t0 0", .{ path, path });
 }
 
@@ -113,7 +122,8 @@ test "names, plan values, the fstab line" {
     try t.expectEqualStrings("x", planValue(env, "VH_PLAN_GAME").?);
     try t.expect(planValue(env, "VH_PLAN_NONE") == null);
     try t.expectEqual(@as(usize, 2), words(planValue(env, "VH_PLAN_PACKAGES").?).len);
-    try t.expectEqualStrings("/home/game\t/home/game\tnone\tbind,nosuid,nodev\t0 0", fstabBind("/home/game"));
+    try t.expectEqualStrings("/home/game\t/home/game\tnone\tbind,nosuid,nodev,exec\t0 0", fstabBind("/home/game"));
+    try t.expectEqualStrings("/home/game\t/home/game\tnone\tbind,nosuid,nodev\t0 0", fstabBindOld("/home/game"));
 }
 
 test "the sound nodes of the gaming session: playback and control only" {

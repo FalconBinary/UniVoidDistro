@@ -112,7 +112,7 @@ grep -qx /usr/local/bin/vh-game-enter /etc/shells && ok "/etc/shells" || bad "/e
 for m in /home/game /var/lib/vh/roots; do
 	o=$(findmnt -no OPTIONS "$m" 2>/dev/null)
 	case ",$o," in *,nosuid,*nodev,*) case ",$o," in *,noexec,*) bad "$m: exec" "$o" ;; *) ok "$m: a mount of its own, nosuid, nodev, exec" ;; esac ;; *) bad "$m mount" "$o" ;; esac
-	grep -q "^$m	$m	none	bind,nosuid,nodev	0 0$" /etc/fstab && ok "$m in fstab" || bad "$m in fstab"
+	grep -q "^$m	$m	none	bind,nosuid,nodev,exec	0 0$" /etc/fstab && ok "$m in fstab" || bad "$m in fstab"
 done
 root=/var/lib/vh/roots/game
 [ "$(stat -c '%a %U %G' "$root")" = "750 root game" ] && ok "the root: 0750 root:game" || bad "the root's mode" "$(stat -c '%a %U %G' "$root")"

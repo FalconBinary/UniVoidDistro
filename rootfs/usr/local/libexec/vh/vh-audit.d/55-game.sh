@@ -42,6 +42,10 @@ for m in /var/lib/vh/roots /home/game; do
 		*,nosuid,*) case ",$(findmnt -no OPTIONS "$m")," in *,nodev,*) ok "$m: nosuid, nodev" ;; *) bad "$m: no nodev" ;; esac ;;
 		*) bad "$m: not a mount with nosuid ($(findmnt -no OPTIONS "$m" 2>/dev/null))" ;;
 	esac
+	# games run from the home and the root: a bind mount keeps noexec of /home unless fstab says exec
+	case ",$(findmnt -no OPTIONS "$m" 2>/dev/null)," in
+		*,noexec,*) bad "$m: noexec, no game runs from it (its fstab line needs exec: doas vh-game remove, then install)" ;;
+	esac
 done
 # the session's devices: game opens the render nodes and seatd's socket, never input
 for d in /dev/input/event*; do

@@ -58,7 +58,7 @@ fn ensureRootsDir(o: Opts) void {
     const fstab = o.sys.path("/etc/fstab");
     const line = common.fstabBind(common.roots_dir);
     const text = vh.readFile(fstab) catch vh.die("{s}: {s}", .{ fstab, vh.serr() });
-    if (!lines.has(text, line)) writeKeeping(fstab, lines.append(text, line));
+    if (!lines.has(text, line) and !lines.has(text, common.fstabBindOld(common.roots_dir))) writeKeeping(fstab, lines.append(text, line));
     if (!isMountPoint(roots)) sys.bind(roots, roots, sys.MS.NOSUID | sys.MS.NODEV) catch vh.die("mount {s}: {s}", .{ roots, vh.serr() });
 }
 
@@ -88,7 +88,7 @@ fn dropRootsDir(o: Opts) void {
     if (isMountPoint(roots)) sys.umount(roots, 0) catch vh.die("umount {s}: {s}", .{ roots, vh.serr() });
     const fstab = o.sys.path("/etc/fstab");
     const text = vh.readFile(fstab) catch vh.die("{s}: {s}", .{ fstab, vh.serr() });
-    if (lines.remove(text, common.fstabBind(common.roots_dir))) |new| writeKeeping(fstab, new);
+    if (lines.remove(text, common.fstabBind(common.roots_dir)) orelse lines.remove(text, common.fstabBindOld(common.roots_dir))) |new| writeKeeping(fstab, new);
     const made = vh.readFile(vh.fmt("{s}{s}", .{ roots, marker })) catch "";
     vh.unlink(vh.fmt("{s}{s}", .{ roots, marker })) catch {};
     _ = vh.sys(linux.rmdir(vh.z(roots).ptr)) catch vh.die("{s}: {s}", .{ roots, vh.serr() });
