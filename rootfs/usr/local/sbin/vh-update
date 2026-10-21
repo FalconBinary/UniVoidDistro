@@ -1,6 +1,7 @@
 #!/bin/sh
 # void-hardperf-light: update the system with one command (docs/09).
 #   doas vh-update
+# 0. gives runit's state of each service to /run (vh-sv-runstate);
 # 1. shows what will be updated; 2. installs; 3. the kernel hooks rebuild and sign the UKI
 # and Limine; 4. if the microcode, firmware, dracut, stub or limine were updated, rebuilds
 # the UKI itself (their hooks do not); 5. strips SUID bits that came back; 6. refreshes the
@@ -17,6 +18,10 @@ umask 022
 . /etc/vh/vh.env
 offline=0
 grep -q '^KEYS_OFFLINE=yes' /etc/vh/boot.conf 2>/dev/null && offline=1
+
+# runit's state of each service in /run, as Void's packages keep it (an installation before
+# 2026-10-21 kept ours on disk): first, whether or not there are updates
+/usr/local/libexec/vh/vh-sv-runstate
 
 # strict network mode (optional/strict-net): root opens the mirrors only for a while
 [ -e /etc/vh/optional/strict-net ] && /usr/local/sbin/vh-net xbps 30

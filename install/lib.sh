@@ -238,6 +238,19 @@ install_tree() {
 		rel=${f#"$tree"/}
 		case $rel in *.cin) continue ;; esac
 		dst=$root/${rel%.in}
+		# a link goes in as a link: runit's state of each service in /run, as Void's packages
+		# ship it (/etc/sv/NAME/supervise -> /run/runit/supervise.NAME), in place of a supervise
+		# directory a runsv made on disk before the link was there
+		if [ -L "$f" ]; then
+			if [ "$DRY_RUN" = 1 ]; then
+				printf '   + link %s -> %s\n' "/$rel" "$(readlink "$f")"
+				continue
+			fi
+			mkdir -p "$(dirname "$dst")"
+			[ -L "$dst" ] || rm -rf "$dst"
+			ln -sfn "$(readlink "$f")" "$dst"
+			continue
+		fi
 		if [ -x "$f" ]; then mode=0755; else mode=0644; fi
 		case $rel in
 			etc/doas.conf*) mode=0400 ;;
@@ -252,7 +265,7 @@ install_tree() {
 			*.in) render "$f" "$dst" "$mode" ;;
 			*) install -m "$mode" "$f" "$dst" ;;
 		esac
-	done < <(find "$tree" -type f -print0 | sort -z)
+	done < <(find "$tree" \( -type f -o -type l \) -print0 | sort -z)
 }
 
 export -f render 2>/dev/null || true

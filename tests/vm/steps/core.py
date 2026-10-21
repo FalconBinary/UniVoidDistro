@@ -15,6 +15,29 @@ def step_base(a):
         rc, out = run(ser, "doas sv status /var/service/*")
         bad = [l for l in out.splitlines() if l.startswith(("down:", "fail:", "warning:"))]
         check("all runit services running", not bad, "; ".join(bad))
+        # runit's state of each service in /run, as Void's packages keep it: no supervise/ on disk
+        # (rootfs/etc/sv/*/supervise -> /run/runit/supervise.NAME, put in by install_tree)
+        rc, out = run(ser, "find /etc/sv -maxdepth 3 -name supervise ! -type l; echo ===; "
+                           "ls -d /run/runit/supervise.vh-acpid /run/runit/supervise.vh-acpid-log")
+        ondisk = [l for l in out.split("===")[0].splitlines() if l.startswith("/etc/sv/")]
+        check("runit keeps every service's state in /run, none on disk",
+              not ondisk and "/run/runit/supervise.vh-acpid-log" in out, "; ".join(ondisk) or out[-200:].replace("\n", " | "))
+        # an installation from before 2026-10-21: vh-acpid's state on disk under a running runsv;
+        # vh-sv-runstate (doas vh-update runs it first) gives it the link and the service runs again
+        rc, out = run(ser, "rm /var/service/vh-acpid; for i in $(seq 1 30); do pgrep -f '^runsv vh-acpid$' >/dev/null || break; sleep 1; done; "
+                           "rm /etc/sv/vh-acpid/supervise /etc/sv/vh-acpid/log/supervise; "
+                           "mkdir /etc/sv/vh-acpid/supervise /etc/sv/vh-acpid/log/supervise; "
+                           "ln -s /etc/sv/vh-acpid /var/service/vh-acpid; "
+                           "for i in $(seq 1 30); do sv status vh-acpid 2>/dev/null | grep -q '^run:' && break; sleep 1; done; "
+                           "test -d /etc/sv/vh-acpid/supervise && ! test -L /etc/sv/vh-acpid/supervise && echo ONDISK=yes; "
+                           "/usr/local/libexec/vh/vh-sv-runstate; "
+                           "for i in $(seq 1 30); do sv status vh-acpid 2>/dev/null | grep -q '^run:' && break; sleep 1; done; "
+                           "echo LINKS=$(readlink /etc/sv/vh-acpid/supervise),$(readlink /etc/sv/vh-acpid/log/supervise); "
+                           "sv status vh-acpid")
+        check("vh-sv-runstate: an older installation's on-disk state moves to /run, the service runs again",
+              "ONDISK=yes" in out and "vh-acpid: supervise log/supervise -> /run/runit" in out
+              and "LINKS=/run/runit/supervise.vh-acpid,/run/runit/supervise.vh-acpid-log" in out
+              and "run: vh-acpid" in out.split("LINKS=")[-1], out[-500:].replace("\n", " | "))
         rc, out = run(ser, "ok=1; for i in 1 2 3 4 5 6 7 8 9 10 11 12; do getent hosts voidlinux.org && { ok=0; break; }; sleep 5; done; test $ok = 0")
         check("DNS through unbound (DoT)", rc == 0)
         rc, out = run(ser, "ok=1; for i in $(seq 1 24); do doas chronyc -n -N authdata | awk 'NR>2 && $2==\"NTS\" && $4>0 {f=1} END {exit !f}' && { ok=0; break; }; sleep 5; done; doas chronyc -N authdata; test $ok = 0")

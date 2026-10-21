@@ -5,8 +5,8 @@
 # tests/install/golden/MACHINE.txt; for the GF63 they must also equal what void-hardperf-light's
 # installer writes (golden/gf63-upstream.txt, captured from upstream's install/ before the
 # installer took the plan). Every script of install/ and optional/ passes bash -n. Then
-# prebuilt_test.sh (the installer on our live image) and firmware_test.sh (the firmware trim
-# through linux-firmware's links).
+# prebuilt_test.sh (the installer on our live image), firmware_test.sh (the firmware trim
+# through linux-firmware's links) and services_test.sh (runit's state of each service in /run).
 #   sh tests/install/run.sh            # compare
 #   sh tests/install/run.sh --update   # rewrite golden/MACHINE.txt (not the upstream capture)
 set -eu
@@ -82,4 +82,7 @@ tar -C "$repo" -cf - install thor zig/ZIG_VERSION vh.conf.example tests/install/
 # the firmware trim through linux-firmware's links (firmware_test.sh)
 tar -C "$repo" -cf - install tests/install/firmware_test.sh |
 	docker run --rm -i "$img" bash -c 'mkdir -p /src && cd /src && tar -xf - 2>/dev/null && bash /src/tests/install/firmware_test.sh /src' || rc=1
+# runit's state of each service in /run: the links, install_tree, vh-sv-runstate (services_test.sh)
+tar -C "$repo" -cf - install rootfs optional tests/install/services_test.sh |
+	docker run --rm -i "$img" bash -c 'mkdir -p /src && cd /src && tar -xf - 2>/dev/null && bash /src/tests/install/services_test.sh /src' || rc=1
 exit "$rc"

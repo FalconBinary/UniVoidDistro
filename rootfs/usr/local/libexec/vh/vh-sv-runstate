@@ -1,0 +1,50 @@
+#!/bin/sh
+# vh-sv-runstate: runit's state of each service in /run (tmpfs), as Void's packages ship it:
+# /etc/sv/NAME/supervise -> /run/runit/supervise.NAME, NAME/log/supervise -> ...supervise.NAME-log.
+# runsv makes the link's target when it starts (/run/runit comes from stage 1). A service
+# directory without the link gets a supervise/ directory on disk, which runsv writes at every
+# change of the service: UniVoidDistro's own services were so until 2026-10-21 (vh-acpid,
+# vh-check, vh-boot-assess, vh-fstrim, vh-eth-static, optional/deadman's vh-deadman). This gives
+# each of them the link. An enabled one leaves /var/service while runsvdir stops its runsv, and
+# comes back after: the service restarts once, within seconds. A directory a runsv is still at
+# work in (one that did not stop, one started by hand) is left as it is, with a line on stderr.
+# Silent when there is nothing to do.
+#   doas /usr/local/libexec/vh/vh-sv-runstate      (doas vh-update runs it first)
+set -eu
+PATH=/usr/bin:/usr/sbin
+[ "$(id -u)" = 0 ] || { echo "vh-sv-runstate: run as root" >&2; exit 1; }
+
+# a runsv of the service: runsvdir starts it as "runsv NAME" in /var/service
+runsv_up() { pgrep -f "^runsv (/var/service/|/etc/sv/)?$1\$" >/dev/null 2>&1; }
+
+for d in /etc/sv/*; do
+	[ -d "$d" ] && [ -e "$d/run" ] || continue
+	n=${d##*/}
+	disk=""
+	for s in supervise log/supervise; do
+		if [ -d "$d/$s" ] && [ ! -L "$d/$s" ]; then disk="$disk $s"; fi
+	done
+	[ -n "$disk" ] || continue
+	enabled=""
+	if [ "$(readlink "/var/service/$n" 2>/dev/null || true)" = "$d" ]; then
+		enabled=1
+		rm "/var/service/$n"
+		# runsvdir looks every 5 s; the runsv stops the service and its log, then exits
+		i=0
+		while runsv_up "$n" && [ "$i" -lt 30 ]; do sleep 1; i=$((i + 1)); done
+	fi
+	# a runsv still at work in the directory (one that did not stop, one started by hand)
+	if runsv_up "$n"; then
+		[ -z "$enabled" ] || ln -s "$d" "/var/service/$n"
+		echo "$n: a runsv is at work in $d: left as it is" >&2
+		continue
+	fi
+	for s in $disk; do
+		t=/run/runit/supervise.$n
+		[ "$s" = log/supervise ] && t=$t-log
+		rm -rf "${d:?}/$s"
+		ln -s "$t" "$d/$s"
+	done
+	[ -z "$enabled" ] || ln -s "$d" "/var/service/$n"
+	echo "  $n:$disk -> /run/runit (runit's state of the service in RAM, as Void's packages keep it)"
+done

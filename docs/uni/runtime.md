@@ -241,3 +241,26 @@ The checks that depend on the hardware left the other areas for this one: `intel
 everywhere); the services area checks `vh-check` instead, and the performance area asks the
 plan for the tag `dgpu`. `tests/adapt/audit_test.sh` runs the area on the golden plans of the
 GF63 (full) and the Raspberry Pi 5 (reduced, tiered and strict) in a mocked installed system.
+
+## runit's state of the services: `/run/runit`
+
+Every service directory UniVoidDistro ships (`rootfs/etc/sv/*`, `optional/*/sv/*`) has
+`supervise -> /run/runit/supervise.NAME`, and its `log/` has `supervise ->
+/run/runit/supervise.NAME-log`, as Void's own packages have. runsv makes the link's target in
+`/run/runit` (a tmpfs, made by stage 1) when it starts and keeps there what it writes at every
+start, stop and restart of a service (`status`, `stat`, `pid`, its control fifos and lock): no
+write to the disk, and nothing of it outlives the boot. The installer puts the links in as links
+(`install/lib.sh` `install_tree`), in place of a `supervise/` directory already there.
+
+An installation from before 2026-10-21 has `supervise/` directories on the disk for `vh-acpid`,
+`vh-check`, `vh-boot-assess`, `vh-fstrim`, `vh-eth-static` and `vh-deadman`. `doas vh-update`
+first runs `/usr/local/libexec/vh/vh-sv-runstate`, which gives each of them the link: an enabled
+service leaves `/var/service` while runsvdir stops its runsv, and comes back, so it restarts
+once and is down for 2 to 10 s (runsvdir looks every 5 s; 2 to 7 s measured). That is harmless
+for each of ours: vh-boot-assess counts a boot once by its `boot_id`, vh-check checks again,
+vh-fstrim keeps its weekly stamp, vh-eth-static sets the same address, and the watchdog of
+vh-deadman (`WATCHDOG=yes`) is asked a timeout of 60 s. A directory a runsv works in otherwise
+(one started by hand) is left as it is, with a line on stderr. `vh-audit` (Services) FAILs on a
+`supervise/` directory under `/etc/sv`. `tests/install/services_test.sh` checks the links,
+`install_tree` and the tool under runit's own runsv and runsvdir; `tests/vm` checks on the
+installed system that no state is on the disk and that the tool moves a running vh-acpid's.
