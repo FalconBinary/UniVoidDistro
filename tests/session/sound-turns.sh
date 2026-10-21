@@ -20,6 +20,7 @@ for _ in $(seq 1 50); do [ -S "$rt/pulse/native" ] && break; sleep 0.2; done
 sleep 2
 echo "USER_SINKS=$(as pactl list short sinks | cut -f2 | tr '\n' ' ')"
 head -c 1152000 /dev/urandom | as pacat --raw --format=s16le --rate=48000 --channels=2 &
+user_play=$!
 sleep 1
 (
 	for _ in $(seq 1 150); do pgrep -u game -x pacat >/dev/null && break; sleep 0.2; done
@@ -28,6 +29,7 @@ sleep 1
 		XDG_RUNTIME_DIR="$rt" PATH=/usr/bin:/bin pacat --raw --format=s16le --rate=48000 --channels=2
 	echo "USER_AGAIN_RC=$?"
 ) > /tmp/vh-turns.out 2>&1 &
+user_again=$!
 setpriv --reuid=game --regid=game --init-groups /usr/local/bin/vh-game-enter -c 'bash -s' <<'EOF'
 sleep 2
 echo "BUSY=$(pactl list short sinks | cut -f2 | tr '\n' ' ')"
@@ -40,7 +42,8 @@ echo "FREE_AFTER=$((i / 5))"
 echo "FREE=$(pactl list short sinks | cut -f2 | tr '\n' ' ')"
 head -c 1536000 /dev/urandom | pacat --raw --format=s16le --rate=48000 --channels=2 && echo PLAYED_AFTER
 EOF
-wait
+# the two plays only: the user's PipeWire runs on until it is ended below
+wait "$user_play" "$user_again"
 cat /tmp/vh-turns.out
 echo "USER_BUSY_LOG=$(grep -c -i 'busy' /tmp/vh-user-pw.log)"
 grep -i 'busy' /tmp/vh-user-pw.log | head -3
