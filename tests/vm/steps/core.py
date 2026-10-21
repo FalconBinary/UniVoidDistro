@@ -52,6 +52,10 @@ def step_base(a):
         check("vh-kconf check: the rig's own machine, every driver, no firmware failure",
               "VH_CHECK machine=same devices=0 firmware=0 lost=0" in out, out[-600:].replace("\n", " | "))
         check("no cfg80211 without Wi-Fi", "no 802.11 stack" in out, out[-200:].replace("\n", " | "))
+        # /var/lib/vh, the system's state, is root's alone: vh-check (above) or vh-fstrim, the
+        # first to make it at the first boot, makes it 0700
+        rc, out = run(ser, "stat -c 'VH_STATE %a %U %G' /var/lib/vh")
+        check("/var/lib/vh: root's alone (0700)", "VH_STATE 700 root root" in out, out[-200:].replace("\n", " | "))
         # stage 1 loads every module of modules.devname that modprobe.d does not blacklist
         rc, out = run(ser, "ls /etc/modprobe.d")
         check("modprobe.d: vh-devnodes.conf, and vh-novirt.conf with VH_VIRT=no",
