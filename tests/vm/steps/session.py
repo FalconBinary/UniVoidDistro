@@ -95,6 +95,11 @@ def step_game(a):
     vm, ser = boot(a, extra=card)
     try:
         base_fails, base_lines = fails(ser, "vh-audit before the gaming session")
+        # vh-kconf check writes the stock kernel's view of the machine (/var/lib/vh/check/stock.zon)
+        # a few seconds into every boot, and the sound card is new to this machine at the step's
+        # first boot: the snapshot waits for this boot's check (run 39586240773 took it before)
+        rc, out = run(ser, "for i in $(seq 1 60); do test -e /run/vh/check.done && break; sleep 2; done; cat /run/vh/check.done")
+        check("this boot's vh-kconf check is done before the snapshot", "VH_CHECK " in out, out[-200:].replace("\n", " | "))
         rc, out = run(ser, f"rm -rf {TEST_DIR} && install -d -m 0700 {TEST_DIR} && " + snapshot(f"{TEST_DIR}/before") +
                       f"; grep -c . {TEST_DIR}/before; nft list ruleset > {TEST_DIR}/nft-before; cp /etc/vh/hw.zon {TEST_DIR}/hw-before", timeout=3600)
         check("snapshot of the system before the install", rc == 0, out.strip().splitlines()[-1] if out.strip() else "")
