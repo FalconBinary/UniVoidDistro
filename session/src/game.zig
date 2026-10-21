@@ -144,8 +144,17 @@ pub fn main(init: std.process.Init.Minimal) void {
         vh.exit(0);
     }
     if (vh.eql(cmd, "kernel") and argv.len == 2 and vh.eql(argv[1], "build")) {
-        const dir = kbuild.build(.{ .o = c.o, .jobs = c.jobs, .tarball = c.tarball, .kconf = c.kconf orelse "/usr/local/sbin/vh-kconf" });
+        const kconf = c.kconf orelse "/usr/local/sbin/vh-kconf";
+        const dir = kbuild.build(.{ .o = c.o, .jobs = c.jobs, .tarball = c.tarball, .kconf = kconf });
         vh.out("VH_GAME kernel built={s}\n", .{dir});
+        // the gaming entry of the gaming boot: vh-kconf install makes its UKI
+        if (!vh.pathExists(c.o.sys.path(boot.marker))) {
+            vh.log("the gaming boot is off: doas vh-game boot on, then doas vh-kconf install {s}", .{dir});
+            vh.exit(0);
+        }
+        const rc = vh.run(&.{ kconf, "install", dir });
+        if (rc != 0) vh.die("vh-kconf install {s} failed ({d}): the kernel's files stay there", .{ dir, rc });
+        vh.log("the gaming kernel is the gaming entry now: doas vh-game play", .{});
         vh.exit(0);
     }
     // the gaming boot's own: stage 1 (98-vh-game.sh, vh-stage1) and stage 2 (runit, through the

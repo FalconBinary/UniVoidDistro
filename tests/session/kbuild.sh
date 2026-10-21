@@ -65,7 +65,8 @@ ok "the gaming kernel's configuration"
 [ -s "Module.symvers-vh-$kver" ] && ok "Module.symvers (for the NVIDIA modules)" || bad "no Module.symvers"
 [ ! -e /var/lib/vh/roots/kbuild ] && [ ! -e /var/lib/vh/kbuild ] && [ ! -e /var/lib/vh/roots/keys ] && ok "no build root, no tree, no OpenSSL root after the build" || bad "something of the build stays" "$(ls /var/lib/vh /var/lib/vh/roots 2>&1 | tr '\n' ' ')"
 [ "$(ls /usr/bin/clang* /usr/bin/make /usr/bin/perl 2>/dev/null)" = "$tools_before" ] && ok "no compiler came to the system" || bad "the system's tools changed" "$(ls /usr/bin/clang* /usr/bin/make /usr/bin/perl 2>/dev/null | tr '\n' ' ')"
-mkdir -p "$out" && cp -a . "$out/" && cp /var/lib/sbctl/keys/vh-game/module.crt "$out/module.crt"
+# out of the container: the runner's user reads them (the kernel's files and the certificate)
+mkdir -p "$out" && cp -a . "$out/" && cp /var/lib/sbctl/keys/vh-game/module.crt "$out/module.crt" && chmod -R a+rX "$out"
 du -sh "$built" | sed 's/^/size of the kernel'"'"'s files: /'
 
 [ "$fails" = 0 ] && echo "kbuild: all checks passed" || echo "kbuild: $fails check(s) failed"
