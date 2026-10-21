@@ -1,0 +1,63 @@
+# Track G, G3b (docs/uni/game.md): the gaming kernel built as vh-game kernel build builds it on a
+# machine, here in a privileged Void container whose own root plays the installed system
+# (tests/session/kbuild.sh), for the machine of a committed hw.zon (the VM rig's by default):
+# a module key with a passphrase of this run alone, the build root of the profile kbuild
+# (xbps-install in thor's place), kernel.org's tarball checked against kernel/pins, resolve with
+# the features auto,game, the build in its sandbox without network or privileges, the build root
+# removed after it. The kernel's files are the artifact game-kernel-NAME-KVER, which kvm-smoke's
+# step gamekernel installs with vh-kconf install and boots (input game_kernel_run).
+name: game-kernel
+on:
+  # a push to a branch of track G that changes the build (workflow_dispatch needs the workflow on
+  # main first)
+  push:
+    branches: ["claude/track-g-*"]
+    paths: ["session/src/kbuild.zig", "session/src/key.zig", "session/profiles/kbuild.zon", "session/profiles/keys.zon",
+            "kernel/profiles/features/game", "kernel/pins/linux-tarball.sha256", "tests/session/kbuild.sh", ".github/workflows/game-kernel.yml"]
+  workflow_dispatch:
+    inputs:
+      hw:
+        description: "the machine's hw.zon (kernel/hw/NAME.zon); the VM rig's is qemu-q35"
+        default: kernel/hw/qemu-q35.zon
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      HW: ${{ github.event.inputs.hw || 'kernel/hw/qemu-q35.zon' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: room on the runner (the build needs about 10 GiB while it runs)
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL /usr/local/share/boost
+          df -h /
+      - uses: ./.github/actions/setup-zig
+      - name: vh-game, vh-root, vh-kconf, vh-plan (static PIE, ReleaseSafe)
+        run: |
+          set -euo pipefail
+          (cd session && zig build -Dtarget=x86_64-linux -Dcpu=baseline --prefix "$GITHUB_WORKSPACE/build/st")
+          (cd kernel && zig build -Dtarget=x86_64-linux -Dcpu=baseline --prefix "$GITHUB_WORKSPACE/build/kt")
+          (cd adapt && zig build -Dtarget=x86_64-linux -Dcpu=baseline --prefix "$GITHUB_WORKSPACE/build/kt")
+      - name: the machine's plan (as the installer makes it; tiered, as kernel-custom)
+        run: |
+          set -euo pipefail
+          build/kt/bin/vh-plan plan --hw "$HW" --hwdb hwdb --pins kernel/pins --config vh.conf.example --security tiered --out build/plan
+          grep -E '^VH_PLAN_(TIER|KCONFIG|FEATURES|DENY|MARCH)=' build/plan/plan.env
+      - name: vh-game key new and vh-game kernel build in a privileged Void container
+        run: |
+          set -euo pipefail
+          img=$(sh tests/docker/build.sh)
+          mkdir -p build/out
+          docker run --rm --privileged -v "$GITHUB_WORKSPACE:/src:ro" -v "$GITHUB_WORKSPACE/build/out:/out" "$img" \
+            bash /src/tests/session/kbuild.sh /src "$HW" /src/build/plan/plan.zon /out
+          name=$(basename "$HW" .zon)
+          kver=$(sed -n 's/^kernel-custom local: linux-\([0-9.]*\),.*/\1/p' build/out/BUILD)
+          echo "ARTIFACT=game-kernel-$name-$kver" >> "$GITHUB_ENV"
+          ls -l build/out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT }}
+          path: build/out/*
+          retention-days: 30

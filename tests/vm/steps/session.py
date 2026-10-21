@@ -442,4 +442,118 @@ def step_gameboot(a):
         shutdown(vm, ser)
 
 
-STEPS = {"game": step_game, "gameboot": step_gameboot}
+# ---------------------------------------------------------------- G3b: the gaming kernel
+
+# the files of a game-kernel run (its artifact game-kernel-qemu-q35-KVER): kvm-smoke downloads
+# them here (its input game_kernel_run)
+GAME_KERNEL = os.path.join(vhvm.REPO, "build", "game-kernel")
+
+
+def step_gamekernel(a):
+    """The gaming kernel as vh-game kernel build builds it (a game-kernel run's files in
+    build/game-kernel): vh-kconf install makes it the gaming entry, before the stock UKI's twin;
+    vh-game play boots it: its own release, ia32 on, the module key's certificate built in,
+    loadable modules locked after stage 1, lockdown, the x86_64 filter on every process tree
+    but the gaming session's; vh-kconf check judges it as a machine kernel; remove: the system
+    and the ESP as before the install."""
+    import sys
+    build = os.path.join(GAME_KERNEL, "BUILD")
+    if not os.path.isfile(build):
+        sys.exit("no build/game-kernel: kvm-smoke with game_kernel_run (the id of a game-kernel run)")
+    with open(build) as f:
+        m = re.search(r"linux-([0-9.]+),", f.read())
+    kver = m.group(1)
+    release = f"{kver}-vh-game"
+    gid = f"Void-Linux-{release}_1--games-"
+    src = f"{VM_SRC}/build/game-kernel"
+    vm, ser = boot(a)
+    try:
+        base_fails, base_lines = fails(ser, "vh-audit before the gaming session")
+        rc, out = run(ser, f"rm -rf {TEST_DIR} && install -d -m 0700 {TEST_DIR} && " + CHECK_WAIT + "; " + snapshot(f"{TEST_DIR}/before") + "; " +
+                      esp_snap(f"{TEST_DIR}/esp-before") + "; " + keep_view(1), timeout=3600)
+        check("snapshots of the system and of the ESP before the install", rc == 0, out.strip().splitlines()[-1] if out.strip() else "")
+        rc, out = run(ser, f"printf '%s\\n' '{vhvm.USER_PASS}' | vh-game install --password-stdin 2>&1 | tail -3; vh-game boot on 2>&1 | tail -2", timeout=5400)
+        check("vh-game install and boot on", "VH_GAME installed" in out and "VH_GAME boot on" in out, out[-600:].replace("\n", " | "))
+        rc, out = run(ser, f"vh-kconf install {src} 2>&1 | tail -25", timeout=1800)
+        print(out)
+        check(f"vh-kconf install: the gaming kernel {release} into the gaming series", f"linux-{release}_1.efi installed" in out, out[-800:].replace("\n", " | "))
+        rc, out = run(ser, "mount -o ro /boot/efi && { ls /boot/efi/EFI/vh-game; grep '^/' /boot/efi/EFI/BOOT/limine.conf; "
+                           f"echo \"CMD=$(grep -ao 'ia32_emulation=[01]' /boot/efi/EFI/vh-game/linux-{release}_1.efi | tr '\\n' ' ')\"; }}; umount /boot/efi")
+        print(out)
+        entries = [l.strip() for l in out.splitlines() if l.startswith("/")]
+        check("the gaming kernel's entry before the twin's, both last",
+              len(entries) >= 3 and entries[-2] == f"/Void Linux {release}_1 (games)" and entries[-1].endswith("(games)") and "-vh-game" not in entries[-1],
+              " | ".join(entries))
+        check("its command line: ia32_emulation=1", re.search(r"^CMD=ia32_emulation=1 *$", out, re.M) is not None, out[-300:].replace("\n", " | "))
+        put_file(ser, "/home/game/ia32-test", ia32_elf())
+        run(ser, "chown game:game /home/game/ia32-test && chmod 0755 /home/game/ia32-test && "
+                 "echo '/home/game/ia32-test > /home/game/ia32.out 2>&1; echo \"rc=$?\" >> /home/game/ia32.out' > /home/game/.bash_profile && "
+                 "chown game:game /home/game/.bash_profile")
+        rc, out = run(ser, "vh-game play --no-reboot 2>&1 | tail -2; vh-limine-update --status")
+        check("vh-game play: the next boot is the gaming kernel's", f"LoaderEntryOneShot: {gid};" in out, out[-400:].replace("\n", " | "))
+    finally:
+        shutdown(vm, ser)
+
+    vm, ser = boot(a)
+    try:
+        rc, out = run(ser, "vh-limine-update --status | grep -E 'this boot|gaming'; uname -r; cat /proc/cmdline; cat /sys/kernel/security/lockdown; "
+                           "echo \"MODLOCK=$(cat /proc/sys/kernel/modules_disabled 2>/dev/null)\"; dmesg | grep -E 'X.509|module X.509|compiled-in' | head -8; "
+                           "vh-game status | tail -1; " + CHECK_WAIT + "; cat /run/vh/check.done; "
+                           f"cmp -s /var/lib/vh/check/stock.zon {TEST_DIR}/stock-1.zon && echo STOCK_VIEW_KEPT")
+        print(out)
+        check(f"Limine booted the gaming kernel: {release}", f"started: {gid};" in out and re.search(rf"^{re.escape(release)}$", out, re.M) is not None,
+              out[-600:].replace("\n", " | "))
+        check("ia32 on, lockdown confidentiality, loadable modules locked after stage 1",
+              " ia32_emulation=1" in out and "[confidentiality]" in out and "MODLOCK=1" in out, out[-600:].replace("\n", " | "))
+        check("its module certificate is the vh-game key's, built in", "vh-game module key" in out, out[-600:].replace("\n", " | "))
+        check("vh-game status: the gaming boot, tty3's login on", re.search(r"tty=on .* boot=on this=game ", out) is not None, out[-300:].replace("\n", " | "))
+        check("vh-kconf check judges it as a machine kernel and leaves the stock kernel's view as it was",
+              "VH_CHECK machine=same" in out and "STOCK_VIEW_KEPT" in out, out[-400:].replace("\n", " | "))
+        rc, out = run(ser, "; ".join([seccomp_of("runsvdir", "^runsvdir"), seccomp_of("getty-tty3", "agetty.* tty3"), seccomp_of("getty-tty1", "agetty.* tty1")]) +
+                      "; /home/game/ia32-test; echo \"FILTERED_RC=$?\"")
+        print(out)
+        check("the x86_64 filter on runsvdir and tty1's getty, not on tty3's; a 32-bit program killed outside the session",
+              all(re.search(p, out) for p in (r"runsvdir: Seccomp:2", r"getty-tty1: Seccomp:2", r"getty-tty3: Seccomp:0", r"FILTERED_RC=159")),
+              out[-500:].replace("\n", " | "))
+        vm.monitor("sendkey ctrl-alt-f3")
+        time.sleep(3)
+        keys(vm, "game")
+        vm.monitor("sendkey ret")
+        time.sleep(4)
+        keys(vm, vhvm.USER_PASS)
+        vm.monitor("sendkey ret")
+        rc, out = run(ser, "for i in $(seq 1 60); do grep -q '^rc=' /home/game/ia32.out 2>/dev/null && break; sleep 1; done; cat /home/game/ia32.out", timeout=300)
+        check("the gaming session on the gaming kernel runs the 32-bit program", "IA32_OK" in out and re.search(r"^rc=0$", out, re.M) is not None,
+              out[-300:].replace("\n", " | "))
+        vm.monitor("sendkey ctrl-alt-f1")
+        n_fails, lines = fails(ser, "vh-audit on the gaming kernel")
+        check("vh-audit on the gaming kernel: no new FAIL", n_fails == base_fails and n_fails >= 0, " | ".join(l for l in lines if l not in base_lines))
+    finally:
+        shutdown(vm, ser)
+
+    vm, ser = boot(a)
+    try:
+        rc, out = run(ser, "uname -r; cat /proc/cmdline; " + CHECK_WAIT + "; " + keep_view(3))
+        check("the boot after it is the everyday one: the stock kernel, ia32 off", re.search(r"^\d+\.\d+\.\d+_\d+$", out, re.M) is not None and " ia32_emulation=0" in out,
+              out[-400:].replace("\n", " | "))
+        rc, out = run(ser, "vh-game remove --yes 2>&1 | grep -E '^VH_GAME|vh-game:|limine.conf|gaming'", timeout=1800)
+        print(out)
+        check("vh-game remove: the gaming boot, the gaming kernel and its records go", "VH_GAME boot off" in out and "VH_GAME removed" in out, out[-500:].replace("\n", " | "))
+        rc, out = run(ser, snapshot(f"{TEST_DIR}/after") + "; " + esp_snap(f"{TEST_DIR}/esp-after") + "; "
+                      f"if cmp -s {TEST_DIR}/before {TEST_DIR}/after; then echo FILES_SAME; else echo DIFFERS:; diff {TEST_DIR}/before {TEST_DIR}/after | "
+                      "sed -n 's/^[<>] //p' | awk -F'\\t|  ' '{print $1 ~ /^[0-9a-f]{64}$/ ? $2 : $1}' | LC_ALL=C sort -u | head -60; fi; "
+                      f"cmp -s {TEST_DIR}/esp-before {TEST_DIR}/esp-after && echo ESP_SAME || {{ echo ESP_DIFF:; diff {TEST_DIR}/esp-before {TEST_DIR}/esp-after; }}",
+                      timeout=3600)
+        print(out)
+        check("after the removal the system is the system before the install, byte for byte", "FILES_SAME" in out, out[-1200:].replace("\n", " | "))
+        diff = [l for l in out.split("ESP_DIFF:")[-1].splitlines() if l.startswith(("<", ">"))] if "ESP_DIFF:" in out else []
+        check("and the ESP: the same files, byte for byte (Limine's BOOTX64.EFI may carry a new signature)",
+              "ESP_SAME" in out or (diff and all(l.rstrip().endswith("/EFI/BOOT/BOOTX64.EFI") for l in diff)), " | ".join(diff[:12]))
+        n_fails, lines = fails(ser, "vh-audit after the removal")
+        check("vh-audit after the removal: as before", n_fails == base_fails, " | ".join(lines))
+        run(ser, f"rm -rf {TEST_DIR}")
+    finally:
+        shutdown(vm, ser)
+
+
+STEPS = {"game": step_game, "gameboot": step_gameboot, "gamekernel": step_gamekernel}
