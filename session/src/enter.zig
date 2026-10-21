@@ -9,16 +9,20 @@
 //!     denied, so it cannot drop or gain one);
 //!   - the gaming root /var/lib/vh/roots/game read-only as /; the home /home/game; a /dev of its
 //!     own: null, zero, full, random, urandom, tty, the login's terminal, a new instance of pts,
-//!     shm and the GPU's /dev/dri, nothing else (no input device: seatd hands gamescope those of
-//!     the active session, and takes them back at a VT switch); a /proc of the session's PID
-//!     namespace; sysfs read-only; /run with seatd's socket and udev's database (read-only);
-//!     /tmp and /var/tmp in memory;
+//!     shm, the GPU's /dev/dri and the sound cards' /dev/snd with their playback and control
+//!     nodes alone (every other node of it, the microphone's among them, is /dev/null there),
+//!     nothing else (no input device: seatd hands gamescope those of the active session, and
+//!     takes them back at a VT switch); a /proc of the session's PID namespace; sysfs read-only;
+//!     /run with seatd's socket and udev's database (read-only); /tmp and /var/tmp in memory;
 //!   - no network: the loopback interface only (the network namespace hides the abstract
 //!     sockets of the session's Xwayland from every other process too); the host name "game";
-//!   - no new privileges and no capability for the programs of the session.
+//!   - no new privileges and no capability for the programs of the session;
+//!   - sound from a server of the session's own: the gaming root's PipeWire, with WirePlumber and
+//!     its pulse server, when there is a sound card game can play through. The session talks to
+//!     no process of another user.
 //!
-//! The session's first process is PID 1 of its PID namespace: when the login shell ends, every
-//! process of the session ends with it.
+//! The session's first process is PID 1 of its PID namespace, its program PID 2, the sound
+//! server after it: when the login shell ends, every process of the session ends with it.
 //!
 //!   vh-game-enter              an interactive login shell in the root (login runs it as "-vh-game-enter")
 //!   vh-game-enter -c CMD       CMD by bash in the root
@@ -164,11 +168,23 @@ fn init1(s: Session) noreturn {
         vh.warn("the session could not be made: {s}: {s}", .{ step, vh.serr() });
         linux.exit_group(1);
     };
-    // PID 2 is the session's program; PID 1 reaps every process until it ends
+    // PID 2 is the session's program; it starts once the sound server is up (or not started),
+    // so that a game run at once finds it. PID 1 reaps every process until the program ends.
+    var go: [2]i32 = undefined;
+    _ = vh.sys(linux.pipe2(&go, .{ .CLOEXEC = true })) catch vh.die("pipe: {s}", .{vh.serr()});
     vh.flush();
     const rc = vh.sys(linux.fork()) catch vh.die("fork: {s}", .{vh.serr()});
-    if (rc == 0) program(s);
+    if (rc == 0) {
+        vh.close(go[1]);
+        var b: [1]u8 = undefined;
+        _ = vh.readFd(go[0], &b) catch {};
+        vh.close(go[0]);
+        program(s);
+    }
+    vh.close(go[0]);
     const main_pid: linux.pid_t = @intCast(rc);
+    if (s.mode != .check) sound(s);
+    vh.close(go[1]);
     var code: u8 = 1;
     while (true) {
         var st: i32 = 0;
@@ -219,6 +235,8 @@ fn build(s: Session) vh.Error!void {
         try sys.mkdir(inRoot("/dev/dri"), 0o755);
         try sys.bindKeep("/dev/dri", inRoot("/dev/dri"), false, 0);
     }
+    at("/dev/snd");
+    if (vh.isDir(common.snd_dir)) try soundNodes();
     at("/dev/pts");
     try sys.mkdir(inRoot("/dev/pts"), 0o755);
     try sys.mount("devpts", inRoot("/dev/pts"), "devpts", MS.NOSUID | MS.NOEXEC, "newinstance,ptmxmode=0666,mode=0620");
@@ -259,27 +277,110 @@ fn bindNode(dev: []const u8) vh.Error!void {
     try sys.bindKeep(dev, inRoot(dev), false, 0);
 }
 
+/// The sound cards: the system's /dev/snd as it is, for PipeWire lists it and takes a card only
+/// when every PCM node of it opens, and each node but a playback PCM and a control node covered
+/// by /dev/null. The microphone, hwdep, the sequencer and the timer are not in the session;
+/// game has no ACL entry on them besides (vh-game's udev rule gives it the other two kinds).
+fn soundNodes() vh.Error!void {
+    const dst = inRoot(common.snd_dir);
+    try sys.mkdir(dst, 0o755);
+    try sys.bindKeep(common.snd_dir, dst, false, 0);
+    for (vh.listDir(common.snd_dir) catch return) |n| {
+        if (common.playbackNode(n)) continue;
+        const st = vh.stat(vh.fmt("{s}/{s}", .{ common.snd_dir, n }), false) catch continue;
+        if (st.mode & vh.S.IFMT != vh.S.IFCHR) continue;
+        try sys.bindKeep("/dev/null", vh.fmt("{s}/{s}", .{ dst, n }), false, 0);
+    }
+}
+
+// ---------------------------------------------------------------- the session's sound server
+
+/// The session's own sound server: the gaming root's PipeWire (it starts WirePlumber and its
+/// pulse server, as the root's pipewire.conf.d says), when the session has a playback node game
+/// opens and the root has PipeWire. No privilege and no capability, as the session's programs;
+/// no terminal; its output in the runtime directory. PID 1 waits for its pulse socket, at most
+/// 5 seconds; it ends with the session.
+fn sound(s: Session) void {
+    if (!vh.isRegular("/usr/bin/pipewire") or !playable()) return;
+    const runtime = vh.fmt("/run/user/{d}", .{s.uid});
+    const envp = sessionEnv(s, false);
+    vh.flush();
+    const pid = vh.sys(linux.fork()) catch return;
+    if (pid == 0) {
+        _ = linux.setsid();
+        sys.noNewPrivs() catch soundFailed("no_new_privs");
+        sys.dropCaps() catch soundFailed("capabilities");
+        sys.umask(0o077);
+        const null_fd = vh.openFd("/dev/null", .{ .ACCMODE = .RDWR, .CLOEXEC = true }, 0) catch soundFailed("/dev/null");
+        const log = vh.openFd(vh.fmt("{s}/vh-sound.log", .{runtime}), .{ .ACCMODE = .WRONLY, .CREAT = true, .TRUNC = true, .NOFOLLOW = true, .CLOEXEC = true }, 0o600) catch soundFailed("its log");
+        _ = linux.dup2(null_fd, 0);
+        _ = linux.dup2(log, 1);
+        _ = linux.dup2(log, 2);
+        _ = linux.chdir(vh.z(s.home).ptr);
+        const argv = [_:null]?[*:0]const u8{"pipewire"};
+        const rc = linux.execve("/usr/bin/pipewire", &argv, envp);
+        vh.errno = linux.errno(rc);
+        soundFailed("/usr/bin/pipewire");
+    }
+    // until its pulse socket is there, or the server has ended (it is reaped here then)
+    const sock = vh.fmt("{s}/pulse/native", .{runtime});
+    var i: usize = 0;
+    while (i < 250 and !vh.pathExists(sock)) : (i += 1) {
+        var st: i32 = 0;
+        if (linux.wait4(@intCast(pid), &st, linux.W.NOHANG, null) == pid) return;
+        sys.sleepMs(20);
+    }
+}
+
+/// the sound server's child gives up: a word on stderr (the terminal, or once it is there the
+/// log), and the session goes on without sound
+fn soundFailed(comptime what: []const u8) noreturn {
+    vh.warn("no sound in this session: " ++ what ++ ": {s}", .{vh.serr()});
+    vh.flush();
+    linux.exit_group(127);
+}
+
+/// whether the session has a playback PCM node that game opens for reading and writing
+fn playable() bool {
+    for (vh.listDir(common.snd_dir) catch return false) |n| {
+        if (!vh.startsWith(n, "pcmC") or !common.playbackNode(n)) continue;
+        if (canUse(vh.fmt("{s}/{s}", .{ common.snd_dir, n }))) return true;
+    }
+    return false;
+}
+
+/// access(2) with read and write: the real user's permissions, its ACL entries counted
+fn canUse(p: []const u8) bool {
+    return linux.errno(linux.access(vh.z(p).ptr, linux.R_OK | linux.W_OK)) == .SUCCESS;
+}
+
 // ---------------------------------------------------------------- the session's program
+
+/// the environment of the session's programs (TERM for those on the terminal)
+fn sessionEnv(s: Session, term: bool) [*:null]const ?[*:0]const u8 {
+    var env: std.ArrayList([]const u8) = .empty;
+    env.appendSlice(vh.gpa, &.{
+        vh.fmt("HOME={s}", .{s.home}),
+        vh.fmt("USER={s}", .{s.name}),
+        vh.fmt("LOGNAME={s}", .{s.name}),
+        "SHELL=/bin/bash",
+        "PATH=/usr/local/bin:/usr/bin:/usr/sbin:/bin:/sbin",
+        "LANG=C.UTF-8",
+        vh.fmt("XDG_RUNTIME_DIR=/run/user/{d}", .{s.uid}),
+    }) catch vh.oom();
+    if (term) env.append(vh.gpa, vh.fmt("TERM={s}", .{s.term})) catch vh.oom();
+    const envp = vh.gpa.allocSentinel(?[*:0]const u8, env.items.len, null) catch vh.oom();
+    for (env.items, 0..) |e, i| envp[i] = vh.z(e).ptr;
+    return envp.ptr;
+}
 
 fn program(s: Session) noreturn {
     sys.noNewPrivs() catch vh.die("no_new_privs: {s}", .{vh.serr()});
     sys.dropCaps() catch vh.die("capabilities: {s}", .{vh.serr()});
     sys.umask(0o077);
     _ = linux.chdir(vh.z(s.home).ptr);
-    const runtime = vh.fmt("/run/user/{d}", .{s.uid});
-    const env = [_][]const u8{
-        vh.fmt("HOME={s}", .{s.home}),
-        vh.fmt("USER={s}", .{s.name}),
-        vh.fmt("LOGNAME={s}", .{s.name}),
-        "SHELL=/bin/bash",
-        "PATH=/usr/local/bin:/usr/bin:/usr/sbin:/bin:/sbin",
-        vh.fmt("TERM={s}", .{s.term}),
-        "LANG=C.UTF-8",
-        vh.fmt("XDG_RUNTIME_DIR={s}", .{runtime}),
-    };
-    const envp = vh.gpa.allocSentinel(?[*:0]const u8, env.len, null) catch vh.oom();
-    for (env, 0..) |e, i| envp[i] = vh.z(e).ptr;
-    vh.envp = envp.ptr;
+    const envp = sessionEnv(s, true);
+    vh.envp = envp;
     if (s.mode == .check) linux.exit_group(check(s));
     const argv: []const []const u8 = switch (s.mode) {
         .shell => &.{"-bash"},
@@ -289,7 +390,7 @@ fn program(s: Session) noreturn {
     const cargv = vh.gpa.allocSentinel(?[*:0]const u8, argv.len, null) catch vh.oom();
     for (argv, 0..) |a, i| cargv[i] = vh.z(a).ptr;
     vh.flush();
-    const rc = linux.execve("/bin/bash", cargv.ptr, envp.ptr);
+    const rc = linux.execve("/bin/bash", cargv.ptr, envp);
     vh.errno = linux.errno(rc);
     vh.die("/bin/bash of the gaming root: {s}", .{vh.serr()});
 }
@@ -368,7 +469,26 @@ fn check(s: Session) u8 {
     var devs: vh.Strv = .{};
     for (vh.listDir("/dev") catch &.{}) |n| devs.add(n);
     devs.sort();
-    expect(!vh.pathExists("/dev/input") and !vh.pathExists("/dev/mem") and !vh.pathExists("/dev/kmsg") and !vh.pathExists("/dev/snd"), "no input, memory, kernel log or sound device", devs.join(" "));
+    expect(!vh.pathExists("/dev/input") and !vh.pathExists("/dev/mem") and !vh.pathExists("/dev/kmsg"), "no input, memory or kernel log device", devs.join(" "));
+    // the sound cards: their playback and control nodes as they are, every other node of
+    // /dev/snd /dev/null; game opens the former (its ACL entry from vh-game's udev rule)
+    if (vh.isDir(common.snd_dir)) {
+        var real: vh.Strv = .{};
+        var other: vh.Strv = .{};
+        var closed: vh.Strv = .{};
+        for (vh.listDir(common.snd_dir) catch &.{}) |n| {
+            const st = vh.stat(vh.fmt("{s}/{s}", .{ common.snd_dir, n }), false) catch continue;
+            if (st.mode & vh.S.IFMT != vh.S.IFCHR) continue;
+            const devnull = st.rdev_major == 1 and st.rdev_minor == 3;
+            if (common.playbackNode(n) and !devnull) {
+                real.add(n);
+                if (!canUse(vh.fmt("{s}/{s}", .{ common.snd_dir, n }))) closed.add(n);
+            } else if (!devnull) other.add(n);
+        }
+        real.sort();
+        expect(other.len() == 0, "sound: the playback and control nodes alone; the microphone, hwdep, sequencer and timer are /dev/null", if (other.len() > 0) other.join(" ") else real.join(" "));
+        expect(closed.len() == 0, "sound: game reads and writes them", closed.join(" "));
+    }
     if (vh.isDir("/dev/dri")) {
         var dri: vh.Strv = .{};
         for (vh.listDir("/dev/dri") catch &.{}) |n| dri.add(n);

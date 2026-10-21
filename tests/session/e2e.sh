@@ -2,7 +2,8 @@
 # The gaming session end to end, as root in a throwaway privileged Void container whose own root
 # plays the installed system (tests/session/run.sh starts it):
 #   1. the system as the installer leaves it, as far as vh-game reads it: the groups _seatd and
-#      render, access.conf, /etc/shells, fstab, the getty of tty3, the programs;
+#      render, access.conf, /etc/shells, fstab, the getty of tty3, the programs, udev's rules
+#      directory, and a sound card's nodes as udev makes them (a container has no card);
 #   2. a snapshot: every file under / (type, mode, owner, size, link target, sha256);
 #   3. vh-game install, with a stand-in for thor (xbps-install with thor's arguments; the
 #      packages cut to base-files, bash and coreutils unless VH_TEST_FULL=1) and a plan.env;
@@ -28,6 +29,18 @@ printf 'repository=%s\n' "$repo" > /etc/xbps.d/00-repository-main.conf
 install -m 0755 "$src/build/st/bin/vh-game-enter" /usr/local/bin/
 install -m 0755 "$src/build/st/bin/vh-game" "$src/build/st/bin/vh-root" /usr/local/sbin/
 [ -d /etc/sv/agetty-tty3 ] || mkdir -p /etc/sv/agetty-tty3
+mkdir -p /etc/udev/rules.d
+# a sound card's nodes as udev makes them, root:audio 0660: its control node, a playback and a
+# capture PCM, its codec's hwdep, the timer and the sequencer
+getent group audio >/dev/null || groupadd -r audio
+mkdir -p /dev/snd
+for n in controlC0:0 pcmC0D0p:16 pcmC0D0c:24 hwC0D0:4 timer:33 seq:1; do
+	# a container may have the host's timer and sequencer already, and no card
+	[ -e "/dev/snd/${n%:*}" ] && continue
+	mknod "/dev/snd/${n%:*}" c 116 "${n#*:}"
+	chown root:audio "/dev/snd/${n%:*}"
+	chmod 0660 "/dev/snd/${n%:*}"
+done
 # /var/lib/vh as vh-limine-update makes it, for root alone: vh-root lets game, and nobody else,
 # pass through it while the root exists (an ACL), and takes that away with the removal
 mkdir -p /var/lib/vh && chmod 0700 /var/lib/vh
@@ -112,6 +125,30 @@ fi
 vh-root list | tee /tmp/list.out
 grep -q '^game	profile game' /tmp/list.out && ok "vh-root list" || bad "vh-root list"
 vh-game status | tail -1 | grep -q 'installed=yes' && ok "vh-game status" || bad "vh-game status"
+
+# the sound: the session's own server in the root, the cards' playback and control nodes for game
+for f in pipewire.conf.d/10-wireplumber.conf pipewire.conf.d/20-pipewire-pulse.conf; do
+	[ -L "$root/etc/pipewire/$f" ] || bad "no link $root/etc/pipewire/$f"
+done
+for f in pipewire/pipewire.conf.d/60-vh-game.conf pipewire/pipewire-pulse.conf.d/60-vh-game.conf wireplumber/wireplumber.conf.d/60-vh-game.conf; do
+	[ -f "$root/etc/$f" ] || bad "no $root/etc/$f"
+done
+grep -q 'support.dbus = disabled' "$root/etc/wireplumber/wireplumber.conf.d/60-vh-game.conf" && grep -q 'module.rt = false' "$root/etc/pipewire/pipewire.conf.d/60-vh-game.conf" \
+	&& ok "the root's sound server: PipeWire, its pulse server, WirePlumber for the cards alone, no realtime" || bad "the root's sound configuration"
+if [ "${VH_TEST_FULL:-0}" = 1 ]; then
+	[ -x "$root/usr/bin/pipewire" ] && [ -x "$root/usr/bin/wireplumber" ] && ok "pipewire and wireplumber in the root" || bad "pipewire and wireplumber in the root"
+fi
+grep -qF 'SUBSYSTEM=="sound", KERNEL=="controlC[0-9]*|pcmC[0-9]*D[0-9]*p", ACTION!="remove", RUN+="/usr/bin/setfacl -m u:game:rw $devnode"' /etc/udev/rules.d/99-vh-game.rules \
+	&& ok "the udev rule: game's ACL entry on the playback and control nodes" || bad "the udev rule" "$(cat /etc/udev/rules.d/99-vh-game.rules 2>&1 | tail -1)"
+acl_ok=1
+for n in controlC0 pcmC0D0p; do getfacl -p "/dev/snd/$n" 2>/dev/null | grep -qx 'user:game:rw-' || acl_ok=0; done
+for n in pcmC0D0c hwC0D0 timer seq; do getfacl -p "/dev/snd/$n" 2>/dev/null | grep -q '^user:game:' && acl_ok=0; done
+[ "$acl_ok" = 1 ] && ok "game's ACL entry on the control and playback nodes now, none on capture, hwdep, timer, sequencer" \
+	|| bad "the sound nodes' ACLs" "$(getfacl -s -p /dev/snd/* 2>&1 | tr '\n' '|')"
+setpriv --reuid=game --regid=game --init-groups sh -c 'test -r /dev/snd/pcmC0D0p -a -w /dev/snd/pcmC0D0p -a ! -r /dev/snd/pcmC0D0c' \
+	&& ok "game opens the playback node, not the capture node" || bad "game's access to the sound nodes"
+grep -q '^VH_GAME installed .* sound=2$' /tmp/install.out && vh-game status | tail -1 | grep -q ' sound=2$' \
+	&& ok "vh-game install and status: 2 sound nodes for game" || bad "sound in install's and status' lines" "$(grep '^VH_GAME' /tmp/install.out; vh-game status | tail -1)"
 vh-game install --any-arch --password-hash "$hash" --plan-env /tmp/plan.env --thor /tmp/stub/thor > /tmp/again.out 2>&1 \
 	&& bad "a second install is refused" || { grep -q 'exists already' /tmp/again.out && ok "a second install is refused" || bad "second install" "$(cat /tmp/again.out)"; }
 
@@ -128,6 +165,17 @@ else
 	out=$(setpriv --reuid=game --regid=game --init-groups /usr/local/bin/vh-game-enter -c 'echo "$(id -un) $(hostname 2>/dev/null || cat /proc/sys/kernel/hostname) $$ $HOME"; ls /home' 2>&1)
 	[ "$out" = "game game 2 /home/game
 game" ] && ok "vh-game-enter -c: game, host game, PID 2, only its home" || bad "vh-game-enter -c" "$out"
+	# the session's /dev/snd: the playback and control nodes as they are (116:n), every other
+	# node /dev/null (1:3)
+	out=$(setpriv --reuid=game --regid=game --init-groups /usr/local/bin/vh-game-enter -c 'cd /dev/snd && stat -c "%n %t:%T" * | sort | tr "\n" " "' 2>&1)
+	[ "$out" = "controlC0 74:0 hwC0D0 1:3 pcmC0D0c 1:3 pcmC0D0p 74:10 seq 1:3 timer 1:3 " ] \
+		&& ok "the session's sound nodes: control and playback, the microphone, hwdep, timer and sequencer /dev/null" || bad "the session's /dev/snd" "$out"
+	if [ "${VH_TEST_FULL:-0}" = 1 ]; then
+		# the session's own sound server: up (its pulse socket) before the program runs
+		out=$(setpriv --reuid=game --regid=game --init-groups /usr/local/bin/vh-game-enter -c 'test -S "$XDG_RUNTIME_DIR/pulse/native" && echo "PULSE_UP $$"' 2>&1)
+		[ "$out" = "PULSE_UP 2" ] && ok "the session's sound server: its pulse socket there before the program, which is PID 2" \
+			|| bad "the session's sound server" "$(echo "$out" | tr '\n' '|')"
+	fi
 	# a file the session writes in its home stays; one in its /tmp does not
 	setpriv --reuid=game --regid=game --init-groups /usr/local/bin/vh-game-enter -c 'echo save > ~/save; echo t > /tmp/t' >/dev/null 2>&1
 	[ "$(cat /home/game/save 2>/dev/null)" = save ] && [ ! -e /tmp/t ] && ok "the home is the user's, /tmp the session's" || bad "home and /tmp"
@@ -148,6 +196,9 @@ fi
 cmp -s /tmp/passwd /etc/passwd && cmp -s /tmp/group /etc/group && cmp -s /tmp/shadow /etc/shadow && ok "passwd, group, shadow" || bad "passwd, group, shadow"
 [ "$(nft list ruleset 2>/dev/null || true)" = "$nft_before" ] && ok "the nft ruleset" || bad "the nft ruleset"
 findmnt /home/game >/dev/null || findmnt /var/lib/vh/roots >/dev/null && bad "a mount is left" || ok "no mount left"
+# /dev is not in the snapshot: the sound nodes are checked here, back to their mode alone
+[ -z "$(getfacl -s -p /dev/snd/* 2>/dev/null)" ] && [ "$(stat -c %a /dev/snd/* | sort -u)" = 660 ] \
+	&& ok "the sound nodes: no ACL left, 0660 as udev made them" || bad "the sound nodes after the removal" "$(getfacl -s -p /dev/snd/* 2>&1 | tr '\n' '|')"
 vh-game remove --yes > /tmp/remove2.out 2>&1 && ok "a second removal changes nothing" || bad "second removal" "$(cat /tmp/remove2.out)"
 snap /tmp/after2
 cmp -s /tmp/before /tmp/after2 && ok "still the same" || bad "the second removal changed the system"

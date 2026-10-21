@@ -3,8 +3,10 @@
 // the machine's GPU comes from the plan (hwdb, game_packages), never from this file.
 .{
     .name = "game",
-    .why = "the gaming session on tty3: gamescope, its Xwayland, Mesa and Vulkan",
-    .packages = .{ "base-files", "bash", "coreutils", "mesa-dri", "vulkan-loader", "Vulkan-Tools", "gamescope" },
+    .why = "the gaming session on tty3: gamescope, its Xwayland, Mesa and Vulkan, a sound server of its own",
+    // pipewire (its pulse server in it) and wireplumber: the session's own sound server
+    // (vh-game-enter starts it), so that no game talks to a process of the everyday user
+    .packages = .{ "base-files", "bash", "coreutils", "mesa-dri", "vulkan-loader", "Vulkan-Tools", "gamescope", "pipewire", "wireplumber" },
     // thor's deny list keeps Xwayland out of the system (no window isolation); inside this root
     // it is the X server of gamescope, which shows the games' windows only
     .allow = .{"xorg-server-xwayland"},
