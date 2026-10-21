@@ -46,7 +46,9 @@ cp -r "$MOD_DIR/90vhtotp" /usr/lib/dracut/modules.d/90vhtotp
 chmod 0755 /usr/lib/dracut/modules.d/90vhtotp/*.sh
 printf 'PCRS="%s"\nLOCK_PCR=%s\n' "$PCRS" "$LOCK_PCR" > /etc/vh/totp.conf
 echo 'add_dracutmodules+=" vhtotp "' > /etc/dracut.conf.d/20-vh-totp.conf
-install -d -m 0700 /var/lib/vh
+# /var/lib/vh is root's alone; one that is there keeps its mode: a chmod would empty the mask
+# of its ACL, and with it vh-root's entry for game (docs/uni/game.md)
+mkdir -p -m 0700 /var/lib/vh
 : > /var/lib/vh/totp-generate
 rebuild_uki
 mark_enabled
