@@ -1,0 +1,8 @@
+# The kernel.org tarball the gaming kernel is built from on the machine (vh-game kernel build,
+# docs/uni/game.md, G3b), by its SHA-256 and size: the machine checks the download against
+# this line and needs no PGP. Recorded after the PGP check of linux-6.18.57.tar.sign against
+# kernel-org.fingerprints (VALIDSIG 647F28654894E3BD457199BE38DBBDC86092693E, Greg
+# Kroah-Hartman, 2026-10-22). The version is the machine kernel's (kernel-custom's KVER); a
+# new version is a new line, the newest of which vh-game builds.
+# SHA256  NAME  SIZE
+5bd9acdc82ec5efc3790ae840e5aaa40dfde7efff261cf6dde902dc570acf98c  linux-6.18.57.tar.xz  154863520
