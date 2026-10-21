@@ -19,7 +19,7 @@ another, the user chooses. The user's decisions of 2026-10-20 are in the table b
 | **G1** | `vh-root`, the gaming root, the login of `game` on tty3; Vulkan through Mesa (the GPU's driver from the plan); no network, no sound, no 32-bit, no kernel change; the remove-and-compare test | built; verified in a container and on the VM rig, 23 of 23 ([below](#what-is-verified)); not yet on hardware |
 | **G2** | sound: the session's own PipeWire (with WirePlumber and its pulse server) in the gaming root, on the sound cards' playback and control nodes alone, which `game` gets by an ACL entry of a udev rule; no microphone, no camera, no process of the everyday user in reach ([below](#g2-sound)) | built; verified in a container and on the VM rig, 36 of 36 ([below](#what-is-verified)); not yet on hardware |
 | **G3a** | the gaming boot, on any machine: the stock UKI's twin with `ia32_emulation=1`, the last entry of Limine's menu, booted once by `vh-game play`; in it every process tree but the gaming session's under a seccomp filter that kills a 32-bit system call, the controllers' drivers, the login of `game` on tty3 by itself; no build, no key ([below](#g3a-the-gaming-boot)) | built; verified in containers and on the VM rig, 27 of 27 ([below](#what-is-verified)); not yet on hardware |
-| G3b | the build root (thor `-r`, removed after each build) and the gaming kernel built on the machine: the machine kernel's resolve with `features/game` (ia32, NTSYNC, controllers, modules for NVIDIA only), the user's certificate the only module key it trusts, `MODULE_SIG_FORCE`, lockdown and kCFI kept | planned |
+| **G3b** | the gaming kernel built on the machine: the user's module key under a passphrase (`vh-game key new`), the build root (removed after each build) and a sandbox without network or privileges, the machine kernel's pipeline with `features/game` (ia32, NTSYNC, controllers, modules for NVIDIA only), the module key's certificate the only one it trusts, `MODULE_SIG_FORCE`, lockdown and kCFI kept; `vh-kconf install` makes it the gaming entry, the stock UKI's twin its fallback ([below](#g3b-the-gaming-kernel-built-on-the-machine)) | built; the build verified in CI (34 minutes on 4 CPUs); its install and boot on the VM rig: pending |
 | G3c | the open NVIDIA modules (Turing and newer) built DKMS-style in the build root against the gaming kernel, signed outside it with the user's key under a passphrase; `/dev/nvidia*` for `game` alone; the NVIDIA userspace of the same version (with 32-bit) in the gaming root | planned |
 | G3d | the NVIDIA driver by the GPU's PCI id (hwdb): the open modules for Turing and newer, Void's closed 580 for Maxwell to Volta, 470 for Kepler, none for older GPUs | planned |
 | G4 | Steam: multilib, the 32-bit Mesa, the network of the UID `game`, controllers | planned |
@@ -48,6 +48,14 @@ The user's decisions of 2026-10-21, on the gaming boot (G3a):
 |---|---|
 | the gaming boot of a machine without NVIDIA | the **stock signed UKI with `ia32_emulation=1`**, for every machine: no build, no compiler, no key; a machine gaming kernel without loadable modules becomes an option once the build root exists (G3b) |
 | ia32 in the gaming boot | a **seccomp filter "the x86_64 ABI only"** on every process tree of that boot but the gaming session's (the services, the gettys and logins, the desktop): a 32-bit system call kills the process, and only the gaming session reaches the kernel's ia32 code. Upstream planned this (`kernel/profiles/features/game`) and did not build it |
+
+The user's decisions of 2026-10-22, on the gaming kernel (G3b), the recommendations accepted:
+
+| Question | Decision |
+|---|---|
+| where the module key lives | **beside the Secure Boot keys**: on the encrypted disk, or on the keys' medium with `optional/sb-offline-keys`. The passphrase protects the key's copies (backups, a copied disk); against a root of the running system only offline Secure Boot keys help, since the disk's db key signs any boot image |
+| the gaming kernel's build files between builds | **kept**, without compilers (its headers, `Module.symvers`, `.config`, its build scripts): a new NVIDIA driver rebuilds the module alone, minutes instead of the kernel's build; they come with G3c, which builds against them |
+| NVIDIA GPUs before Turing (Void's closed 580 and 470) | **decided in G3d**, once their closed objects are checked against kCFI |
 
 The user's decisions of 2026-10-21, on sound (G2):
 
@@ -251,6 +259,60 @@ doas vh-game boot off   the marker, the script, the twin and its entry go (vh-ga
   twin on the ESP, while the gaming boot is on; `vh-game boot off` and `vh-game remove` take them
   away.
 
+## G3b: the gaming kernel, built on the machine
+
+```
+doas vh-game key new        the module key: RSA-4096, SHA-512, a self-signed certificate; the
+                            private key under a passphrase (asked twice), beside the Secure Boot
+                            keys in /var/lib/sbctl/keys/vh-game
+doas vh-game kernel build   kernel.org's tarball of the pinned version, checked; the build root;
+                            vh-kconf resolve with the features auto,game; the kernel's own
+                            configuration and build in a sandbox; vh-kconf diff and the gaming
+                            kernel's invariants; the kernel's files in /var/lib/vh/game/kernel/KVER;
+                            the build root and the tree removed; with the gaming boot on,
+                            vh-kconf install: the gaming entry is the new kernel
+doas vh-game play           the next boot, once: the gaming kernel A.B.C-vh-game
+```
+
+- **The key** (`session/src/key.zig`). The certificate has the extensions of the kernel's own
+  signing key (not a CA, digital signature, its key identifiers); the gaming kernel is built to
+  trust it alone (`CONFIG_MODULE_SIG_KEY`), and the NVIDIA modules of G3c are signed with it,
+  outside the build's sandbox. The private key is PKCS#8 under the passphrase (AES-256 with
+  scrypt at OpenSSL's memory limit for it, 16 MiB, four times its work); in the clear it is only
+  in a pipe between two openssl processes. It lives where the Secure Boot keys live: on the
+  encrypted disk, or with `optional/sb-offline-keys` on the keys' medium, which `vh-keys mount`
+  binds over `/var/lib/sbctl/keys` (decision 3). OpenSSL comes from a root of its own (profile
+  `keys`), made for the key and removed after it: the system has no openssl. `vh-game key
+  show` prints its fingerprint; `vh-game remove` takes it away.
+- **The source.** kernel.org's tarball of the machine kernel's version (`kernel/pins`, 6.18.57),
+  downloaded by `xbps-fetch` and checked against `kernel/pins/linux-tarball.sha256`: its SHA-256 and
+  size, recorded after the PGP check of the tarball's signature against the pinned keys
+  (Greg Kroah-Hartman's for 6.18.57). The machine needs no PGP and no key server.
+- **The build root** (profile `kbuild`): clang, lld, LLVM, make, flex, bison, bc, perl, pahole,
+  the headers of libelf and OpenSSL and the shell tools, 1157 MiB, installed by thor with its own
+  policy (the deny list's compilers allowed there alone), and removed after the build, whatever
+  happened: no compiler stays on the disk between builds.
+- **The sandbox** (`session/src/kbuild.zig`). The kernel's tree is untrusted input: its
+  configuration and build run in mount, PID, network, IPC and UTS namespaces of their own, the
+  build root read-only as `/`, `/work` (the tarball, resolve's output, the tree) the one place
+  they write, a `/proc` of their own and a `/dev` of five harmless nodes; no network at all (no
+  interface but a downed `lo`); as the uid 65530, which no account has, without capabilities (the
+  bounding set dropped too) and with no new privileges. The key never enters it; only its
+  certificate does.
+- **The kernel.** The machine kernel's pipeline (kernel-custom's): `vh-kconf resolve` on this
+  machine's `hw.zon` and plan with the features `auto,game`, the kernel's own `localyesconfig`
+  and `olddefconfig`, `vh-kconf diff` (a mandatory symbol lost stops it), then the invariants of
+  a gaming kernel: ia32, loadable modules signed and forced (SHA-512, no unload, no forced load),
+  the module key's certificate, the release `-vh-game` (its modules apart from every other
+  kernel's), lockdown in confidentiality mode, kCFI, BTF, NTSYNC, no io_uring, no nouveau. Built
+  with clang and the plan's `-march`, its `bzImage` and `Module.symvers` (for the NVIDIA modules).
+- **Its entry.** `vh-kconf install` takes the gaming kernel's files as a machine kernel's and puts
+  its UKI into the gaming series: `EFI/vh-game/linux-A.B.C-vh-game_N.efi`, its command line the
+  stock UKI's with the module parameters kept and `ia32_emulation=1`; vh-limine-update lists the
+  gaming kernels (the newest two) before the stock UKI's twin, which stays the fallback;
+  `vh-game play` boots the newest. `vh-kconf check` judges it as a machine kernel, against the
+  stock kernel's view of the machine, which it does not write.
+
 ## The cost (G1 and G2, the GF63 of the fixtures)
 
 Sizes measured with `xbps-install -n` in a fresh x86_64 root (Void, 2026-10-20 and -21); memory of
@@ -270,6 +332,14 @@ G3a, the gaming boot:
 |---|---|---|---|---|---|
 | the twin UKI | one more UKI on the ESP while the gaming boot is on, the size of the stock one: 37.9 MiB on the VM rig (of the 1 GiB ESP; a laptop's stock UKI is larger by its firmware [estimate]) | none | the everyday boot: the stage-1 script's test of the command line; the gaming boot: the controllers' drivers [estimate: some 100 ms] | the stock kernel's (Void's, built by GCC, its modules signed) | the everyday boot unchanged (`ia32_emulation=0`, its own UKI) |
 | the gaming boot | — | the controllers' drivers [estimate: a few hundred KB] | — | the filter: nothing for an x86_64 call the seccomp cache answers [VERIFY by bench] | ia32 open to the gaming session only; the stock kernel there, with loadable modules (Void's signature, then the module lock) and without kCFI: weaker than a machine kernel's everyday boot, a machine gaming kernel with G3b |
+
+G3b, the gaming kernel (measured in CI on 4 CPUs; the GF63 has 4 or 6 cores [estimate]):
+
+| | Size | RAM | Boot | Speed | Protection |
+|---|---|---|---|---|---|
+| a build | while it runs: the build root 1157 MiB, the tarball 148 MiB, the tree and its objects [measure: several GiB]; afterwards nothing of it | the build's (clang with 4 jobs; the jobs follow the free memory, one per GiB) | — | 34 minutes in CI from the root's packages to the kernel's files; only by command, never in the background | the compilers only while it runs, in a root of their own; the build without network or privileges |
+| the gaming kernel | its files in `/var/lib/vh/game/kernel` [measure]; one or two UKIs on the ESP | its modules (G3c) | its own UKI, no loadable module before G3c | the machine kernel's: `-march`, `localyesconfig` | kCFI, lockdown, signed modules forced, its key alone; ia32 confined as in G3a |
+| the module key | a few KiB beside the Secure Boot keys | — | — | — | under a passphrase; it protects copies of it, not a running system whose root reads the disk's db key (only offline Secure Boot keys do) |
 
 Later phases, measured the same way: Steam with the 32-bit Mesa brings the root to 1355 MiB, the
 NVIDIA userspace with its 32-bit part adds 869 MiB, the build root's clang toolchain takes about

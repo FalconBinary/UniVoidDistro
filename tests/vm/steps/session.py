@@ -497,7 +497,7 @@ def step_gamekernel(a):
     vm, ser = boot(a)
     try:
         rc, out = run(ser, "vh-limine-update --status | grep -E 'this boot|gaming'; uname -r; cat /proc/cmdline; cat /sys/kernel/security/lockdown; "
-                           "echo \"MODLOCK=$(cat /proc/sys/kernel/modules_disabled 2>/dev/null)\"; dmesg | grep -E 'X.509|module X.509|compiled-in' | head -8; "
+                           "echo \"MODLOCK=$(cat /proc/sys/kernel/modules_disabled 2>/dev/null)\"; { dmesg; cat /var/log/dmesg.log; } 2>/dev/null | grep -E 'X.509|compiled-in' | sort -u | head -8; "
                            "vh-game status | tail -1; " + CHECK_WAIT + "; cat /run/vh/check.done; "
                            f"cmp -s /var/lib/vh/check/stock.zon {TEST_DIR}/stock-1.zon && echo STOCK_VIEW_KEPT")
         print(out)
