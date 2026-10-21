@@ -153,8 +153,10 @@ def step_game(a):
               "PULSE_PLAYED" in out and "NATIVE_PLAYED" in out, out[-500:].replace("\n", " | "))
     finally:
         shutdown(vm, ser)
+    # silence is 0: noise at the sink's full volume peaks near 32767, at WirePlumber's first
+    # volume (0.4, cubic) near 2000
     loud = peak(wav1)
-    check("what the session played came out of the sound card (QEMU's WAV file)", loud > 8000, f"peak {loud} of 32767")
+    check("what the session played came out of the sound card (QEMU's WAV file)", loud > 1000, f"peak {loud} of 32767")
 
     _, card = audio(a, 2)
     vm, ser = boot(a, extra=card)
