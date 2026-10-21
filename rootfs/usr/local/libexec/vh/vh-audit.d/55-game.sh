@@ -64,4 +64,22 @@ for d in /dev/snd/*; do
 	esac
 done
 [ -z "$other" ] && ok "game reaches no capture, hwdep, sequencer or timer node" || bad "game has an ACL entry on:$other"
-unset groot gl suid caps m d g other
+# the gaming boot (vh-game boot on, G3): ia32 for the gaming session alone. Its stage 1 binds
+# vh-game's marker over /etc/runit/2; its stage 2 starts tty3's login outside the x86_64
+# filter and puts everything else under it (sbctl verify above covers the twin UKI's signature)
+if [ -e /etc/vh/game-boot ]; then
+	[ -f /etc/runit/core-services/98-vh-game.sh ] && ok "the gaming boot is on: the last entry of Limine's menu (doas vh-game play)" \
+		|| bad "the gaming boot: /etc/vh/game-boot without its stage-1 script (doas vh-game boot on)"
+	case " $(cat /proc/cmdline) " in
+		*" ia32_emulation=1 "*)
+			mountpoint -q /etc/runit/2 && bad "the gaming boot: /etc/runit/2 is still bound over (vh-game stage2 did not run)"
+			p=$(pgrep -x runsvdir | head -1)
+			chk "the gaming boot: runsvdir's seccomp mode (the x86_64 filter)" "$(sed -n 's/^Seccomp:[[:space:]]*//p' "/proc/$p/status" 2>/dev/null)" 2
+			chk "the gaming boot: this shell's seccomp mode (the x86_64 filter)" "$(sed -n 's/^Seccomp:[[:space:]]*//p' /proc/self/status)" 2
+			;;
+		*) ok "this boot is an everyday one: ia32 off" ;;
+	esac
+elif [ -e /etc/runit/core-services/98-vh-game.sh ]; then
+	bad "the stage-1 script of the gaming boot is there without its marker (doas vh-game boot off)"
+fi
+unset groot gl suid caps m d g other p

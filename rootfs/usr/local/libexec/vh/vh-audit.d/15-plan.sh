@@ -56,9 +56,12 @@ else
 		[ -z "$notbl$loaded" ] && ok "the $n modules the plan refuses are refused by the kernel, none is loaded"
 	fi
 
-	# the command line of the plan (the IOMMU, early DMA, ia32 ...)
-	missing=""
+	# the command line of the plan (the IOMMU, early DMA, ia32 ...); the gaming boot's UKI is the
+	# stock one with ia32 on (vh-game boot on, docs/uni/game.md: its area checks that boot)
+	missing="" gaming=0
+	[ -e /etc/vh/game-boot ] && case $cmd in *" ia32_emulation=1 "*) gaming=1 ;; esac
 	for p in $(plan CMDLINE); do
+		[ "$gaming" = 1 ] && [ "$p" = ia32_emulation=0 ] && continue
 		case $cmd in *" $p "*) ;; *) missing="$missing $p" ;; esac
 	done
 	[ -z "$missing" ] && ok "command line: the plan's parameters ($(plan CMDLINE))" || bad "command line: the plan's parameters missing:$missing"
