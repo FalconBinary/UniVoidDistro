@@ -43,10 +43,25 @@ for m in /var/lib/vh/roots /home/game; do
 		*) bad "$m: not a mount with nosuid ($(findmnt -no OPTIONS "$m" 2>/dev/null))" ;;
 	esac
 done
-# the session's devices: game opens the render nodes and seatd's socket, never input or sound
+# the session's devices: game opens the render nodes and seatd's socket, never input
 for d in /dev/input/event*; do
 	[ -e "$d" ] || continue
 	[ "$(stat -c %G "$d")" = game ] && bad "$d belongs to group game"
 done
 ok "no input device of group game"
-unset groot gl suid caps m d g
+# sound: the session's own PipeWire plays through the cards' playback and control nodes, which
+# game gets by an ACL entry each (vh-game's udev rule); never a capture node (the microphone),
+# hwdep, the sequencer or the timer
+[ -f /etc/udev/rules.d/99-vh-game.rules ] && ok "the session's sound: the udev rule of game's playback nodes" \
+	|| bad "no /etc/udev/rules.d/99-vh-game.rules: the gaming session has no sound (doas vh-game remove, then install)"
+other=""
+for d in /dev/snd/*; do
+	[ -c "$d" ] || continue
+	getfacl -p "$d" 2>/dev/null | grep -q '^user:game:' || continue
+	case ${d##*/} in
+		controlC[0-9]*|pcmC[0-9]*D[0-9]*p) ;;
+		*) other="$other ${d##*/}" ;;
+	esac
+done
+[ -z "$other" ] && ok "game reaches no capture, hwdep, sequencer or timer node" || bad "game has an ACL entry on:$other"
+unset groot gl suid caps m d g other

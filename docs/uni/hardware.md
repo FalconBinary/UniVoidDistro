@@ -91,7 +91,8 @@ its effect `game_packages` (`hwdb/gpu.zon`).
 | AMD ACP (Ryzen laptops) | snd_acp*, snd_sof_amd_* | `sof-firmware` where the SOF path is used [VERIFY] |
 | USB audio | snd_usb_audio | built into every machine kernel (feature `usb-common`) |
 
-Sound runs through PipeWire everywhere, as upstream.
+Sound runs through PipeWire everywhere, as upstream. The gaming session has a PipeWire of its own
+in its root, on the cards' playback and control nodes alone ([game.md](game.md#g2-sound)).
 
 ## Storage and the root disk
 

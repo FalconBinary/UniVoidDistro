@@ -24,5 +24,6 @@ jobs:
       - uses: ./.github/actions/setup-zig
       - name: unprivileged user namespaces on this throwaway runner (Ubuntu's AppArmor restricts them)
         run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+      # every package of the root (VH_TEST_FULL=1): the session's own sound server starts in it
       - name: unit tests and the session end to end
-        run: sh tests/session/run.sh
+        run: VH_TEST_FULL=1 sh tests/session/run.sh

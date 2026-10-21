@@ -1,8 +1,10 @@
 # UniVoidDistro: the gaming session (track G)
 
 Games run in an isolated session on tty3: the user `game`, a Void userland of its own under
-`/var/lib/vh/roots/game`, namespaces, no access to the everyday user's files. The everyday system
-stays as it is: no new package, service, kernel feature or open port in it. Upstream planned the
+`/var/lib/vh/roots/game`, namespaces, no access to the everyday user's files, a sound server of
+its own. The everyday system stays as it is: no new package, service, kernel feature or open port
+in it; what the session needs of it (the account, the login, a udev rule for the sound cards)
+comes with `vh-game install` and goes with `vh-game remove`. Upstream planned the
 track ([ROADMAP.md](../ROADMAP.md#g-vh-root-vh-game)) and has not started it; it is built here, and
 where UniVoidDistro's design differs from upstream's plan this file says so.
 
@@ -15,7 +17,7 @@ another, the user chooses. The user's decisions of 2026-10-20 are in the table b
 | Phase | What | State |
 |---|---|---|
 | **G1** | `vh-root`, the gaming root, the login of `game` on tty3; Vulkan through Mesa (the GPU's driver from the plan); no network, no sound, no 32-bit, no kernel change; the remove-and-compare test | built; verified in a container and on the VM rig, 23 of 23 ([below](#what-is-verified)); not yet on hardware |
-| G2 | sound: a second restricted pulse socket of the user's PipeWire for the group `game` (playback, no microphone), or the root's own PipeWire when no desktop runs [a spike] | planned |
+| **G2** | sound: the session's own PipeWire (with WirePlumber and its pulse server) in the gaming root, on the sound cards' playback and control nodes alone, which `game` gets by an ACL entry of a udev rule; no microphone, no camera, no process of the everyday user in reach ([below](#g2-sound)) | built; verified in a container and on the VM rig, 36 of 36 ([below](#what-is-verified)); not yet on hardware |
 | G3 | the gaming boot, on any GPU: a Limine entry of its own with ia32 for Steam and 32-bit games ([without NVIDIA](#machines-without-a-discrete-gpu-and-amd) no build and no key); where the plan finds an NVIDIA GPU, the gaming kernel (modules for NVIDIA only, ia32, NTSYNC, controllers) with the NVIDIA kernel module built on the machine in an isolated build root and signed with the user's own key under a passphrase, and the NVIDIA userspace (with 32-bit) in the gaming root | planned |
 | G4 | Steam: multilib, the 32-bit Mesa, the network of the UID `game`, controllers | planned |
 | G5 | the remove-and-compare test grows with every phase (the gaming boot, the build root, the key) | continuous |
@@ -36,6 +38,23 @@ another, the user chooses. The user's decisions of 2026-10-20 are in the table b
 What this changes against upstream's plan: the NVIDIA modules are built on the machine with the
 user's key, not in CI with a one-time key; and the gaming kernel boots only from its own entry, so
 `ia32_emulation=0` and `CONFIG_MODULES=n` hold for the everyday boot.
+
+The user's decisions of 2026-10-21, on sound (G2):
+
+| Question | Decision |
+|---|---|
+| through the everyday user's PipeWire, or a server of the session's own | **the session's own PipeWire** in the gaming root: no game talks to a process of the everyday user, and the session has sound without the desktop too; the price: one card, two servers taking it in turn, and no Bluetooth headphones in the session ([below](#g2-sound)) |
+| how `game` reaches the sound cards | an **ACL entry** on each card's playback and control nodes, by a udev rule `vh-game install` adds (at every boot and hotplug); not the group `audio`, which would bring the capture nodes too |
+| realtime scheduling for the session's sound | **none**, as the desktop's PipeWire (`realtime = false`): an `rtprio` limit for `game` is a later choice, should the sound crackle under a game's load |
+
+Upstream's plan made the everyday user's restricted pulse socket the main path (after the
+browser's, `60-vh-sandbox.conf`). Checked before G2 was built, on PipeWire 1.6.9 and WirePlumber
+0.5.18: that socket is no boundary. A client sets `pipewire.client.access` in its own pulse
+property list, pipewire-pulse copies it over the socket's, and PipeWire's access module in its
+default mode trusts it: the client then has the whole PipeWire of the user, the microphone with
+it. Without that, a client of the socket still loads pulse modules into the user's server and
+records every sink's monitor. So no socket of the everyday user's sound server is handed to the
+gaming session; the browser's socket is a finding of its own, outside track G.
 
 ## Machines without a discrete GPU, and AMD
 
@@ -123,16 +142,60 @@ doas vh-game remove       everything install made, the home with it
   before the install and after the removal: path, type, mode, owner, size, link target, the
   sha256 of every file and every extended ACL.
 
-## The cost (G1, the GF63 of the fixtures)
+## G2: sound
 
-Sizes measured with `xbps-install -n` in a fresh x86_64 root (Void, 2026-10-20); the others are
-estimates until the GF63 measures them.
+```
+vh-game install         the root's packages: pipewire (its pulse server in it) and wireplumber;
+                        the udev rule 99-vh-game.rules: game's ACL entry (rw) on every sound
+                        card's control and playback nodes, now and at every boot and hotplug
+tty3: login game
+  -> vh-game-enter      the session's /dev/snd: the system's, its playback and control nodes as
+                        they are, every other node /dev/null; PID 1 starts the root's PipeWire,
+                        which starts WirePlumber and its pulse server; the program (PID 2) waits
+                        for the pulse socket, at most 5 s
+     gamescope -f -- GAME   a game plays through $XDG_RUNTIME_DIR/pulse/native (Proton, Wine,
+                        FMOD, Steam) or PipeWire's own socket (SDL), both the session's own
+vh-game remove          the rule, then game's entry on every node: the mode alone again
+```
+
+- **The devices.** The udev rule names the nodes a game plays through: `controlC*` (the card's
+  mixer, which alsa-lib opens with every PCM) and `pcmC*D*p` (playback). Never a capture node
+  (the microphone), the codec's hwdep, the sequencer or the timer; and `game` stays out of the
+  group `audio`, which would give it all of them. The session binds the system's `/dev/snd` as it
+  is, for PipeWire takes a card only when every PCM node of it opens and reads the node types of
+  the directory, and covers each node but those two kinds with `/dev/null`: what a game opens
+  as the microphone is empty. A card plugged in during a session is not seen (as an input
+  device): the next session has it.
+- **The server.** The root's own `/usr/bin/pipewire`, started by the session's PID 1 when the
+  session has a playback node `game` opens and the root has PipeWire; as the session's programs,
+  without privilege or capability, without the terminal, its output in
+  `$XDG_RUNTIME_DIR/vh-sound.log`. Its configuration is in the root (`/etc/pipewire`,
+  `/etc/wireplumber`, written by `vh-game install`): linked in as the system's (install/chroot.sh);
+  no realtime module, no portal, no JACK detection, no X11 bell, no D-Bus name; WirePlumber for the
+  sound cards alone (no Bluetooth, cameras, MIDI or D-Bus: 8 MB of memory in place of 18). Its
+  state (the volume, the chosen output) lives in the home, from one session to the next.
+- **One card, two servers.** The desktop's PipeWire and the session's both open the card's
+  playback device, which ALSA gives to one at a time; each lets it go after 5 seconds of
+  silence (WirePlumber suspends an idle card). A session started while the desktop plays (music,
+  a background tab with Web Audio) finds the card busy and waits: it takes the card as soon as the
+  desktop's PipeWire has closed it (an inotify event of `/dev/snd`). While a game plays, the
+  desktop's sound is refused the same way. Mixing the two would need a server both reach, which
+  is what G2 does not give a game.
+- **Not in the session:** Bluetooth headphones (BlueZ answers on the system's D-Bus, which the
+  session does not reach), a microphone (game voice chat), a camera.
+
+## The cost (G1 and G2, the GF63 of the fixtures)
+
+Sizes measured with `xbps-install -n` in a fresh x86_64 root (Void, 2026-10-20 and -21); memory of
+the sound server measured idle in a container (aarch64, PipeWire 1.6.9, WirePlumber 0.5.18); the
+others are estimates until the GF63 measures them.
 
 | | Size | RAM | Boot | Speed | Protection |
 |---|---|---|---|---|---|
 | the gaming root (gamescope, Mesa for Intel, Vulkan) | 584 MiB installed, 161 MiB downloaded; less without documentation | none until a session runs | none | native: namespaces cost nothing on the hot path [VERIFY by bench] | the system's packages and policy unchanged; Xwayland only in the root |
 | the programs `vh-root`, `vh-game`, `vh-game-enter` | about 1.1 MiB in `/usr/local`, on every installation | none: no process before `vh-game install` and `tty on` | none | — | — |
 | the session | the home's data | gamescope and Xwayland [estimate 0.2 GiB] | — | the GPU's own driver; on a laptop with the NVIDIA dGPU asleep (`VH_GPU=auto`), the iGPU; NVK with `VH_GPU=nouveau` (slower in games) | a login on tty3 with a password, while `tty on`; the user's files out of reach (other uid, 0700 homes, the root as `/`); no network |
+| G2: the session's sound server | +21.9 MiB installed, +7.9 MiB downloaded in the root (23 packages: pipewire, wireplumber and theirs; 603 to 625 MiB); in the system one udev rule while installed | none until a session runs; in a session 14.5 MB PSS (PipeWire 3.5, WirePlumber 7.8, its pulse server 3.3; 24 MB RSS) | none: no service; the udev rule sets an ACL on the cards' playback and control nodes (3 to 6 of them) [estimate: milliseconds] | the session's own graph; SDL speaks PipeWire's own protocol, Proton and Wine pulse; no realtime scheduling (as the desktop); the program waits for the pulse socket at the session's start (53 ms in the container) | no microphone and no camera in the session: the capture nodes are `/dev/null` there, no video node at all; no process of the everyday user in reach; `game` reaches the playback and control nodes only, also outside a session |
 
 Later phases, measured the same way: Steam with the 32-bit Mesa brings the root to 1355 MiB, the
 NVIDIA userspace with its 32-bit part adds 869 MiB, the build root's clang toolchain takes about
@@ -146,6 +209,8 @@ NVIDIA userspace with its 32-bit part adds 869 MiB, the build root's clang toolc
 | a game reads what the user types elsewhere | the session is on its own VT; seatd gives gamescope the input devices only while tty3 is the active VT |
 | no hotplug of input devices during a session | the network namespace of the session's own user namespace receives no uevents (`lib/kobject_uevent.c`, `uevent_net_init`) [VERIFY]: a device plugged in later works from the next session |
 | the gaming root falls behind | `doas vh-root update game` (thor update in the root) |
+| a game changes the card's mixer (G2) | the control node is the mixer's: volumes, mutes, the codec's switches, the capture gain among them; no sound data comes through it, and the desktop's PipeWire sets its own levels when it next opens the card |
+| the desktop's sound and a game's take turns (G2) | one ALSA device, two servers: each lets it go after 5 seconds of silence; a session waits for a card the desktop plays on and takes it when it is free |
 
 ## What is verified
 
@@ -181,6 +246,46 @@ NVIDIA userspace with its 32-bit part adds 869 MiB, the build root's clang toolc
   alone; and the step's own scaffolding (its snapshot in `/var/tmp`, which the reboot empties;
   runsv's state files of the system's own services on the disk).
 
+G2 (sound), 2026-10-21:
+
+- The unit tests: the nodes of a card the session plays through (`controlC<n>`, `pcmC<n>D<m>p`)
+  and none else (capture, hwdep, sequencer, timer, compress offload, MIDI, look-alikes); `game`'s
+  ACL entry on a node added and taken away to the mode alone, the mask recomputed; the udev rule
+  names the same nodes and the user.
+- End to end in the container, with a card's nodes made as udev makes them (root:audio 0660:
+  control, playback, capture, hwdep, timer, sequencer): the rule in place, `game`'s entry on the
+  control and playback nodes only, `game` opens the playback node and not the capture node; the
+  root's PipeWire configuration (and, with every package, pipewire and wireplumber in it); after
+  the removal the whole system byte for byte and no ACL left on the nodes. The session itself,
+  unprivileged, in the `session` workflow (every package; run 39579610273, 2026-10-21): its
+  `/dev/snd` (the playback and control nodes as they are, the rest `/dev/null`), `--check` with
+  its sound lines, its own server's pulse socket there before the program, which is PID 2. Its
+  first run found that the server's process could not drop its capabilities once PID 1 had made
+  an access check (`EPERM`): the process now gives them up before it looks at the cards.
+- Before it was built, in a container: the session's PipeWire and WirePlumber start without
+  D-Bus with this configuration and play through a pulse client (14.5 MB PSS against 25 with the
+  full WirePlumber).
+- On the VM rig, `kvm-smoke` with `step=game` and QEMU's sound card (an HD Audio controller and a
+  codec with a playback and a capture PCM, its output into a WAV file on the runner): 36 of 36 (run
+  39591214131, 2026-10-21). The root: 198 packages, 606 MiB. `game`'s ACL entry on `controlC0` and
+  `pcmC0D0p` after the install and, after a reboot, from the udev rule; none on `pcmC0D0c` or the
+  codec's hwdep. The session's own PipeWire has the card's sink and no source but its monitor; noise
+  played through the pulse server and through PipeWire's protocol came out of the card (the WAV
+  file's peak 32763 of 32767). The everyday user's PipeWire, started as the desktop starts it,
+  played; a session started meanwhile had no sink of the card, took it 7 to 8 seconds later (the
+  user's PipeWire had let it go) and played, and the user's PipeWire then found it busy (`playback
+  open failed: Device or resource busy`). The login on tty3 runs PipeWire, WirePlumber and the pulse
+  server in the session's PID namespace. After the removal the whole system byte for byte, no ACL
+  left on the card's nodes (mode 660), vh-audit as before. The runs before it found: the server's
+  process unable to drop its capabilities (the `session` workflow), and four faults of the step
+  itself (a `wait` that would have waited for the user's PipeWire, WirePlumber's first sink volume
+  of 0.4 under the WAV's threshold, two lines read from their start after the shell's prompt, a
+  snapshot taken before the boot's `vh-kconf check` had written its view of the machine with the new
+  sound card).
+
 [VERIFY on hardware]: gamescope on the GF63's UHD 630 (ANV) and, with `VH_GPU=nouveau`, on its GTX
 1650 (NVK); the switch between tty1 and tty3 under seatd (DRM master and the input devices taken
-back); the session's speed against the same game outside it.
+back); the session's speed against the same game outside it. G2: the session's sound on the
+GF63's speakers, its headphones (the codec mutes the speakers by itself) and HDMI; the switch
+from the desktop playing music to a game and back; the latency in a real game; crackles under a
+game's load (then the realtime question).

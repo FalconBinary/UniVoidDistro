@@ -18,11 +18,44 @@ pub const game = struct {
     pub const tty = "tty3";
     pub const gecos = "gaming session (vh-game)";
     /// seatd's socket (gamescope's DRM and input through it) and the GPU's render nodes; never
-    /// input (seatd hands the active session its devices), video or audio
+    /// input (seatd hands the active session its devices), video or audio (the sound cards'
+    /// playback and control nodes come by an ACL entry each, sound_rule)
     pub const groups = [_][]const u8{ "_seatd", "render" };
     /// the getty of tty3, started and stopped by vh-game tty, never by the boot
     pub const getty = "/etc/sv/agetty-tty3";
+    /// the udev rule that gives game the playback and control nodes of every sound card (an
+    /// ACL entry on each, at every boot and hotplug); vh-game install writes it, remove takes
+    /// it away
+    pub const sound_rule = "/etc/udev/rules.d/99-vh-game.rules";
+    pub const sound_rule_text =
+        \\# vh-game (docs/uni/game.md, G2): the gaming session's own PipeWire plays through the
+        \\# sound cards' playback and control nodes, which the user game gets by an ACL entry each,
+        \\# at every boot and hotplug. Never a capture node (the microphone), hwdep, the sequencer
+        \\# or the timer. vh-game install writes this file, vh-game remove takes it away.
+        \\SUBSYSTEM=="sound", KERNEL=="controlC[0-9]*|pcmC[0-9]*D[0-9]*p", ACTION!="remove", RUN+="/usr/bin/setfacl -m u:game:rw $devnode"
+        \\
+    ;
 };
+
+/// the sound cards' device nodes
+pub const snd_dir = "/dev/snd";
+
+/// A node of /dev/snd the gaming session plays through: a card's control node (controlC<n>:
+/// its mixer, which alsa-lib opens with every PCM) or a playback PCM (pcmC<n>D<m>p). Never a
+/// capture PCM (the microphone), hwdep, the sequencer, the timer or anything else.
+pub fn playbackNode(name: []const u8) bool {
+    if (vh.startsWith(name, "controlC")) return allDigits(name["controlC".len..]);
+    if (!vh.startsWith(name, "pcmC") or name[name.len - 1] != 'p') return false;
+    const card_dev = name["pcmC".len .. name.len - 1];
+    const d = std.mem.indexOfScalar(u8, card_dev, 'D') orelse return false;
+    return allDigits(card_dev[0..d]) and allDigits(card_dev[d + 1 ..]);
+}
+
+fn allDigits(s: []const u8) bool {
+    if (s.len == 0) return false;
+    for (s) |c| if (!std.ascii.isDigit(c)) return false;
+    return true;
+}
 
 /// The system root the programs act on: "" is the machine itself; the tests give a directory
 /// that holds a system's files.
@@ -81,4 +114,16 @@ test "names, plan values, the fstab line" {
     try t.expect(planValue(env, "VH_PLAN_NONE") == null);
     try t.expectEqual(@as(usize, 2), words(planValue(env, "VH_PLAN_PACKAGES").?).len);
     try t.expectEqualStrings("/home/game\t/home/game\tnone\tbind,nosuid,nodev\t0 0", fstabBind("/home/game"));
+}
+
+test "the sound nodes of the gaming session: playback and control only" {
+    for ([_][]const u8{ "controlC0", "controlC12", "pcmC0D0p", "pcmC0D3p", "pcmC1D10p", "pcmC10D0p" }) |n|
+        try t.expect(playbackNode(n));
+    // the microphone, the codec's hwdep, the sequencer, the timer, compress offload, MIDI,
+    // the udev links' directories, and what only looks like a node
+    for ([_][]const u8{ "pcmC0D0c", "pcmC0D0", "hwC0D0", "seq", "timer", "comprC0D0", "midiC0D0", "by-path", "by-id", "controlC", "controlCx", "controlC0p", "pcmC0Dp", "pcmCD0p", "pcmC0D0pp", "pcmCxD0p", "pcmC0D0cp", "p", "" }) |n|
+        try t.expect(!playbackNode(n));
+    // the rule names the same nodes and the user
+    try t.expect(std.mem.indexOf(u8, game.sound_rule_text, "KERNEL==\"controlC[0-9]*|pcmC[0-9]*D[0-9]*p\"") != null);
+    try t.expect(std.mem.indexOf(u8, game.sound_rule_text, "u:" ++ game.user ++ ":rw") != null);
 }

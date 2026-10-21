@@ -85,6 +85,51 @@ pub fn withUser(existing: ?[]const u8, mode: u32, uid: u32, perm: u16) ?[]u8 {
     return serialize(list.items);
 }
 
+/// What withoutUser leaves: the ACL to write, or null when nothing but the mode is left (the
+/// xattr goes, and the mode's group bits, which the mask held, are the owning group's again)
+pub const Without = struct { acl: ?[]u8, group: u16 };
+
+/// The ACL EXISTING without the named entry of UID, the mask recomputed as setfacl -x does;
+/// null when it has no such entry
+pub fn withoutUser(existing: []const u8, uid: u32) ?Without {
+    const entries = parse(existing) orelse return null;
+    var list: std.ArrayList(Entry) = .empty;
+    var found = false;
+    var named = false;
+    var group: u16 = 0;
+    for (entries) |e| {
+        if (e.tag == Tag.user and e.id == uid) {
+            found = true;
+            continue;
+        }
+        if (e.tag == Tag.user or e.tag == Tag.group) named = true;
+        if (e.tag == Tag.group_obj) group = e.perm;
+        list.append(vh.gpa, e) catch vh.oom();
+    }
+    if (!found) return null;
+    if (!named) return .{ .acl = null, .group = group };
+    var m: u16 = 0;
+    for (list.items) |e| if (e.tag == Tag.user or e.tag == Tag.group_obj or e.tag == Tag.group) {
+        m |= e.perm;
+    };
+    for (list.items) |*e| if (e.tag == Tag.mask) {
+        e.perm = m;
+    };
+    return .{ .acl = serialize(list.items), .group = group };
+}
+
+/// the permissions the named entry of UID grants, the mask applied; null without such an entry
+pub fn userPerm(x: []const u8, uid: u32) ?u16 {
+    const entries = parse(x) orelse return null;
+    var perm: ?u16 = null;
+    var m: u16 = 7;
+    for (entries) |e| {
+        if (e.tag == Tag.user and e.id == uid) perm = e.perm;
+        if (e.tag == Tag.mask) m = e.perm;
+    }
+    return if (perm) |p| p & m else null;
+}
+
 /// whether the ACL lets UID search (x) through: its named entry and the mask both allow it
 pub fn lets(x: []const u8, uid: u32) bool {
     const entries = parse(x) orelse return false;
@@ -136,4 +181,29 @@ test "a named user's search bit on a directory only root enters, and the mask" {
     // the same user again changes nothing
     try t.expectEqualSlices(u8, y, withUser(y, 0, 1003, 1).?);
     try t.expect(parse("garbage") == null);
+}
+
+test "a sound card's node: game's entry added, then taken away to the mode alone" {
+    // root:audio 0660, as udev makes it: game reads and writes, other users still not
+    const x = withUser(null, 0o20660, 1003, 6).?;
+    try t.expectEqualStrings("02000000" ++ "01000600ffffffff" ++ "02000600eb030000" ++ "04000600ffffffff" ++ "10000600ffffffff" ++ "20000000ffffffff", hex(x));
+    try t.expectEqual(@as(?u16, 6), userPerm(x, 1003));
+    try t.expect(userPerm(x, 1001) == null);
+    // the removal: no named entry is left, so no ACL either, and the group keeps rw
+    const w = withoutUser(x, 1003).?;
+    try t.expect(w.acl == null);
+    try t.expectEqual(@as(u16, 6), w.group);
+    try t.expect(withoutUser(x, 1001) == null);
+    // another named entry stays, with the mask recomputed from what is left
+    const y = withUser(withUser(null, 0o640, 2000, 1).?, 0, 1003, 6).?;
+    const v = withoutUser(y, 1003).?;
+    const e = parse(v.acl.?).?;
+    try t.expectEqual(@as(usize, 5), e.len);
+    try t.expectEqual(Entry{ .tag = Tag.user, .perm = 1, .id = 2000 }, e[1]);
+    try t.expectEqual(Entry{ .tag = Tag.mask, .perm = 5 }, e[3]);
+    try t.expectEqual(@as(u16, 4), v.group);
+    // a mask narrower than the entry: what it really grants
+    const z = parse(x).?;
+    z[3].perm = 4;
+    try t.expectEqual(@as(?u16, 4), userPerm(serialize(z), 1003));
 }

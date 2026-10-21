@@ -2,7 +2,9 @@
 //!
 //!   doas vh-game install    the game user (its password asked for), its home /home/game, the
 //!                           gaming root /var/lib/vh/roots/game with the Vulkan driver of this
-//!                           machine's GPU (the plan), the login of game on tty3
+//!                           machine's GPU (the plan) and a sound server of its own, the login
+//!                           of game on tty3, the sound cards' playback and control nodes for
+//!                           game (a udev rule: an ACL entry on each)
 //!   doas vh-game tty on     the getty of tty3, until the next boot or tty off: no process of the
 //!                           gaming session runs before this
 //!   doas vh-game tty off
@@ -25,6 +27,7 @@ const lines = @import("lines.zig");
 const roots = @import("roots.zig");
 const rmtree = @import("rmtree.zig");
 const sys = @import("sys.zig");
+const acl = @import("acl.zig");
 const linux = std.os.linux;
 const mem = std.mem;
 const G = common.game;
@@ -121,6 +124,9 @@ fn install(c: Cfg) void {
     const fstab = S.path("/etc/fstab");
     for ([_][]const u8{ shells, fstab }) |p| if (!vh.isRegular(p)) vh.die("{s}: missing", .{p});
     if (!vh.isRegular(S.path(G.shell))) vh.die("{s}: missing (install/build-tools.sh installs it)", .{S.path(G.shell)});
+    if (vh.pathExists(S.path(G.sound_rule))) vh.die("{s} exists already", .{S.path(G.sound_rule)});
+    if (!vh.isDir(S.path("/etc/udev/rules.d"))) vh.die("{s}: missing", .{S.path("/etc/udev/rules.d")});
+    if (!vh.isRegular(S.path("/usr/bin/setfacl"))) vh.die("{s}: missing (acl-progs): the udev rule of the sound cards runs it", .{S.path("/usr/bin/setfacl")});
 
     // the Vulkan driver of this machine's GPU: a rule of hwdb, through the plan
     const pkgs = gamePackages(c);
@@ -177,14 +183,134 @@ fn install(c: Cfg) void {
         \\case $- in *i*) echo "The gaming session: a game runs in gamescope, for example: gamescope -f -- vkcube" ;; esac
         \\
     , 0o644);
+    soundConfig(root);
 
     // the login: tty3 for game in pam_access, its shell in /etc/shells (pam_shells)
     roots.writeKeeping(access, lines.insertBeforeDenyAll(vh.readFile(access) catch vh.die("{s}: {s}", .{ access, vh.serr() }), accessLine()).?);
     const shells0 = vh.readFile(shells) catch vh.die("{s}: {s}", .{ shells, vh.serr() });
     roots.writeKeeping(shells, lines.append(shells0, G.shell));
 
+    // the sound cards: their playback and control nodes for game, at every boot and hotplug by
+    // the udev rule, and the nodes there now at once
+    vh.writeAtomic(S.path(G.sound_rule), G.sound_rule_text, 0o644);
+    const nodes = if (S.prefix.len == 0) soundAcl(id, true) else 0;
+    vh.log("sound: {d} playback and control node(s) of the sound cards for {s} (an ACL entry each; {s})", .{ nodes, G.user, G.sound_rule });
+
     vh.log("installed: log in as {s} on {s} after doas vh-game tty on (until the next boot)", .{ G.user, G.tty });
-    vh.out("VH_GAME installed user={s} uid={d} root={s} packages={s}\n", .{ G.user, id, roots.path(.{}, G.root), mem.join(vh.gpa, ",", pkgs) catch vh.oom() });
+    vh.out("VH_GAME installed user={s} uid={d} root={s} packages={s} sound={d}\n", .{ G.user, id, roots.path(.{}, G.root), mem.join(vh.gpa, ",", pkgs) catch vh.oom(), nodes });
+}
+
+/// The gaming root's own sound server, which vh-game-enter starts in a session that has a sound
+/// card: PipeWire, which starts WirePlumber and its pulse server (Proton, Wine and Steam speak
+/// pulse, SDL speaks PipeWire), linked in as the system links them (install/chroot.sh); and
+/// WirePlumber without what the session cannot reach anyway: Bluetooth (BlueZ is on the system's
+/// D-Bus), cameras, MIDI, D-Bus itself.
+fn soundConfig(root: []const u8) void {
+    const pw = vh.fmt("{s}/etc/pipewire/pipewire.conf.d", .{root});
+    vh.mkdirs(pw, 0o755);
+    for ([_][2][]const u8{
+        .{ "10-wireplumber.conf", "/usr/share/examples/wireplumber/10-wireplumber.conf" },
+        .{ "20-pipewire-pulse.conf", "/usr/share/examples/pipewire/20-pipewire-pulse.conf" },
+    }) |l| {
+        const p = vh.fmt("{s}/{s}", .{ pw, l[0] });
+        sys.symlink(l[1], p) catch vh.die("{s}: {s}", .{ p, vh.serr() });
+    }
+    vh.writeAtomic(vh.fmt("{s}/60-vh-game.conf", .{pw}), pipewire_conf, 0o644);
+    const pulse = vh.fmt("{s}/etc/pipewire/pipewire-pulse.conf.d", .{root});
+    vh.mkdirs(pulse, 0o755);
+    vh.writeAtomic(vh.fmt("{s}/60-vh-game.conf", .{pulse}), pulse_conf, 0o644);
+    const wp = vh.fmt("{s}/etc/wireplumber/wireplumber.conf.d", .{root});
+    vh.mkdirs(wp, 0o755);
+    vh.writeAtomic(vh.fmt("{s}/60-vh-game.conf", .{wp}), wireplumber_conf, 0o644);
+}
+
+const pipewire_conf =
+    \\# vh-game (docs/uni/game.md, G2): the gaming session's PipeWire. No realtime scheduling (the
+    \\# desktop's PipeWire has none either), and nothing that looks for D-Bus, which the session
+    \\# does not have: the portal, JACK's D-Bus detection, the X11 bell.
+    \\context.properties = {
+    \\    module.rt = false
+    \\    module.portal = false
+    \\    module.jackdbus-detect = false
+    \\    module.x11.bell = false
+    \\}
+    \\
+;
+
+const pulse_conf =
+    \\# vh-game (docs/uni/game.md, G2): the gaming session's pulse server, on its usual socket
+    \\# ($XDG_RUNTIME_DIR/pulse/native, the session's own); no name on D-Bus, which the session
+    \\# does not have.
+    \\pulse.properties = {
+    \\    server.dbus-name = ""
+    \\}
+    \\
+;
+
+const wireplumber_conf =
+    \\# vh-game (docs/uni/game.md, G2): the gaming session's own WirePlumber, for the sound cards
+    \\# alone. Nothing of Bluetooth (BlueZ is on the system's D-Bus, out of the session's reach),
+    \\# cameras, MIDI or D-Bus: less memory, and nothing probed in vain.
+    \\wireplumber.profiles = {
+    \\  main = {
+    \\    hardware.bluetooth = disabled
+    \\    hardware.video-capture = disabled
+    \\    monitor.bluez = disabled
+    \\    monitor.bluez-midi = disabled
+    \\    monitor.v4l2 = disabled
+    \\    monitor.libcamera = disabled
+    \\    monitor.alsa-midi = disabled
+    \\    support.dbus = disabled
+    \\    support.system-dbus = disabled
+    \\    support.reserve-device = disabled
+    \\    monitor.alsa.reserve-device = disabled
+    \\    support.portal-permissionstore = disabled
+    \\    script.client.access-portal = disabled
+    \\    support.logind = disabled
+    \\    support.mpris = disabled
+    \\  }
+    \\}
+    \\
+;
+
+/// Game's ACL entry (read and write) on the sound cards' playback and control nodes there now
+/// (ADD), as the udev rule gives it at every boot and hotplug; or game's entry taken off every
+/// node of /dev/snd (the mode alone again where nothing else is left). The number of nodes.
+fn soundAcl(uid: u32, add: bool) usize {
+    var n: usize = 0;
+    for (vh.listDir(common.snd_dir) catch return 0) |name| {
+        if (add and !common.playbackNode(name)) continue;
+        const p = vh.fmt("{s}/{s}", .{ common.snd_dir, name });
+        const st = vh.stat(p, false) catch continue;
+        if (st.mode & vh.S.IFMT != vh.S.IFCHR) continue;
+        const old = sys.getXattr(p, acl.name);
+        if (add) {
+            if (old) |x| if (acl.userPerm(x, uid)) |perm| if ((perm & 6) == 6) {
+                n += 1;
+                continue;
+            };
+            const new = acl.withUser(old, st.mode & 0o7777, uid, 6) orelse {
+                vh.warn("{s}: an access ACL this program cannot read; left as it is", .{p});
+                continue;
+            };
+            sys.setXattr(p, acl.name, new) catch {
+                vh.warn("{s}: the ACL: {s}", .{ p, vh.serr() });
+                continue;
+            };
+            n += 1;
+        } else {
+            const x = old orelse continue;
+            const w = acl.withoutUser(x, uid) orelse continue;
+            if (w.acl) |a| {
+                sys.setXattr(p, acl.name, a) catch vh.die("{s}: the ACL: {s}", .{ p, vh.serr() });
+            } else {
+                sys.removeXattr(p, acl.name) catch vh.die("{s}: the ACL: {s}", .{ p, vh.serr() });
+                sys.chmod(p, (st.mode & 0o7707) | (@as(u32, w.group) << 3)) catch vh.die("{s}: {s}", .{ p, vh.serr() });
+            }
+            n += 1;
+        }
+    }
+    return n;
 }
 
 fn accessLine() []const u8 {
@@ -287,6 +413,13 @@ fn remove(c: Cfg) void {
     // the session first: the getty, then every process of game
     if (S.prefix.len == 0) _ = ttyOff(c);
     if (uid) |id| endProcesses(id);
+
+    // the sound cards: the rule first, so that no event gives the entry back, then the entries
+    const rule = S.path(G.sound_rule);
+    if (vh.pathExists(rule)) vh.unlink(rule) catch vh.die("{s}: {s}", .{ rule, vh.serr() });
+    if (S.prefix.len == 0) if (uid) |id| {
+        _ = soundAcl(id, false);
+    };
 
     roots.remove(c.o, G.root);
 
@@ -397,10 +530,25 @@ fn status(c: Cfg) u8 {
     } else vh.out("root: none\n", .{});
     const tty_on = S.prefix.len == 0 and gettyRunsv() != null;
     var sessions: usize = 0;
+    var sound: usize = 0;
     if (line) |l| if (std.fmt.parseInt(u32, accounts.field(l, 2) orelse "", 10)) |id| {
         sessions = sys.processesOf(id).len;
+        if (S.prefix.len == 0) sound = soundNodesOf(id);
     } else |_| {};
     vh.out("{s}: {s}; processes of {s}: {d}\n", .{ G.tty, if (tty_on) "on (until the next boot)" else "off", G.user, sessions });
-    vh.out("VH_GAME status installed={s} tty={s} processes={d}\n", .{ if (installed) "yes" else "no", if (tty_on) "on" else "off", sessions });
+    vh.out("sound: {d} playback and control node(s) for {s}; the udev rule {s}\n", .{ sound, G.user, if (vh.pathExists(S.path(G.sound_rule))) "in place" else "missing" });
+    vh.out("VH_GAME status installed={s} tty={s} processes={d} sound={d}\n", .{ if (installed) "yes" else "no", if (tty_on) "on" else "off", sessions, sound });
     return 0;
+}
+
+/// the nodes of /dev/snd whose ACL lets UID read and write
+fn soundNodesOf(uid: u32) usize {
+    var n: usize = 0;
+    for (vh.listDir(common.snd_dir) catch return 0) |name| {
+        const x = sys.getXattr(vh.fmt("{s}/{s}", .{ common.snd_dir, name }), acl.name) orelse continue;
+        if (acl.userPerm(x, uid)) |perm| if ((perm & 6) == 6) {
+            n += 1;
+        };
+    }
+    return n;
 }
