@@ -213,10 +213,11 @@ def step_game(a):
             rc, out = run(ser, f"b={got.group(1)}; for c in pipewire wireplumber; do for q in $(pgrep -u game -x $c); do "
                                "echo \"$c $(readlink /proc/$q/ns/pid) $(readlink /proc/$b/ns/pid) $(tr '\\0' ' ' < /proc/$q/cmdline)\"; done; done")
             print(out)
-            procs = [l.split() for l in out.splitlines() if l.split()[:1] in (["pipewire"], ["wireplumber"]) and len(l.split()) >= 4]
+            # the first line comes after the shell's prompt: found by its shape, not its start
+            procs = re.findall(r"(pipewire|wireplumber) (pid:\[\d+\]) (pid:\[\d+\]) ([^\n]*)", out)
             check("the login's session runs its own PipeWire, WirePlumber and pulse server, in its namespaces",
-                  any(p[0] == "wireplumber" for p in procs) and any("pipewire-pulse.conf" in p for p in procs)
-                  and any(p[0] == "pipewire" and "-c" not in p for p in procs) and all(p[1] == p[2] for p in procs),
+                  any(p[0] == "wireplumber" for p in procs) and any("pipewire-pulse.conf" in p[3] for p in procs)
+                  and any(p[0] == "pipewire" and "-c" not in p[3].split() for p in procs) and all(p[1] == p[2] for p in procs),
                   out[-400:].replace("\n", " | "))
         # tty off: the getty goes, and with its hangup the session
         rc, out = run(ser, "vh-game tty off; sleep 3; echo procs=$(pgrep -u game | wc -l) gettys=$(pgrep -a agetty | grep -c tty3)")
@@ -235,9 +236,9 @@ def step_game(a):
               out[-1200:].replace("\n", " | "))
         check("the nft ruleset, hw.zon, no user game", "NFT_SAME" in out and "HW_SAME" in out and "NO_GAME" in out)
         # /dev is no part of the comparison: the card's nodes are checked here
-        rc, out = run(ser, "getfacl -s -p /dev/snd/* 2>/dev/null | grep -c '^user:'; stat -c '%a %n' /dev/snd/controlC0 /dev/snd/pcmC0D0p")
+        rc, out = run(ser, "echo \"ACL_LEFT=$(getfacl -s -p /dev/snd/* 2>/dev/null | grep -c '^user:')\"; stat -c '%a %n' /dev/snd/controlC0 /dev/snd/pcmC0D0p")
         check("after the removal: no ACL entry left on the sound card's nodes, 0660 as udev made them",
-              re.search(r"^0$", out, re.M) is not None and out.count("660 /dev/snd/") == 2, out[-300:].replace("\n", " | "))
+              "ACL_LEFT=0" in out and out.count("660 /dev/snd/") == 2, out[-300:].replace("\n", " | "))
         n_fails, lines = fails(ser, "vh-audit after the removal")
         check("vh-audit after the removal: as before", n_fails == base_fails, " | ".join(lines))
         run(ser, f"rm -rf {TEST_DIR}")
