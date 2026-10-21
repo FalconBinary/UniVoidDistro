@@ -21,6 +21,11 @@
 //!      /boot/efi/EFI/void/linux-A.B.C-vh_N.efi, N counting the installs of A.B.C-vh;
 //!   6. vh-limine-update --new A.B.C-vh_N signs it as every UKI of the menu (after vh-uki-verify
 //!      with offline keys), adds it after the stock entries and puts it on trial.
+//! The gaming kernel (vh-game kernel build, docs/uni/game.md, G3b), whose bzImage reports
+//! A.B.C-vh-game, goes the same way into the gaming series instead: the gaming boot must be on
+//! (/etc/vh/game-boot); its UKI is /boot/efi/EFI/vh-game/linux-A.B.C-vh-game_N.efi; its command
+//! line keeps the module parameters (the kernel has loadable modules) and turns ia32 on
+//! (ia32_emulation=1); vh-limine-update makes it the gaming entry, never the default and no trial.
 //! Programs run by argv, never through a shell (zig/README.md).
 const std = @import("std");
 const vh = @import("vh");
@@ -172,8 +177,10 @@ pub const Image = struct {
     bzimage: []const u8,
     bz: []const u8,
     bz_sha: []const u8,
-    /// uname -r of the kernel: A.B.C-vh
+    /// uname -r of the kernel: A.B.C-vh, or A.B.C-vh-game for the gaming kernel
     release: []const u8,
+    /// the gaming kernel (vh-game kernel build): its release ends in -vh-game
+    game: bool = false,
     config: kconfig.DotConfig,
     /// the kernel's built-in modules (its modules.builtin and modules.builtin.modinfo)
     builtin: ModSet,
@@ -232,8 +239,9 @@ pub fn verify(dir: []const u8, my_hw: []const u8, d: *Diag) Refused!Image {
 
     // the kernel itself: the release it reports
     const release = uki.bzRelease(data[0]) orelse return d.refuse("{s}/{s}: not a bzImage (no setup header with a kernel version)", .{ dir, files[0] });
-    if (!vh.eql(release, vh.fmt("{s}-vh", .{b.kver})))
-        return d.refuse("{s}/{s} reports the kernel {s}, not {s}-vh: not the machine kernel BUILD names (CONFIG_LOCALVERSION=\"-vh\", kernel/profiles/base)", .{ dir, files[0], release, b.kver });
+    const game = vh.eql(release, vh.fmt("{s}-vh-game", .{b.kver}));
+    if (!game and !vh.eql(release, vh.fmt("{s}-vh", .{b.kver})))
+        return d.refuse("{s}/{s} reports the kernel {s}, not {s}-vh (or the gaming kernel's {s}-vh-game): not the machine kernel BUILD names (CONFIG_LOCALVERSION=\"-vh\", kernel/profiles/base)", .{ dir, files[0], release, b.kver, b.kver });
 
     try checkHw(data[7], vh.fmt("{s}/{s}", .{ dir, hw_file }), my_hw, d);
 
@@ -244,6 +252,7 @@ pub fn verify(dir: []const u8, my_hw: []const u8, d: *Diag) Refused!Image {
         .bz = data[0],
         .bz_sha = sha256Hex(data[0]),
         .release = vh.dupe(release),
+        .game = game,
         .config = .{},
         .builtin = .{},
         .lsmod = namesOf(data[4]),
@@ -254,6 +263,9 @@ pub fn verify(dir: []const u8, my_hw: []const u8, d: *Diag) Refused!Image {
         .sums_text = sums_text,
     };
     img.config.parse(data[1]);
+    // the gaming kernel is the one with loadable modules and ia32 (kernel/profiles/features/game)
+    if (game and (img.config.tri("MODULES") != 2 or img.config.tri("IA32_EMULATION") != 2))
+        return d.refuse("{s}/{s} reports the gaming kernel {s}, but its configuration lacks CONFIG_MODULES or CONFIG_IA32_EMULATION (kernel/profiles/features/game)", .{ dir, files[0], release });
     img.builtin.addPaths(data[2]);
     img.builtin.addModinfo(data[3]);
     if (img.builtin.names.count() == 0) return d.refuse("{s}/{s} names no built-in module: not the kernel's modules.builtin", .{ dir, files[2] });
@@ -500,6 +512,34 @@ pub fn machineCmdline(stock: []const u8, modules: bool, builtin: *const ModSet, 
     }
     for (tail.slice()) |w| words.add(w);
     return .{ .text = words.join(" "), .removed = removed.items, .added = added.items, .stayed = stayed.items };
+}
+
+/// the gaming boot's marker (vh-game boot on): the gaming kernel is installed only while it is on
+const game_mark = "/etc/vh/game-boot";
+
+/// The gaming kernel's command line: the machine kernel's with ia32 on. The kernel reads every
+/// ia32_emulation= in turn and the last one decides, and the gaming kernel has ia32 off by
+/// default (CONFIG_IA32_EMULATION_DEFAULT_DISABLED): each one becomes ia32_emulation=1, and
+/// one is added when there is none.
+pub fn gameCmdline(text: []const u8) []const u8 {
+    var words: vh.Strv = .{};
+    var tail: vh.Strv = .{};
+    var seen = false;
+    for (splitArgs(text)) |w| {
+        if (tail.len() > 0 or vh.eql(w, "--")) {
+            tail.add(w);
+            continue;
+        }
+        if (vh.eql(paramName(w), "ia32_emulation")) {
+            if (!seen) words.add("ia32_emulation=1");
+            seen = true;
+            continue;
+        }
+        words.add(w);
+    }
+    if (!seen) words.add("ia32_emulation=1");
+    for (tail.slice()) |w| words.add(w);
+    return words.join(" ");
 }
 
 /// the parameter the kernel would take, or why not: printable ASCII within COMMAND_LINE_SIZE
@@ -940,6 +980,9 @@ fn install(o: Opts, d: *Diag) Refused!u8 {
     // 1. verify
     var img = try verify(dir, my_hw, d);
     const modules = img.config.tri("MODULES") != 0;
+    // the gaming kernel boots from the gaming entry alone, which the gaming boot makes
+    if (img.game and !vh.pathExists(vh.fmt("{s}{s}", .{ root, game_mark })))
+        return d.refuse("{s} is the gaming kernel, and the gaming boot is off: doas vh-game boot on (docs/uni/game.md)", .{img.release});
 
     // the ESP: the stock UKI's command line, the names of the machine series
     const esp = vh.fmt("{s}/boot/efi", .{root});
@@ -956,11 +999,12 @@ fn install(o: Opts, d: *Diag) Refused!u8 {
             _ = vh.run(&.{ "umount", "/boot/efi" });
         }
     }
-    const uki_dir = vh.fmt("{s}/EFI/void", .{esp});
+    const stock_dir = vh.fmt("{s}/EFI/void", .{esp});
+    const uki_dir = if (img.game) vh.fmt("{s}/EFI/vh-game", .{esp}) else stock_dir;
     const esp_names = vh.listDir(uki_dir) catch &.{};
-    const stock = stockUkis(esp_names);
-    if (stock.len == 0) return d.refuse("no stock UKI in {s}: the stock UKI is the fallback of every machine kernel and its command line the machine kernel's (xbps-reconfigure -f {s})", .{ uki_dir, pkg });
-    const stock_path = vh.fmt("{s}/{s}", .{ uki_dir, stock[0] });
+    const stock = stockUkis(vh.listDir(stock_dir) catch &.{});
+    if (stock.len == 0) return d.refuse("no stock UKI in {s}: the stock UKI is the fallback of every machine kernel and its command line the machine kernel's (xbps-reconfigure -f {s})", .{ stock_dir, pkg });
+    const stock_path = vh.fmt("{s}/{s}", .{ stock_dir, stock[0] });
     const stock_c = (uki.fileSection(stock_path, ".cmdline") catch return d.refuse("{s}: {s}", .{ stock_path, vh.serr() })) orelse
         return d.refuse("{s}: no .cmdline section: not a UKI of dracut-uefi", .{stock_path});
     const stock_cmdline = vh.strip(mem.trimEnd(u8, stock_c, "\x00"));
@@ -1013,7 +1057,8 @@ fn install(o: Opts, d: *Diag) Refused!u8 {
 
     // 4. the command line
     const stock_mods = try stockModules(vh.fmt("{s}/usr/lib/modules", .{root}), pkg, d);
-    const cl = machineCmdline(stock_cmdline, modules, &img.builtin, &stock_mods, modprobeOptions(root));
+    var cl = machineCmdline(stock_cmdline, modules, &img.builtin, &stock_mods, modprobeOptions(root));
+    if (img.game) cl.text = gameCmdline(cl.text);
     if (cmdlineProblem(cl.text)) |why| problems.add(vh.fmt("the command line: {s}", .{why}));
     const hook_cmdline = hook.get("KERNEL_CMDLINE", "");
     if (hook_cmdline.len > 0 and !vh.eql(mem.join(vh.gpa, " ", splitArgs(hook_cmdline)) catch vh.oom(), mem.join(vh.gpa, " ", splitArgs(stock_cmdline)) catch vh.oom()))
@@ -1077,19 +1122,19 @@ fn install(o: Opts, d: *Diag) Refused!u8 {
     const microcode = try checkUki(efi, img.bz, cl.text, d);
     vh.out("  the UKI: {d} MiB; .linux is the verified bzImage, .cmdline the command line above; early microcode: {s}\n", .{ efi.len >> 20, if (microcode) "yes" else "none (no microcode for this CPU on disk, or early_microcode=no)" });
 
-    // onto the ESP, into the menu, on trial
+    // onto the ESP, into the menu: a machine kernel on trial, the gaming kernel as the gaming entry
     const name = vh.fmt("linux-{s}.efi", .{version});
     const dst = vh.fmt("{s}/{s}", .{ uki_dir, name });
     if (vh.pathExists(dst)) return d.refuse("{s} exists already", .{dst});
     vh.mkdirs(uki_dir, 0o755);
     try writeNew(dst, efi, d);
     const lu = vh.fmt("{s}/usr/local/sbin/vh-limine-update", .{root});
-    vh.out("  + vh-limine-update --new {s}\n", .{version});
-    const lrc = vh.run(&.{ lu, "--new", version });
+    vh.out("  + vh-limine-update{s}{s}\n", .{ if (img.game) "" else " --new ", if (img.game) "" else version });
+    const lrc = if (img.game) vh.run(&.{lu}) else vh.run(&.{ lu, "--new", version });
     if (lrc != 0) {
         // a UKI that limine.conf does not name is removed: the ESP is as it was
         const conf = vh.readFile(vh.fmt("{s}/EFI/BOOT/limine.conf", .{esp})) catch "";
-        if (mem.indexOf(u8, conf, vh.fmt("/EFI/void/{s}#", .{name})) == null) {
+        if (mem.indexOf(u8, conf, vh.fmt("/EFI/{s}/{s}#", .{ if (img.game) "vh-game" else "void", name })) == null) {
             vh.unlink(dst) catch {};
             return d.refuse("vh-limine-update --new {s} failed ({d}): the UKI was removed, the ESP is as it was", .{ version, lrc });
         }
@@ -1262,6 +1307,12 @@ const Fixture = struct {
     }
 
     fn make(dir: []const u8) ?Fixture {
+        return makeKind(dir, false);
+    }
+
+    /// GAME: the run is the gaming kernel's (vh-game kernel build): A.B.C-vh-game, loadable
+    /// modules and ia32
+    fn makeKind(dir: []const u8, game: bool) ?Fixture {
         const gf63 = probe.repoPath("kernel/hw/gf63.zon") orelse return null;
         const plan = probe.repoPath("tests/adapt/golden/gf63/strict/plan.zon") orelse return null;
         const hw_text = vh.readFile(gf63) catch return null;
@@ -1287,11 +1338,18 @@ const Fixture = struct {
         for ([_][]const u8{ "i915/kbl_dmc_ver1_04.bin.zst", "i915/cml_guc_70.1.1.bin.zst", "iwlwifi-QuZ-a0-hr-b0-77.ucode.zst", "intel/ibt-19-0-4.sfi.zst", "rtl_nic/rtl8168h-2.fw.zst", "regulatory.db", "regulatory.db.p7s", "intel-ucode/06-a5-02", "nvidia/tu117/gsp.bin.zst" }) |f|
             put(vh.fmt("{s}/usr/lib/firmware/{s}", .{ root, f }), f);
         // the run: the machine kernel and what the workflow uploads with it
-        const bz = uki.testBzImage("6.18.57-vh", "the machine kernel");
+        const bz = if (game) uki.testBzImage("6.18.57-vh-game", "the gaming kernel") else uki.testBzImage("6.18.57-vh", "the machine kernel");
+        const common_config = "CONFIG_EFI_STUB=y\nCONFIG_BLK_DEV_INITRD=y\nCONFIG_RD_ZSTD=y\nCONFIG_FW_LOADER=y\nCONFIG_FW_LOADER_COMPRESS=y\nCONFIG_FW_LOADER_COMPRESS_ZSTD=y\nCONFIG_MICROCODE=y\nCONFIG_CFG80211=y\n";
         const files = [_][2][]const u8{
-            .{ "BUILD", vh.fmt("kernel-custom gf63: linux-6.18.57, features usb-common,bluetooth, commit 0123abc, run 12\nhw.zon: kernel/hw/gf63.zon sha256 {s}\n", .{sha256Hex(hw_text)}) },
+            .{ "BUILD", if (game)
+                vh.fmt("kernel-custom local: linux-6.18.57, features auto,game, commit vh-game, run 1\nhw.zon: gf63.zon sha256 {s}\n", .{sha256Hex(hw_text)})
+            else
+                vh.fmt("kernel-custom gf63: linux-6.18.57, features usb-common,bluetooth, commit 0123abc, run 12\nhw.zon: kernel/hw/gf63.zon sha256 {s}\n", .{sha256Hex(hw_text)}) },
             .{ "bzImage-vh-6.18.57", bz },
-            .{ "config-vh-6.18.57", "CONFIG_LOCALVERSION=\"-vh\"\n# CONFIG_MODULES is not set\nCONFIG_EFI_STUB=y\nCONFIG_BLK_DEV_INITRD=y\nCONFIG_RD_ZSTD=y\nCONFIG_FW_LOADER=y\nCONFIG_FW_LOADER_COMPRESS=y\nCONFIG_FW_LOADER_COMPRESS_ZSTD=y\nCONFIG_MICROCODE=y\nCONFIG_CFG80211=y\n" },
+            .{ "config-vh-6.18.57", if (game)
+                "CONFIG_LOCALVERSION=\"-vh-game\"\nCONFIG_MODULES=y\nCONFIG_MODULE_SIG_FORCE=y\nCONFIG_IA32_EMULATION=y\n" ++ common_config
+            else
+                "CONFIG_LOCALVERSION=\"-vh\"\n# CONFIG_MODULES is not set\n" ++ common_config },
             .{ "modules.builtin-vh-6.18.57", "kernel/net/wireless/cfg80211.ko\nkernel/drivers/net/wireless/intel/iwlwifi/iwlwifi.ko\nkernel/drivers/net/wireless/intel/iwlwifi/mvm/iwlmvm.ko\nkernel/drivers/watchdog/iTCO_wdt.ko\n" },
             .{ "modules.builtin.modinfo-vh-6.18.57", "iwlwifi.parmtype=power_save:bool\x00iTCO_wdt.parmtype=nowayout:bool\x00" },
             .{ "lsmod", "iwlmvm\niwlwifi\nr8169\n" },
@@ -1305,11 +1363,16 @@ const Fixture = struct {
             sums.print(vh.gpa, "{s}  {s}\n", .{ sha256Hex(f[1]), f[0] }) catch vh.oom();
         }
         put(vh.fmt("{s}/SHA256SUMS", .{run_dir}), sums.items);
-        const want = "rd.luks.uuid=L root=UUID=R rootfstype=xfs ro rd.shell=0 rd.emergency=poweroff panic=10 lockdown=confidentiality iommu.strict=1 " ++
-            "cfg80211.ieee80211_regdom=SI intel_iommu=on iwlwifi.power_save=0 iwlwifi.uapsd_disable=3 iwlmvm.power_scheme=1 iTCO_wdt.nowayout=1";
+        // the gaming kernel keeps the module parameters (it has loadable modules) and turns ia32 on
+        const want = if (game)
+            "rd.luks.uuid=L root=UUID=R rootfstype=xfs ro rd.shell=0 rd.emergency=poweroff panic=10 lockdown=confidentiality module.sig_enforce=1 iommu.strict=1 " ++
+                "cfg80211.ieee80211_regdom=SI module_blacklist=sctp,nouveau intel_iommu=on iwlwifi.power_save=0 iwlwifi.uapsd_disable=3 iwlmvm.power_scheme=1 iTCO_wdt.nowayout=1 ia32_emulation=1"
+        else
+            "rd.luks.uuid=L root=UUID=R rootfstype=xfs ro rd.shell=0 rd.emergency=poweroff panic=10 lockdown=confidentiality iommu.strict=1 " ++
+                "cfg80211.ieee80211_regdom=SI intel_iommu=on iwlwifi.power_save=0 iwlwifi.uapsd_disable=3 iwlmvm.power_scheme=1 iTCO_wdt.nowayout=1";
         // dracut: records its arguments and writes the UKI it would build
         put(vh.fmt("{s}/expected.efi", .{dir}), uki.testPe(&.{
-            .{ ".cmdline", " " ++ want ++ " \x00" },
+            .{ ".cmdline", vh.fmt(" {s} \x00", .{want}) },
             .{ ".linux", bz },
             .{ ".initrd", vh.fmt("{s}\x28\xb5\x2f\xfdmain", .{uki.testCpio(&.{ "kernel", "kernel/x86", "kernel/x86/microcode", "kernel/x86/microcode/CPU.bin" })}) },
         }));
@@ -1355,6 +1418,35 @@ test "install: a run's machine kernel becomes a machine UKI on trial" {
     vh.setenv("VH_TEST_LIMINE_RC", "0");
     try testing.expect(mem.indexOf(u8, d.msg, "the UKI was removed") != null);
     try testing.expect(!vh.pathExists(vh.fmt("{s}/linux-6.18.57-vh_3.efi", .{esp})));
+}
+
+test "install: the gaming kernel becomes the gaming entry, with ia32 on" {
+    const dir = vh.fmt("/tmp/vh-kconf-install-game-{d}", .{linux.getpid()});
+    _ = vh.runOpts(&.{ "rm", "-rf", dir }, .{});
+    defer _ = vh.runOpts(&.{ "rm", "-rf", dir }, .{});
+    const f = Fixture.makeKind(dir, true) orelse return error.SkipZigTest;
+    const repo = probe.repoRoot() orelse return error.SkipZigTest;
+    var d: Diag = .{};
+    // the gaming boot off: refused, nothing written
+    try testing.expectError(error.Refused, install(.{ .dir = f.run, .root = f.root, .repo = repo }, &d));
+    try testing.expect(mem.indexOf(u8, d.msg, "the gaming boot is off") != null);
+    try testing.expect(!vh.pathExists(vh.fmt("{s}/dracut.args", .{dir})));
+    Fixture.put(vh.fmt("{s}{s}", .{ f.root, game_mark }), "#!/usr/local/sbin/vh-game stage2\n");
+
+    try testing.expectEqual(@as(u8, 0), try install(.{ .dir = f.run, .root = f.root, .repo = repo }, &d));
+    const args = try vh.readFile(vh.fmt("{s}/dracut.args", .{dir}));
+    for ([_][]const u8{ "--no-kernel\n", "--kver\n6.18.57-vh-game\n", vh.fmt("--kernel-cmdline={s}\n", .{f.want_cmdline}) }) |want|
+        try testing.expect(mem.indexOf(u8, args, want) != null);
+    // into the gaming series, beside nothing of the machine series; vh-limine-update makes the entry
+    const game_dir = vh.fmt("{s}/boot/efi/EFI/vh-game", .{f.root});
+    try testing.expect(vh.pathExists(vh.fmt("{s}/linux-6.18.57-vh-game_1.efi", .{game_dir})));
+    try testing.expect(!vh.pathExists(vh.fmt("{s}/boot/efi/EFI/void/linux-6.18.57-vh-game_1.efi", .{f.root})));
+    try testing.expectEqualStrings("\n", try vh.readFile(vh.fmt("{s}/limine.args", .{dir})));
+    try testing.expectEqual(@as(u8, 0), try install(.{ .dir = f.run, .root = f.root, .repo = repo }, &d));
+    try testing.expect(vh.pathExists(vh.fmt("{s}/linux-6.18.57-vh-game_2.efi", .{game_dir})));
+    // the release names the gaming kernel, the configuration must too
+    try testing.expectEqualStrings("a ia32_emulation=1 b -- c", gameCmdline("a ia32_emulation=0 b ia32_emulation=0 -- c"));
+    try testing.expectEqualStrings("root=x ro ia32_emulation=1", gameCmdline("root=x ro"));
 }
 
 test "install: what is refused" {

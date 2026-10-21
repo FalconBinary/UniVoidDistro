@@ -105,9 +105,11 @@ pub fn refusedModules(cmdline: []const u8) []const []const u8 {
     return out.slice();
 }
 
-/// a kernel built by vh-kconf resolve: CONFIG_LOCALVERSION="-vh" of kernel/profiles/base
+/// a kernel built by vh-kconf resolve: CONFIG_LOCALVERSION="-vh" of kernel/profiles/base, or the
+/// gaming kernel's "-vh-game" (kernel/profiles/features/game, docs/uni/game.md): neither writes
+/// the stock kernel's view of the machine, both are judged against it
 pub fn isMachineKernel(release: []const u8) bool {
-    return vh.endsWith(release, "-vh");
+    return vh.endsWith(release, "-vh") or vh.endsWith(release, "-vh-game");
 }
 
 /// the refused modules of a machine kernel: those of the command line and those its build left
@@ -585,7 +587,7 @@ test "check: a machine kernel refuses what its build left out" {
     const gf63 = fixtureHw("gf63") orelse return error.SkipZigTest;
     const plan = probe.repoPath("tests/adapt/golden/gf63/strict/plan.zon") orelse return error.SkipZigTest;
     const profiles = probe.repoPath("kernel/profiles") orelse return error.SkipZigTest;
-    try testing.expect(isMachineKernel("6.18.57-vh") and !isMachineKernel("6.18.57_1"));
+    try testing.expect(isMachineKernel("6.18.57-vh") and isMachineKernel("6.18.57-vh-game") and !isMachineKernel("6.18.57_1"));
     // the installer probed in the live system, where the camera and the card reader had their
     // drivers; the plan refuses both (VH_CAMERA=no, VH_CARDREADER=no), so the machine kernel
     // is built without them and the command line names no module

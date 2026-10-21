@@ -1,10 +1,16 @@
-# kernel/profiles/features/game: the isolated gaming session on tty3 (vh-game, track G).
+# kernel/profiles/features/game: the gaming kernel of the isolated gaming session on tty3
+# (vh-game, track G, docs/uni/game.md).
 #
-# Selected only when vh-game is installed. It widens the kernel in three ways, each held in
-# check elsewhere: 32-bit emulation for Steam (vh-init's seccomp filter "not the x86_64 ABI
-# -> kill" covers every process tree except the gaming one), loadable modules for the NVIDIA
-# open modules (signed with a one-time key, preloaded, then modules_disabled=1), and
-# controller input drivers.
+# Selected only by vh-game kernel build, which builds this kernel on the machine (G3b) and
+# boots it from the gaming entry of Limine alone: the everyday boot keeps the machine kernel
+# without modules or ia32. It widens the kernel in three ways, each held in check elsewhere:
+# 32-bit emulation for Steam (the gaming boot's seccomp filter, "not the x86_64 ABI -> kill",
+# covers every process tree but the gaming session's), loadable modules for the NVIDIA open
+# modules (signed with the user's own key, the only one this kernel trusts: vh-game kernel build
+# sets CONFIG_MODULE_SIG_KEY to its certificate; preloaded, then modules_disabled=1), and
+# controller input drivers. Its own release, A.B.C-vh-game, keeps its modules apart from every
+# other kernel's.
+CONFIG_LOCALVERSION="-vh-game"
 
 # ia32 for Steam and the 32-bit Proton runtime. Off at boot unless the game UKI's cmdline
 # says ia32_emulation=1: the same kernel boots hardened without it.
