@@ -148,12 +148,13 @@ boot assessment of a machine kernel reads ([kernel.md](kernel.md#what-a-good-boo
 machine kernel (release `*-vh`) the modules its build left out on purpose count as refused:
 `kernel/profiles/modules.deny`, the plan's deny list, the modules of the features the plan does
 not select. On the stock kernel, when the machine is the same, the check also writes the
-running system's probe to `/var/lib/vh/check/stock.zon`; a machine kernel's devices are judged
-against that, the stock kernel of the same installation, and its lines say "had the driver X
-on the stock kernel (V)". The installation's probe was made by the live image's kernel, another
-version, and a driver that moved between versions is no loss of the machine kernel's: the q35's
-fixed power button, driven by `button` on the live image's 6.12 and by `tiny_power_button` on
-6.18, is one.
+running system's probe to `/var/lib/vh/check/stock.zon` (root's alone: `/var/lib/vh`, the
+system's state, and `check/` are 0700, whichever program makes them first); a machine
+kernel's devices are judged against that, the stock kernel of the same installation, and its
+lines say "had the driver X on the stock kernel (V)". The installation's probe was made by the
+live image's kernel, another version, and a driver that moved between versions is no loss of
+the machine kernel's: the q35's fixed power button, driven by `button` on the live image's
+6.12 and by `tiny_power_button` on 6.18, is one.
 
 What to do: another machine means the plan (packages, firmware, the kernel's classes, the
 command line) was made for the other one: compare `/run/vh/plan/plan-report.txt` with

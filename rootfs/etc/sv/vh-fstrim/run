@@ -4,7 +4,8 @@
 exec 2>&1
 PATH=/usr/bin
 stamp=/var/lib/vh/fstrim.last
-mkdir -p /var/lib/vh
+# /var/lib/vh, the system's state, is root's alone (this service may be the first to make it)
+mkdir -p -m 0700 /var/lib/vh
 while :; do
 	now=$(date +%s)
 	last=$(cat "$stamp" 2>/dev/null || echo 0)

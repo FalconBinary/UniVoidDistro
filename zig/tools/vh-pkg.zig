@@ -68,7 +68,8 @@ fn recordConf(plan: []const []const u8) void {
         while (files.next()) |raw| {
             const file = vh.strip(raw);
             if (file.len == 0 or file[0] != '/') continue;
-            vh.mkdirs("/var/lib/vh", 0o755);
+            // the system's state is root's alone
+            vh.mkdirs("/var/lib/vh", 0o700);
             _ = appendUnique(CONF_LEDGER, file, "# void-hardperf-light: configs of removed packages; vh-deep-clean moves them away");
         }
     }

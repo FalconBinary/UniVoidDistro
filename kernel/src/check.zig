@@ -398,13 +398,17 @@ pub fn run(o: Opts) u8 {
     const log = if (o.kmsg) |f| (vh.readFile(f) catch vh.die("{s}: {s}", .{ f, vh.serr() })) else readKmsg();
     const keep = keepPatterns(vh.readFile(vh.fmt("{s}/etc/xbps.d/40-vh-firmware.conf", .{root})) catch null);
     // a machine kernel's devices against the stock kernel's view, when that kernel has booted
-    const stock_path = o.stock orelse vh.fmt("{s}/var/lib/vh/check/stock.zon", .{root});
+    const state_dir = vh.fmt("{s}/var/lib/vh", .{root});
+    const stock_path = o.stock orelse vh.fmt("{s}/check/stock.zon", .{state_dir});
     const machine_kernel = isMachineKernel(now.probe.kernel);
     const on_stock = machine_kernel and vh.pathExists(stock_path);
     const base = if (on_stock) hw.load(stock_path) else was;
     const at = if (on_stock) vh.fmt("on the stock kernel ({s})", .{base.probe.kernel}) else "at installation";
     const r = compare(was, base, at, now, refused, if (have_table) &table else null, log, keep, vh.fmt("{s}/usr/lib/firmware", .{root}));
     if (!machine_kernel and r.machine.len == 0) {
+        // /var/lib/vh, the system's state, is root's alone: this service may be the first to
+        // make it, and vh.mkdirs makes the directories above the last one 0755
+        if (o.stock == null) vh.mkdirs(state_dir, 0o700);
         vh.mkdirs(std.fs.path.dirname(stock_path) orelse ".", 0o700);
         vh.writeAtomic(stock_path, hw.render(now), 0o600);
     }
@@ -639,5 +643,23 @@ test "check: the whole run on a fixture, the message and the summary" {
     // then the same machine again: the message goes away
     try testing.expectEqual(@as(u8, 0), run(.{ .from = from, .root = dir, .hw = gf63, .kmsg = quiet, .vh_plan = "none" }));
     try testing.expect(!vh.pathExists(vh.fmt("{s}/run/vh/check", .{dir})));
+    _ = vh.runOpts(&.{ "rm", "-rf", dir }, .{});
+}
+
+test "check: the stock kernel's view and the state directory are root's alone" {
+    const from = probe.repoPath("tests/kernel/fixtures/gf63") orelse return error.SkipZigTest;
+    const gf63 = probe.repoPath("kernel/hw/gf63.zon") orelse return error.SkipZigTest;
+    const dir = vh.fmt("/tmp/vh-check-modes-{d}", .{linux.getpid()});
+    _ = vh.runOpts(&.{ "rm", "-rf", dir }, .{});
+    vh.mkdirs(dir, 0o755);
+    const quiet = vh.fmt("{s}/quiet.log", .{dir});
+    vh.writeAtomic(quiet, "", 0o644);
+    // the stock kernel on the same machine writes its view, and nothing of /var/lib/vh is
+    // there yet: on the way to check/ vh.mkdirs alone would make /var/lib/vh 0755
+    try testing.expectEqual(@as(u8, 0), run(.{ .from = from, .root = dir, .hw = gf63, .kmsg = quiet, .vh_plan = "none" }));
+    for ([_]struct { []const u8, u32 }{ .{ "var/lib/vh", 0o700 }, .{ "var/lib/vh/check", 0o700 }, .{ "var/lib/vh/check/stock.zon", 0o600 } }) |x| {
+        const st = vh.stat(vh.fmt("{s}/{s}", .{ dir, x[0] }), false) catch return error.TestUnexpectedResult;
+        try testing.expectEqual(x[1], @as(u32, st.mode & 0o7777));
+    }
     _ = vh.runOpts(&.{ "rm", "-rf", dir }, .{});
 }

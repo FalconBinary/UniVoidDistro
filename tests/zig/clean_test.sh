@@ -20,6 +20,7 @@ xbps-install -y dhcpcd >/dev/null 2>&1
 echo "# edit" >> /etc/dhcpcd.conf
 "$b/vh-pkg" rm dhcpcd >/dev/null 2>&1
 t "vh-pkg rm recorded the config in the journal" 'grep -qx /etc/dhcpcd.conf /var/lib/vh/removed-conf.list'
+t "vh-pkg made /var/lib/vh root's alone (0700)" '[ "$(stat -c %a /var/lib/vh)" = 700 ]'
 # an orphan with an edited config; an orphan from the keep list with a dependency; a plain orphan
 xbps-install -Ay chrony tree jq >/dev/null 2>&1
 echo "# edit" >> /etc/chrony.conf
@@ -124,8 +125,10 @@ t "restore brought back the configs, the .new file and the service link" \
 t "the backup is deleted after restore" '[ ! -e /var/lib/vh/deep-clean/last ]'
 t "a second restore fails with \"no backup\"" '! "$dc" restore >/dev/null 2>&1'
 
-# ---- run again: nothing to remove except what came back
+# ---- run again: nothing to remove except what came back; /var/lib/vh is made by vh-deep-clean
+rm -rf /var/lib/vh
 "$dc" --apply -y --only services > /dev/null 2>&1
+t "vh-deep-clean made /var/lib/vh root's alone (0700)" '[ "$(stat -c %a /var/lib/vh)" = 700 ]'
 "$dc" --only services > /tmp/again.txt 2>&1
 t "again: no service links" 'grep -A1 "services:" /tmp/again.txt | grep -q "none"'
 

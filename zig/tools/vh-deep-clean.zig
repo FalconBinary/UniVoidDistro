@@ -322,6 +322,8 @@ fn move(src: []const u8, dst: []const u8) bool {
 
 fn bkStart() void {
     if (bk_ready) return;
+    // /var/lib/vh, the system's state, is root's alone; vh.mkdirs would make it 0755 on the way
+    vh.mkdirs("/var/lib/vh", 0o700);
     vh.mkdirs(BK_DIR, 0o700);
     _ = linux.chmod(BK_DIR, 0o700);
     if (vh.pathExists(BK_LAST)) _ = pathEntry(BK_LAST, true);
