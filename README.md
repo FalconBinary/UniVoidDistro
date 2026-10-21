@@ -35,8 +35,9 @@ rules; the machine kernel; our own live image), verified on a KVM rig, not yet o
 Next: the first real machine (the GF63), then U5 (ARM64); U4, the scheduler (`vh-sched`), comes
 after them. What is verified and what is not:
 [docs/uni/ROADMAP.md](docs/uni/ROADMAP.md#state-2026-10-20). Track G, the gaming session on tty3, is under way
-([docs/uni/game.md](docs/uni/game.md)): its first phase, a root of its own with the GPU's Vulkan
-driver and the login of `game` in namespaces, is built. How to install it on a machine:
+([docs/uni/game.md](docs/uni/game.md)): a root of its own with the GPU's Vulkan driver, the login
+of `game` in namespaces and its own sound server are built, and the gaming boot, in which only the
+gaming session reaches the kernel's 32-bit code. How to install it on a machine:
 [docs/uni/install.md](docs/uni/install.md).
 The rules every change follows are in [docs/uni/principles.md](docs/uni/principles.md); what
 hardware is supported, and how each piece is detected, is in [docs/uni/hardware.md](docs/uni/hardware.md).

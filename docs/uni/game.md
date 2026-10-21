@@ -18,7 +18,10 @@ another, the user chooses. The user's decisions of 2026-10-20 are in the table b
 |---|---|---|
 | **G1** | `vh-root`, the gaming root, the login of `game` on tty3; Vulkan through Mesa (the GPU's driver from the plan); no network, no sound, no 32-bit, no kernel change; the remove-and-compare test | built; verified in a container and on the VM rig, 23 of 23 ([below](#what-is-verified)); not yet on hardware |
 | **G2** | sound: the session's own PipeWire (with WirePlumber and its pulse server) in the gaming root, on the sound cards' playback and control nodes alone, which `game` gets by an ACL entry of a udev rule; no microphone, no camera, no process of the everyday user in reach ([below](#g2-sound)) | built; verified in a container and on the VM rig, 36 of 36 ([below](#what-is-verified)); not yet on hardware |
-| G3 | the gaming boot, on any GPU: a Limine entry of its own with ia32 for Steam and 32-bit games ([without NVIDIA](#machines-without-a-discrete-gpu-and-amd) no build and no key); where the plan finds an NVIDIA GPU, the gaming kernel (modules for NVIDIA only, ia32, NTSYNC, controllers) with the NVIDIA kernel module built on the machine in an isolated build root and signed with the user's own key under a passphrase, and the NVIDIA userspace (with 32-bit) in the gaming root | planned |
+| **G3a** | the gaming boot, on any machine: the stock UKI's twin with `ia32_emulation=1`, the last entry of Limine's menu, booted once by `vh-game play`; in it every process tree but the gaming session's under a seccomp filter that kills a 32-bit system call, the controllers' drivers, the login of `game` on tty3 by itself; no build, no key ([below](#g3a-the-gaming-boot)) | built; verified in containers; the VM rig: pending |
+| G3b | the build root (thor `-r`, removed after each build) and the gaming kernel built on the machine: the machine kernel's resolve with `features/game` (ia32, NTSYNC, controllers, modules for NVIDIA only), the user's certificate the only module key it trusts, `MODULE_SIG_FORCE`, lockdown and kCFI kept | planned |
+| G3c | the open NVIDIA modules (Turing and newer) built DKMS-style in the build root against the gaming kernel, signed outside it with the user's key under a passphrase; `/dev/nvidia*` for `game` alone; the NVIDIA userspace of the same version (with 32-bit) in the gaming root | planned |
+| G3d | the NVIDIA driver by the GPU's PCI id (hwdb): the open modules for Turing and newer, Void's closed 580 for Maxwell to Volta, 470 for Kepler, none for older GPUs | planned |
 | G4 | Steam: multilib, the 32-bit Mesa, the network of the UID `game`, controllers | planned |
 | G5 | the remove-and-compare test grows with every phase (the gaming boot, the build root, the key) | continuous |
 
@@ -38,6 +41,13 @@ another, the user chooses. The user's decisions of 2026-10-20 are in the table b
 What this changes against upstream's plan: the NVIDIA modules are built on the machine with the
 user's key, not in CI with a one-time key; and the gaming kernel boots only from its own entry, so
 `ia32_emulation=0` and `CONFIG_MODULES=n` hold for the everyday boot.
+
+The user's decisions of 2026-10-21, on the gaming boot (G3a):
+
+| Question | Decision |
+|---|---|
+| the gaming boot of a machine without NVIDIA | the **stock signed UKI with `ia32_emulation=1`**, for every machine: no build, no compiler, no key; a machine gaming kernel without loadable modules becomes an option once the build root exists (G3b) |
+| ia32 in the gaming boot | a **seccomp filter "the x86_64 ABI only"** on every process tree of that boot but the gaming session's (the services, the gettys and logins, the desktop): a 32-bit system call kills the process, and only the gaming session reaches the kernel's ia32 code. Upstream planned this (`kernel/profiles/features/game`) and did not build it |
 
 The user's decisions of 2026-10-21, on sound (G2):
 
@@ -70,7 +80,8 @@ The gaming session does not need a discrete GPU. What a machine gets is a decisi
   (its Ryzen's iGPU, RADV); `intel-hybrid-laptop` is an iGPU-only Alder Lake laptop already.
 - **G3 without NVIDIA: no build root, no compiler, no signing key, no module.** The hwdb rules that
   bring them match NVIDIA devices only. What G3 leaves on such a machine is the gaming boot for
-  ia32 (Steam and 32-bit games need it), in one of two ways, the user's choice when G3 comes:
+  ia32 (Steam and 32-bit games need it), in one of two ways; the user chose the first (2026-10-21),
+  the second becomes an option with G3b:
   - the **stock signed UKI with `ia32_emulation=1`** in place of `=0`: Void's kernel has ia32,
     NTSYNC, `modify_ldt` and System V IPC built in, and the controllers' drivers as modules,
     which go into the gaming boot's preload list before `modules_disabled=1`. No build at all.
@@ -184,6 +195,62 @@ vh-game remove          the rule, then game's entry on every node: the mode alon
 - **Not in the session:** Bluetooth headphones (BlueZ answers on the system's D-Bus, which the
   session does not reach), a microphone (game voice chat), a camera.
 
+## G3a: the gaming boot
+
+```
+doas vh-game boot on    /etc/vh/game-boot (the marker) and /etc/runit/core-services/98-vh-game.sh;
+                        vh-limine-update: the twin of the newest stock UKI in EFI/vh-game,
+                        signed, the last entry of Limine's menu, "Void Linux VER (games)"
+doas vh-game play       Limine's one-shot entry names it; the reboot
+  -> Limine             the gaming entry, once (Limine erases the one-shot entry before it boots it)
+  -> stage 1            the controllers' drivers, before the module lock; the marker bound over
+                        /etc/runit/2
+  -> stage 2            runit runs the marker, "#!/usr/local/sbin/vh-game stage2": the bind mount
+                        goes, tty3's getty starts outside the filter, the x86_64 filter is set on
+                        stage 2 itself, runit-void's /etc/runit/2 runs under it
+  -> tty3: login game   the gaming session as in G1 and G2, ia32 within its reach alone
+the next boot           the everyday one, as before: ia32_emulation=0, no filter, no getty on tty3
+doas vh-game boot off   the marker, the script, the twin and its entry go (vh-game remove too)
+```
+
+- **The twin** (`zig/lib/twin.zig`, vh-limine-update). Under Secure Boot systemd-stub ignores a
+  command line from the boot loader, so the gaming boot needs a UKI of its own. The plan's rule
+  `x86.ia32-off` puts `ia32_emulation=0` into every x86_64 command line; the twin is the newest
+  stock UKI with that one byte changed to `1`, in place: every section where it was, the kernel,
+  the initrd and every other parameter the stock UKI's, as dracut made them and the everyday boot
+  runs them. No second dracut run. The stock UKI's signature is cut off and the twin signed with
+  the db key as every UKI; limine.conf carries its BLAKE2B. A twin already on the ESP is kept as
+  it is; a stock kernel update makes the new twin and deletes the older one. A stock UKI whose
+  command line lacks `ia32_emulation=0` gets no twin: vh-limine-update stops before it writes
+  anything. The PE image is untrusted data: every offset and size is checked.
+- **The entry and `play`.** The gaming entry is the last of the menu and never the default.
+  `vh-game play` runs `vh-limine-update --game-once`: Limine's one-shot entry names it, and the boot
+  after the gaming one is the default again. It is refused while a machine kernel's trial waits for
+  the next boot (the one-shot entry is the trial's). A kernel update between `play` and the
+  reboot carries the one-shot entry to the new twin; `boot off` deletes one that names it. The
+  boot assessment of a machine kernel counts the gaming boot neither for nor against it.
+- **The filter** (`session/src/boot.zig`): seven classic BPF instructions. Not x86_64: the process
+  is killed (`SECCOMP_RET_KILL_PROCESS`) before the kernel's ia32 code runs, whether the call came
+  from a 32-bit program or from `int $0x80`; the x32 ABI: `ENOSYS`; everything else: allowed. Root
+  sets it with `CAP_SYS_ADMIN` and without `no_new_privs`, so doas and the other SUID programs work
+  under it. Every x86_64 verdict rests on the call's number alone, so the kernel's seccomp cache
+  answers those calls without running the program [VERIFY by bench: the cost on a system-call-heavy
+  load]. Every process tree of the boot inherits it, the desktop and the browser too (their own
+  sandboxes stack on top); the gaming session, started from tty3's getty outside it, does not.
+- **tty3.** In the gaming boot its getty starts with stage 2; `vh-game tty on` from a filtered
+  shell is refused there (a getty started from it would carry the filter).
+- **Controllers.** `xpad`, `joydev`, `hid-playstation`, `hid-sony`, `hid-nintendo`, `hid-steam`,
+  `hid-microsoft`, `hid-logitech` (and `-dj`, `-hidpp`), `usbhid`, `hid-generic`: modules of the stock
+  kernel, loaded in the gaming boot before the module lock, so that a pad plugged in later works.
+  The everyday boot loads none of them unless such a pad is there at boot. `uhid` (on the plan's
+  `module_blacklist`) and `uinput` (Steam Input): G4.
+- **Stage 1, either one.** runit-void's stage 1 sources `98-vh-game.sh`; vh-stage1 (track I, where
+  it replaces runit's stage 1) runs `vh-game stage1` by argv in its step `vh-game`, before the
+  module lock. Either checks the command line first: in an everyday boot nothing else runs.
+- **What the system gets:** two files in `/etc` (the marker, 0755, and the script, 0644) and the
+  twin on the ESP, while the gaming boot is on; `vh-game boot off` and `vh-game remove` take them
+  away.
+
 ## The cost (G1 and G2, the GF63 of the fixtures)
 
 Sizes measured with `xbps-install -n` in a fresh x86_64 root (Void, 2026-10-20 and -21); memory of
@@ -196,6 +263,13 @@ others are estimates until the GF63 measures them.
 | the programs `vh-root`, `vh-game`, `vh-game-enter` | about 1.1 MiB in `/usr/local`, on every installation | none: no process before `vh-game install` and `tty on` | none | — | — |
 | the session | the home's data | gamescope and Xwayland [estimate 0.2 GiB] | — | the GPU's own driver; on a laptop with the NVIDIA dGPU asleep (`VH_GPU=auto`), the iGPU; NVK with `VH_GPU=nouveau` (slower in games) | a login on tty3 with a password, while `tty on`; the user's files out of reach (other uid, 0700 homes, the root as `/`); no network |
 | G2: the session's sound server | +21.9 MiB installed, +7.9 MiB downloaded in the root (23 packages: pipewire, wireplumber and theirs; 603 to 625 MiB); in the system one udev rule while installed | none until a session runs; in a session 14.5 MB PSS (PipeWire 3.5, WirePlumber 7.8, its pulse server 3.3; 24 MB RSS) | none: no service; the udev rule sets an ACL on the cards' playback and control nodes (3 to 6 of them) [estimate: milliseconds] | the session's own graph; SDL speaks PipeWire's own protocol, Proton and Wine pulse; no realtime scheduling (as the desktop); the program waits for the pulse socket at the session's start (53 ms in the container) | no microphone and no camera in the session: the capture nodes are `/dev/null` there, no video node at all; no process of the everyday user in reach; `game` reaches the playback and control nodes only, also outside a session |
+
+G3a, the gaming boot:
+
+| | Size | RAM | Boot | Speed | Protection |
+|---|---|---|---|---|---|
+| the twin UKI | one more UKI on the ESP while the gaming boot is on, the size of the stock one [estimate 60-90 MB of the 1 GiB ESP; the rig measures it] | none | the everyday boot: the stage-1 script's test of the command line; the gaming boot: the controllers' drivers [estimate: some 100 ms] | the stock kernel's (Void's, built by GCC, its modules signed) | the everyday boot unchanged (`ia32_emulation=0`, its own UKI) |
+| the gaming boot | — | the controllers' drivers [estimate: a few hundred KB] | — | the filter: nothing for an x86_64 call the seccomp cache answers [VERIFY by bench] | ia32 open to the gaming session only; the stock kernel there, with loadable modules (Void's signature, then the module lock) and without kCFI: weaker than a machine kernel's everyday boot, a machine gaming kernel with G3b |
 
 Later phases, measured the same way: Steam with the 32-bit Mesa brings the root to 1355 MiB, the
 NVIDIA userspace with its 32-bit part adds 869 MiB, the build root's clang toolchain takes about
@@ -211,6 +285,9 @@ NVIDIA userspace with its 32-bit part adds 869 MiB, the build root's clang toolc
 | the gaming root falls behind | `doas vh-root update game` (thor update in the root) |
 | a game changes the card's mixer (G2) | the control node is the mixer's: volumes, mutes, the codec's switches, the capture gain among them; no sound data comes through it, and the desktop's PipeWire sets its own levels when it next opens the card |
 | the desktop's sound and a game's take turns (G2) | one ALSA device, two servers: each lets it go after 5 seconds of silence; a session waits for a card the desktop plays on and takes it when it is free |
+| the filter cannot be set at stage 2 (G3a) | it cannot fail on Void's kernel; if it did, the boot goes on (a boot without its services is worse), says so on the console, and vh-audit fails the gaming boot |
+| `ia32_emulation=1` in `VH_EXTRA_CMDLINE` (G3a) | every boot is then a gaming one while the gaming boot is on: the filter and tty3's login with it |
+| the twin is signed at every stock kernel update (G3a) | as every UKI: the db key signs what is on the ESP; with `optional/sb-offline-keys`, `boot on` and kernel updates need the keys' medium |
 
 ## What is verified
 
@@ -282,6 +359,24 @@ G2 (sound), 2026-10-21:
   of 0.4 under the WAV's threshold, two lines read from their start after the shell's prompt, a
   snapshot taken before the boot's `vh-kconf check` had written its view of the machine with the new
   sound card).
+
+G3a (the gaming boot), 2026-10-21:
+
+- The unit tests: the twin of a stock UKI (unsigned and signed: the certificate table cut, its entry
+  zeroed, one byte of the command line changed, nothing moved), the comparison with a twin signed
+  since, the refusals (no `ia32_emulation=0`, ia32 on already, not a PE image, a certificate table
+  not at the end); the gaming entry's identifier, and the boot assessment that reports nothing for
+  a gaming boot while a machine kernel is the default; `ia32_emulation=` as the kernel reads it
+  (the last one decides, kstrtobool's values); the filter's verdicts (x86_64 allowed, i386 killed,
+  x32 `ENOSYS`, no argument read) and, on x86_64, a real process killed by `SIGSYS` at `int $0x80`.
+- vh-limine-update on a tmpfs ESP with a tmpfs in place of efivarfs (`tests/zig/assess_test.py`):
+  the twin and its entry, the twin kept by a second run, `--game-once` and the boots Limine 12.9.3
+  makes of it, a kernel update between `play` and the reboot, `play` refused while a trial waits,
+  no twin of a command line without `ia32_emulation=0`, `boot off`.
+- End to end in the container: `vh-game boot on` and `off` (with a stand-in for vh-limine-update),
+  stage 1 doing nothing outside the gaming boot, stage 2 refused by hand, `remove` turning the
+  gaming boot off, the system byte for byte.
+- The VM rig (`kvm-smoke`, `step=gameboot`): pending.
 
 [VERIFY on hardware]: gamescope on the GF63's UHD 630 (ANV) and, with `VH_GPU=nouveau`, on its GTX
 1650 (NVK); the switch between tty1 and tty3 under seatd (DRM master and the input devices taken
