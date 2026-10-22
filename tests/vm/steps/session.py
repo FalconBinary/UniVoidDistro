@@ -470,9 +470,11 @@ def step_gamekernel(a):
     try:
         # stage 3 as an installation ends: the module lock from the next boot on, which the
         # gaming kernel keeps (its own modules preloaded first, then modules_disabled=1)
+        # vh-audit before stage 3: in this boot the lock is asked for and not on yet, which the
+        # audit counts as a FAIL that the later boots do not have
+        base_fails, base_lines = fails(ser, "vh-audit before the gaming session")
         rc, out = run(ser, "printf 'lock\\n' | /root/vh/install/30-lock.sh 2>&1 | tail -2; test -e /etc/vh/modlock.enabled && echo LOCK_ON")
         check("stage 3: the module lock from the next boot on (30-lock.sh)", "LOCK_ON" in out, out[-300:].replace("\n", " | "))
-        base_fails, base_lines = fails(ser, "vh-audit before the gaming session")
         rc, out = run(ser, f"rm -rf {TEST_DIR} && install -d -m 0700 {TEST_DIR} && " + CHECK_WAIT + "; " + snapshot(f"{TEST_DIR}/before") + "; " +
                       esp_snap(f"{TEST_DIR}/esp-before") + "; " + keep_view(1), timeout=3600)
         check("snapshots of the system and of the ESP before the install", rc == 0, out.strip().splitlines()[-1] if out.strip() else "")
