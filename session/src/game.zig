@@ -518,7 +518,8 @@ fn remove(c: Cfg) void {
 /// first install, a gaming kernel's
 fn dropKernelRecords(S: common.System) void {
     const kd = S.path("/var/lib/vh/kernels");
-    const names = vh.listDir(kd) catch return;
+    // no records at all (an install refused, or none ever): the lock alone, if any
+    const names = vh.listDir(kd) catch &.{};
     var others: usize = 0;
     for (names) |n| {
         if (mem.indexOf(u8, n, "-vh-game_") != null) {

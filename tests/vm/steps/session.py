@@ -468,13 +468,21 @@ def step_gamekernel(a):
     src = f"{VM_SRC}/build/game-kernel"
     vm, ser = boot(a)
     try:
+        # stage 3 as an installation ends: the module lock from the next boot on, which the
+        # gaming kernel keeps (its own modules preloaded first, then modules_disabled=1)
+        rc, out = run(ser, "printf 'lock\\n' | /root/vh/install/30-lock.sh 2>&1 | tail -2; test -e /etc/vh/modlock.enabled && echo LOCK_ON")
+        check("stage 3: the module lock from the next boot on (30-lock.sh)", "LOCK_ON" in out, out[-300:].replace("\n", " | "))
         base_fails, base_lines = fails(ser, "vh-audit before the gaming session")
         rc, out = run(ser, f"rm -rf {TEST_DIR} && install -d -m 0700 {TEST_DIR} && " + CHECK_WAIT + "; " + snapshot(f"{TEST_DIR}/before") + "; " +
                       esp_snap(f"{TEST_DIR}/esp-before") + "; " + keep_view(1), timeout=3600)
         check("snapshots of the system and of the ESP before the install", rc == 0, out.strip().splitlines()[-1] if out.strip() else "")
         rc, out = run(ser, f"printf '%s\\n' '{vhvm.USER_PASS}' | vh-game install --password-stdin 2>&1 | tail -3; vh-game boot on 2>&1 | tail -2", timeout=5400)
         check("vh-game install and boot on", "VH_GAME installed" in out and "VH_GAME boot on" in out, out[-600:].replace("\n", " | "))
-        rc, out = run(ser, f"vh-kconf install {src} 2>&1 | tail -25", timeout=1800)
+        # the kernel was resolved from the committed probe of the rig (kernel/hw/qemu-q35.zon, its
+        # hw.zon here); an installation's own /etc/vh/hw.zon differs from it in a few bytes, so
+        # --hw names it, as the step machine does. On a machine vh-game kernel build resolves from
+        # /etc/vh/hw.zon itself.
+        rc, out = run(ser, f"vh-kconf install --hw {src}/hw.zon {src} 2>&1 | tail -25", timeout=1800)
         print(out)
         check(f"vh-kconf install: the gaming kernel {release} into the gaming series", f"linux-{release}_1.efi installed" in out, out[-800:].replace("\n", " | "))
         rc, out = run(ser, "mount -o ro /boot/efi && { ls /boot/efi/EFI/vh-game; grep '^/' /boot/efi/EFI/BOOT/limine.conf; "
@@ -496,12 +504,12 @@ def step_gamekernel(a):
 
     vm, ser = boot(a)
     try:
-        rc, out = run(ser, "vh-limine-update --status | grep -E 'this boot|gaming'; uname -r; cat /proc/cmdline; cat /sys/kernel/security/lockdown; "
+        rc, out = run(ser, "vh-limine-update --status | grep -E 'this boot|gaming'; echo \"RELEASE=$(uname -r)\"; cat /proc/cmdline; cat /sys/kernel/security/lockdown; "
                            "echo \"MODLOCK=$(cat /proc/sys/kernel/modules_disabled 2>/dev/null)\"; { dmesg; cat /var/log/dmesg.log; } 2>/dev/null | grep -E 'X.509|compiled-in' | sort -u | head -8; "
                            "vh-game status | tail -1; " + CHECK_WAIT + "; cat /run/vh/check.done; "
                            f"cmp -s /var/lib/vh/check/stock.zon {TEST_DIR}/stock-1.zon && echo STOCK_VIEW_KEPT")
         print(out)
-        check(f"Limine booted the gaming kernel: {release}", f"started: {gid};" in out and re.search(rf"^{re.escape(release)}$", out, re.M) is not None,
+        check(f"Limine booted the gaming kernel: {release}", f"started: {gid};" in out and f"RELEASE={release}" in out,
               out[-600:].replace("\n", " | "))
         check("ia32 on, lockdown confidentiality, loadable modules locked after stage 1",
               " ia32_emulation=1" in out and "[confidentiality]" in out and "MODLOCK=1" in out, out[-600:].replace("\n", " | "))
@@ -533,8 +541,8 @@ def step_gamekernel(a):
 
     vm, ser = boot(a)
     try:
-        rc, out = run(ser, "uname -r; cat /proc/cmdline; " + CHECK_WAIT + "; " + keep_view(3))
-        check("the boot after it is the everyday one: the stock kernel, ia32 off", re.search(r"^\d+\.\d+\.\d+_\d+$", out, re.M) is not None and " ia32_emulation=0" in out,
+        rc, out = run(ser, "echo \"RELEASE=$(uname -r)\"; cat /proc/cmdline; " + CHECK_WAIT + "; " + keep_view(3))
+        check("the boot after it is the everyday one: the stock kernel, ia32 off", re.search(r"RELEASE=\d+\.\d+\.\d+_\d+\b", out) is not None and " ia32_emulation=0" in out,
               out[-400:].replace("\n", " | "))
         rc, out = run(ser, "vh-game remove --yes 2>&1 | grep -E '^VH_GAME|vh-game:|limine.conf|gaming'", timeout=1800)
         print(out)
