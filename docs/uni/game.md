@@ -19,7 +19,7 @@ another, the user chooses. The user's decisions of 2026-10-20 are in the table b
 | **G1** | `vh-root`, the gaming root, the login of `game` on tty3; Vulkan through Mesa (the GPU's driver from the plan); no network, no sound, no 32-bit, no kernel change; the remove-and-compare test | built; verified in a container and on the VM rig, 23 of 23 ([below](#what-is-verified)); not yet on hardware |
 | **G2** | sound: the session's own PipeWire (with WirePlumber and its pulse server) in the gaming root, on the sound cards' playback and control nodes alone, which `game` gets by an ACL entry of a udev rule; no microphone, no camera, no process of the everyday user in reach ([below](#g2-sound)) | built; verified in a container and on the VM rig, 36 of 36 ([below](#what-is-verified)); not yet on hardware |
 | **G3a** | the gaming boot, on any machine: the stock UKI's twin with `ia32_emulation=1`, the last entry of Limine's menu, booted once by `vh-game play`; in it every process tree but the gaming session's under a seccomp filter that kills a 32-bit system call, the controllers' drivers, the login of `game` on tty3 by itself; no build, no key ([below](#g3a-the-gaming-boot)) | built; verified in containers and on the VM rig, 27 of 27 ([below](#what-is-verified)); not yet on hardware |
-| **G3b** | the gaming kernel built on the machine: the user's module key under a passphrase (`vh-game key new`), the build root (removed after each build) and a sandbox without network or privileges, the machine kernel's pipeline with `features/game` (ia32, NTSYNC, controllers, modules for NVIDIA only), the module key's certificate the only one it trusts, `MODULE_SIG_FORCE`, lockdown and kCFI kept; `vh-kconf install` makes it the gaming entry, the stock UKI's twin its fallback ([below](#g3b-the-gaming-kernel-built-on-the-machine)) | built; the build verified in CI (34 minutes on 4 CPUs); its install and boot on the VM rig: pending |
+| **G3b** | the gaming kernel built on the machine: the user's module key under a passphrase (`vh-game key new`), the build root (removed after each build) and a sandbox without network or privileges, the machine kernel's pipeline with `features/game` (ia32, NTSYNC, controllers, modules for NVIDIA only), the module key's certificate the only one it trusts, `MODULE_SIG_FORCE`, lockdown and kCFI kept; `vh-kconf install` makes it the gaming entry, the stock UKI's twin its fallback ([below](#g3b-the-gaming-kernel-built-on-the-machine)) | built; verified in CI (the build, 19 to 34 minutes on 4 CPUs) and on the VM rig, 20 of 20 ([below](#what-is-verified)); not yet on hardware |
 | G3c | the open NVIDIA modules (Turing and newer) built DKMS-style in the build root against the gaming kernel, signed outside it with the user's key under a passphrase; `/dev/nvidia*` for `game` alone; the NVIDIA userspace of the same version (with 32-bit) in the gaming root | planned |
 | G3d | the NVIDIA driver by the GPU's PCI id (hwdb): the open modules for Turing and newer, Void's closed 580 for Maxwell to Volta, 470 for Kepler, none for older GPUs | planned |
 | G4 | Steam: multilib, the 32-bit Mesa, the network of the UID `game`, controllers | planned |
@@ -337,8 +337,8 @@ G3b, the gaming kernel (measured in CI on 4 CPUs; the GF63 has 4 or 6 cores [est
 
 | | Size | RAM | Boot | Speed | Protection |
 |---|---|---|---|---|---|
-| a build | while it runs: the build root 1157 MiB, the tarball 148 MiB, the tree and its objects [measure: several GiB]; afterwards nothing of it | the build's (clang with 4 jobs; the jobs follow the free memory, one per GiB) | — | 34 minutes in CI from the root's packages to the kernel's files; only by command, never in the background | the compilers only while it runs, in a root of their own; the build without network or privileges |
-| the gaming kernel | its files in `/var/lib/vh/game/kernel` [measure]; one or two UKIs on the ESP | its modules (G3c) | its own UKI, no loadable module before G3c | the machine kernel's: `-march`, `localyesconfig` | kCFI, lockdown, signed modules forced, its key alone; ia32 confined as in G3a |
+| a build | while it runs: the build root 1157 MiB, the tarball 148 MiB, the tree and its objects [estimate: several GiB]; afterwards nothing of it | the build's (clang with 4 jobs; the jobs follow the free memory, one per GiB) | — | 19 to 34 minutes in CI from the root's packages to the kernel's files (the rig's machine); only by command, never in the background | the compilers only while it runs, in a root of their own; the build without network or privileges |
+| the gaming kernel | its files in `/var/lib/vh/game/kernel` 26 MiB (the bzImage 16 MiB, `System.map` 9 MiB); its UKI 27 MiB on the ESP (the rig's: its firmware in the initrd), one or two of them | its modules (G3c) | its own UKI, no loadable module before G3c | the machine kernel's: `-march`, `localyesconfig` | kCFI, lockdown, signed modules forced, its key alone; ia32 confined as in G3a |
 | the module key | a few KiB beside the Secure Boot keys | — | — | — | under a passphrase; it protects copies of it, not a running system whose root reads the disk's db key (only offline Secure Boot keys do) |
 
 Later phases, measured the same way: Steam with the 32-bit Mesa brings the root to 1355 MiB, the
@@ -476,6 +476,43 @@ G3a (the gaming boot), 2026-10-21:
   differs by a few KiB from one boot to the next (2941172 and 2941184 KiB, run 39639874481). It is
   now among the steps' volatile paths, each boot's copy compared apart; `step=game` with the
   `exec` of the home's fstab line and this: 36 of 36 (run 39639874481).
+
+G3b (the gaming kernel), 2026-10-22:
+
+- The unit tests: the tarball's pin (the newest line, the version, the address), the gaming
+  kernel's invariants on a `.config`, PEM and the certificate's fingerprint; `vh-kconf install` of a
+  gaming kernel end to end on a fake system (refused with the gaming boot off, then
+  `EFI/vh-game/linux-6.18.57-vh-game_1.efi`, its command line with the module parameters and
+  `ia32_emulation=1`, `_2` at a second install); `vh-kconf check` counts `-vh-game` as a machine
+  kernel; vh-limine-update with gaming kernels on the tmpfs ESP (before the twin, the newest
+  first, the newest two kept, signed, `--game-once` on the newest: 71 checks).
+- End to end in the container: `vh-game key new` (RSA-4096, SHA-512, not a CA, digital signature;
+  the key encrypted, its passphrase opens it and another does not; a short passphrase and a
+  second key refused; OpenSSL's root gone after it), `vh-game remove` taking the key away, the
+  system byte for byte.
+- The build, in CI (`game-kernel`, runs 39690323277 and 39694886515): `vh-game key new` and `vh-game
+  kernel build` in a privileged Void container for the rig's machine: the build root of 1157
+  MiB, kernel.org's tarball checked against the pin, the build in its sandbox, 19 to 34 minutes
+  on 4 CPUs; the kernel's files checked (`SHA256SUMS`, `BUILD`, the release `6.18.57-vh-game`, the
+  gaming configuration, `Module.symvers`), nothing of the build left after it, no compiler brought
+  to the system.
+- On the VM rig, `kvm-smoke` with `step=gamekernel` and that kernel (`game_kernel_run`): 20 of 20
+  (run 39705845844), with stage 3's module lock on as an installation ends. `vh-kconf install
+  --hw` (the rig's committed probe, as the step `machine` installs a CI kernel) put the gaming
+  kernel's UKI, 27 MiB, into the gaming series before the twin, its command line
+  `ia32_emulation=1`; `vh-game play`, then Limine booted it: `6.18.57-vh-game`, lockdown
+  `[confidentiality]`, `modules_disabled=1`, and one compiled-in certificate, `UniVoidDistro:
+  vh-game module key`: no one-time key of the build (the certificate alone as
+  `CONFIG_MODULE_SIG_KEY` builds and is the kernel's only module key). `vh-kconf check` judged it
+  as a machine kernel and left the stock kernel's view as it was; the x86_64 filter as on the stock
+  kernel; a 32-bit program killed outside the session and run by the session of `game`;
+  vh-audit without a new FAIL (171 ok before, 186 on the gaming kernel). The boot after it the
+  everyday one; `vh-game remove`: the system and the ESP as before the install. What the runs
+  before it found: `vh-kconf install` refusing the CI's kernel against the installation's own
+  `hw.zon` (the rig's differs from the committed one in a few bytes: `--hw`, as the step `machine`
+  does), `vh-kconf install`'s lock left behind by a refused install, and two faults of vh-audit's
+  sysctl area: a key the kernel does not have (kexec, io_uring, userfaultfd and MPTCP built out)
+  counted as a FAIL, since its pipeline's status was the last command's; it is unchecked now.
 
 [VERIFY on hardware]: gamescope on the GF63's UHD 630 (ANV) and, with `VH_GPU=nouveau`, on its GTX
 1650 (NVK); the switch between tty1 and tty3 under seatd (DRM master and the input devices taken
