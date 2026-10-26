@@ -22,6 +22,11 @@ name=vh-init-test-$$
 fails=0
 echo "== unit tests"
 docker run --rm -v "$out:/t:ro" "$img" sh -c '/t/test/vh-init 2>&1 | tail -1' | grep -q 'passed; 0 skipped; 0 failed\|All .* tests passed' && echo "ok unit tests" || { echo "FAIL unit tests"; fails=1; docker run --rm -v "$out:/t:ro" "$img" /t/test/vh-init 2>&1 | grep -v OK | tail -20; }
+echo "== the sv shim without a manager: runit's sv under the name sv (not the LSB script sv.runit)"
+# runit's sv with argv[0] other than "sv" is an LSB init script of a service of that name; the
+# shim passes "sv" (the rig's first vh-init run, kvm-smoke 40323258202, saw one "fail: sv.runit" line)
+shim=$(docker run --rm -v "$out:/t:ro" "$img" sh -c 'cp /usr/bin/sv /usr/bin/sv.runit && ln -sf /t/bin/vh-ctl /usr/bin/sv && sv status /etc/sv/agetty-tty1 2>&1; echo rc=$?')
+case $shim in *"agetty-tty1"*) echo "ok the shim ran runit's sv for agetty-tty1 ($(printf '%s' "$shim" | head -1))" ;; *) echo "FAIL the shim: $shim"; fails=1 ;; esac
 echo "== vh-init as PID 1 of the container (log: $out/console.log)"
 docker run -d --name "$name" --privileged -v "$out:/t:ro" "$img" /t/bin/vh-init --test-pid1 --no-stage1 --dir /t/svc -v >/dev/null
 # the whole run takes about 20 s; a hang (no poweroff) is cut after 180 s

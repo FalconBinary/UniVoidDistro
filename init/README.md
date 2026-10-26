@@ -145,7 +145,8 @@ vh-ctl / sv                      the client over /run/vh/init.sock (root only)
 cd init && zig build -Dtarget=x86_64-linux -Dcpu=baseline --prefix DIR   # DIR/bin/{vh-stage1,vh-init,vh-ctl}
 doas vh-init --check         # the definitions as the manager reads them: the graph, the start order
 doas vh-init --install       # init= into the UKI's command line (/etc/default/dracut-uefi-hook), the sv shim;
-                             # then: doas xbps-reconfigure -f linux6.18 (the previous UKI stays in Limine)
+                             # then: doas xbps-reconfigure -f linux6.18, which replaces this kernel
+                             # version's UKI (no runit UKI is left to fall back to: see below)
 vh-init --status             # which init is PID 1, this boot's markers, the manager
 doas vh-init --rollback      # init= out again, runit's sv back; rebuild the UKI the same way
 sh tests/init/init_test.sh   # vh-init as PID 1 of a privileged container (below)

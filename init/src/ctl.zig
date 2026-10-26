@@ -144,14 +144,20 @@ fn svMain(args: []const [:0]const u8) noreturn {
     const cmd = args[i];
     const names = args[i + 1 ..];
     if (connect() == null) {
-        // runit is PID 1: runit's sv
-        if (vh.isRegular("/usr/bin/sv.runit")) vh.exit(vh.run(blk: {
-            var argv: std.ArrayList([]const u8) = .empty;
-            argv.append(vh.gpa, "/usr/bin/sv.runit") catch vh.oom();
-            for (args) |a| argv.append(vh.gpa, a) catch vh.oom();
-            break :blk argv.items;
-        }));
-        vh.die("the vh-init manager is not running (no {s}) and there is no /usr/bin/sv.runit", .{proto.socket_path});
+        // runit is PID 1: runit's sv, in our place. Its argv[0] must be "sv": with any other
+        // name runit's sv acts as an LSB init script of a service called by that name (sv.c,
+        // lsb), and "sv.runit status X" would report the service sv.runit
+        const sv_runit = "/usr/bin/sv.runit";
+        if (vh.isRegular(sv_runit)) {
+            var argv: std.ArrayList(?[*:0]const u8) = .empty;
+            argv.append(vh.gpa, "sv") catch vh.oom();
+            for (args) |a| argv.append(vh.gpa, a.ptr) catch vh.oom();
+            const cargv = argv.toOwnedSliceSentinel(vh.gpa, null) catch vh.oom();
+            vh.flush();
+            const rc = linux.execve(sv_runit, cargv.ptr, vh.envp);
+            vh.die("{s}: {s}", .{ sv_runit, @tagName(linux.errno(rc)) });
+        }
+        vh.die("the vh-init manager is not running (no {s}) and there is no {s}", .{ proto.socket_path, sv_runit });
     }
     var rc: u8 = 0;
     for (names) |raw| {

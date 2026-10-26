@@ -132,12 +132,13 @@ def step_vhinit(a):
         check("vh-init --check: the definitions parse, no problem", "chk=0" in out and "problem:" not in out, out[-600:].replace("\n", " | "))
         rc, out = run(ser, "vh-init --install; echo in=$?; grep KERNEL_CMDLINE /etc/default/dracut-uefi-hook; readlink /usr/bin/sv")
         check("vh-init --install: init= in the command line, the sv shim", "in=0" in out and "init=/usr/local/sbin/vh-init" in out and "vh-ctl" in out, out[-500:].replace("\n", " | "))
-        rc, out = run(ser, "sv status /var/service/* | grep -c '^run:'; sv status /var/service/* | grep -vc '^run:'")
-        nums = [l.strip() for l in lines(out) if l.strip().isdigit()]
+        rc, out = run(ser, "sv status /var/service/*; echo ===; sv status /var/service/* | grep -c '^run:'; sv status /var/service/* | grep -vc '^run:'")
+        nums = [l.strip() for l in lines(out.split("===")[-1]) if l.strip().isdigit()]
         check("the sv shim runs runit's sv while runit is PID 1 (every service run:)", len(nums) == 2 and nums[1] == "0" and int(nums[0]) > 5, out[-300:].replace("\n", " | "))
-        rc, out = run(ser, ". /etc/vh/vh.env; xbps-reconfigure -f $VH_KERNEL >/tmp/uki.log 2>&1; echo uki=$?; tail -6 /tmp/uki.log; "
+        # the rebuild replaces this kernel version's UKI: one file of this version, enrolled
+        rc, out = run(ser, ". /etc/vh/vh.env; xbps-reconfigure -f $VH_KERNEL >/tmp/uki.log 2>&1; echo uki=$?; grep -a 'Limine\\|UKI\\|sign' /tmp/uki.log | tail -4; "
                            "mount -o ro /boot/efi; ls /boot/efi/EFI/void/; umount /boot/efi", timeout=1800)
-        check("the UKI with init= was rebuilt and enrolled (the previous one kept)", "uki=0" in out and "enrolled into Limine" in out and out.count(".efi") >= 2, out[-500:].replace("\n", " | "))
+        check("the UKI with init= was rebuilt, signed and enrolled", "uki=0" in out and "enrolled into Limine" in out and ".efi" in out, out[-500:].replace("\n", " | "))
     finally:
         shutdown(vm, ser)
     vm, ser = boot(a)                     # the first boot through vh-init

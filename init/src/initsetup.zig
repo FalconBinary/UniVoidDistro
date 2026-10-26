@@ -1,9 +1,12 @@
 //! vh-init --install / --rollback / --status: vh-init as PID 1 of the next boot. The kernel
 //! command line lives inside the signed UKI (/etc/default/dracut-uefi-hook, KERNEL_CMDLINE):
-//! --install adds `init=/usr/local/sbin/vh-init` there and says how to rebuild the UKI; the
-//! previous UKI stays in Limine as the fallback (KEEP=2, docs/03), and runit stays installed:
-//! `init=/usr/bin/runit-init` typed at Limine's prompt is not possible under Secure Boot, so
-//! the fallback is the previous UKI. The sv shim: runit's sv becomes sv.runit, vh-ctl is sv.
+//! --install adds `init=/usr/local/sbin/vh-init` there and says how to rebuild the UKI. The
+//! rebuild replaces this kernel version's UKI (vh-limine-update keeps KEEP kernel versions, not
+//! builds of one), so right after it there is no runit UKI to fall back to: `init=` typed at
+//! Limine's prompt is not possible under Secure Boot either. runit stays installed, and
+//! --rollback with the same rebuild brings it back; a boot that does not come up needs the live
+//! image. An install through the boot assessment (a trial UKI, docs/uni/kernel.md) is the
+//! follow-up. The sv shim: runit's sv becomes sv.runit, vh-ctl is sv.
 const std = @import("std");
 const linux = std.os.linux;
 const mem = std.mem;
@@ -89,7 +92,7 @@ pub fn install() u8 {
     vh.mkdirs(sys.p("/etc/vh/services/enabled"), 0o755);
     vh.mkdirs(sys.p("/var/lib/vh/init"), 0o700);
     vh.mkdirs(sys.p("/var/log/vh"), 0o700);
-    vh.out("Next: rebuild and sign the UKI: doas xbps-reconfigure -f {s}\n(the previous UKI stays in Limine as the fallback). Then reboot and check: vh-init --status, doas vh-audit init\nBack to runit as PID 1: doas vh-init --rollback, then the same xbps-reconfigure\n", .{kernelName()});
+    vh.out("Next: rebuild and sign the UKI: doas xbps-reconfigure -f {s}\n(it replaces this kernel version's UKI: until the rollback no UKI boots runit). Then reboot and check: vh-init --status, doas vh-audit init\nBack to runit as PID 1: doas vh-init --rollback, then the same xbps-reconfigure\n", .{kernelName()});
     return 0;
 }
 
