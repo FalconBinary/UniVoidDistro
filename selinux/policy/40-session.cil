@@ -138,7 +138,11 @@
     (allow wm_t d (unix_stream_socket (read write getattr)))
     (allow d wm_t (fd (use)))
     (allow d tmpfs_t (file (read write getattr map)))
-    (allow d dri_device_t (chr_file (ioctl read write getattr lock append open map))))
+    (allow d dri_device_t (chr_file (ioctl read write getattr lock append open map)))
+    ;; what the session's programs inherit from vh-session: the log in /run/user/UID and the tty of the login
+    (allow d user_t (fd (use)))
+    (allow d user_runtime_t (file (append write getattr)))
+    (allow d tty_device_t (chr_file (read write getattr ioctl))))
 (call wayland_client (user_t))
 
 ;; the bar: sysfs, the clock, the system bus (iwd, bluez), the wallpapers, its launcher broker
@@ -370,6 +374,7 @@
 (allow seatd_t dri_device_t (chr_file (ioctl read write getattr setattr lock append open)))
 (allow seatd_t dri_device_t (dir (search getattr read open)))
 (allow seatd_t input_device_t (chr_file (ioctl read write getattr setattr lock append open)))
+(allow seatd_t input_device_t (dir (search getattr read open)))
 (allow seatd_t tty_device_t (chr_file (ioctl read write getattr setattr lock append open)))
 (allow seatd_t console_device_t (chr_file (ioctl read write getattr setattr lock append open)))
 (allow seatd_t sysfs_t (file (read getattr open)))

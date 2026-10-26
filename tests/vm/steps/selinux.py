@@ -70,7 +70,7 @@ def step_selinux(a):
         check("the trial boot: Limine started the machine entry (the one-shot entry)", started(out) == mid, started(out))
         check("PID 1 is vh-init on the machine kernel", pid1(ser) == "vh-init")
         rc, out = run(ser, "uname -r; echo LSM=$(cat /sys/kernel/security/lsm); cat /run/vh/selinux; vh-selinux status; cat /sys/fs/selinux/checkreqprot; "
-                           "cat /var/lib/vh/selinux.last; vh-init --status | grep -a 'steps\\|stage 1 done'")
+                           "cat /var/lib/vh/selinux.last")
         lsm = re.search(r"LSM=(\S+)", out)
         check("SELinux is the active LSM of the machine kernel, AppArmor is not", lsm is not None and "selinux" in lsm.group(1) and "apparmor" not in lsm.group(1) and "active: yes" in out,
               out[-600:].replace("\n", " | "))
@@ -78,6 +78,8 @@ def step_selinux(a):
               out[-600:].replace("\n", " | "))
         check("secure_mode_policyload is set: no policy load, no setenforce until the next boot", "secure_mode_policyload: 1" in out, out[-400:].replace("\n", " | "))
         check("the admin's root shell (doas -s) runs as sysadm_t", re.search(r"this shell: \S+:sysadm_t:", out) is not None, out[-300:].replace("\n", " | "))
+        rc, out = run(ser, "vh-init --status | grep -a 'steps\\|stage 1 done'")
+        print(f"--- stage 1 on the machine kernel (the relabel after a boot without the policy): {out[-600:]}")
         rc, out = run(ser, "vh-selabel --check / > /tmp/chk.txt; echo chk=$?; grep -v /usr/lib/modules/ /tmp/chk.txt | head -30; tail -1 /tmp/chk.txt; "
                            "for d in / /run /dev /tmp /dev/shm /var/tmp /run/vh /run/udev; do echo \"$d $(tr -d '\\0' < /proc/self/attr/current >/dev/null; getfattr -h --only-values -n security.selinux $d 2>/dev/null || echo ?)\"; done")
         check("vh-selabel --check /: every label as file_contexts says, the tmpfs mounts of stage 1 included", "chk=0" in out, out[-700:].replace("\n", " | "))
