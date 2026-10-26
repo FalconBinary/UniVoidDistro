@@ -418,6 +418,20 @@
 
 ;; ---------------------------------------------------------------- how file systems are labelled
 ;; xattr: the root (XFS) and the ESP's host (vfat has no xattrs: genfscon below)
+;; a file of a type may live on a file system of a type: the kernel checks "associate" at every
+;; creation and relabel (the rig's first permissive boot, kvm-smoke run 40349043789, had none of
+;; these and logged a denial for every new file). Every file type on the root file systems, the
+;; tmpfs types on tmpfs (/run, /tmp, /dev/shm), the device nodes and what udev makes on devtmpfs,
+;; the EFI variables on efivarfs (vh-limine-update's one-shot entry)
+(allow file_type fs_t (filesystem (associate)))
+(allow tmpfs_type tmpfs_t (filesystem (associate)))
+(allow device_node device_t (filesystem (associate)))
+(allow efivarfs_t efivarfs_t (filesystem (associate)))
+;; at an exec that changes the domain the kernel asks whether the new domain may inherit the
+;; signal state, the rlimits and the non-secure environment of the old one; refused, they are
+;; sanitised, which is the behaviour wanted here: refused without a line in the log
+(dontaudit domain domain (process (siginh rlimitinh noatsecure)))
+
 (fsuse xattr xfs (system_u object_r fs_t s0r))
 (fsuse xattr ext4 (system_u object_r fs_t s0r))
 (fsuse xattr btrfs (system_u object_r fs_t s0r))

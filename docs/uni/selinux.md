@@ -99,9 +99,19 @@ no SELinux, runs AppArmor with the same command line and the same files.
    `secure_mode_policyload` set and committed (the last boolean anyone sets this boot), and
    `/run/vh/selinux` written for the audit. Without selinuxfs (the stock kernel) the step says so
    and the boot goes on: AppArmor's step runs instead.
-2. `vh-selinux-label`, after `mount-all`: `vh-selabel --one-fs /run /dev /dev/shm /tmp /var/tmp`,
+2. `vh-selinux-early`, right after it: `vh-selabel --one-fs /run /dev /dev/shm` as the kernel
+   just made them (`tmpfs_t`, `device_t`), before udevd makes `/run/udev` and the nodes: the
+   policy's type transitions key on `var_run_t` (the rig's first boot had udev's files as
+   `tmpfs_t`, run 40349043789).
+3. `vh-selinux-label`, after `mount-all`: `vh-selabel --one-fs /run /dev /dev/shm /tmp /var/tmp`,
    the tmpfs and devtmpfs mounts whose nodes udev made meanwhile (devpts takes no xattr: its
-   labels are the policy's).
+   labels are the policy's). **Two kernels, one disk:** the stock kernel of the fallback UKI
+   has no SELinux and labels nothing it creates, so after a boot on it every new file is
+   unlabelled (`file_t` to the machine kernel: unbound's `root.key`, chrony's NTS cookies, the
+   logs, a shell's history). Stage 1 keeps the marker `/var/lib/vh/selinux.last` ("selinux" or
+   "none"); when the previous boot ran without the policy, `/etc`, `/var`, `/root`, `/home` and
+   `/usr/local` are relabelled once, before any service starts. [VERIFY] the cost on a large
+   `/home` (the step's time is in the kernel log).
 
 Everything stage 1 runs is `kernel_t` (the policy is loaded by the process that is already
 running), which is an init domain like `init_t`; the manager (`vh-init --manager`), runsvdir and

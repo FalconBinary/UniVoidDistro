@@ -52,8 +52,8 @@ def step_selinux(a):
         check("installed with VH_MAC=selinux: the policy files, permissive, selinux before apparmor in lsm=",
               "permissive" in out and "file_contexts" in out and "lsm=landlock,lockdown,yama,selinux,apparmor" in out and "active: no" in out,
               out[-500:].replace("\n", " | "))
-        rc, out = run(ser, "vh-selabel --check / | tail -2; echo chk=$?")
-        check("the labels of the installation survive the stock kernel (vh-selabel --check /)", "chk=0" in out, out[-300:].replace("\n", " | "))
+        rc, out = run(ser, "vh-selabel --check --one-fs / > /tmp/chk.txt; echo chk=$?; tail -3 /tmp/chk.txt")
+        check("the labels of the root file system survive the stock kernel (vh-selabel --check --one-fs /)", "chk=0" in out, out[-400:].replace("\n", " | "))
         rc, out = run(ser, "vh-ctl enable vh-sched")      # sched_t on the machine kernel
         mid, name = install_trial(ser)
     finally:
@@ -71,8 +71,9 @@ def step_selinux(a):
               out[-600:].replace("\n", " | "))
         check("secure_mode_policyload is set: no policy load, no setenforce until the next boot", "secure_mode_policyload: 1" in out, out[-400:].replace("\n", " | "))
         check("the admin's root shell (doas -s) runs as sysadm_t", re.search(r"this shell: \S+:sysadm_t:", out) is not None, out[-300:].replace("\n", " | "))
-        rc, out = run(ser, "vh-selabel --check / | tail -2; echo chk=$?; ls -Zd / /run /dev /tmp /dev/shm /dev/pts /var/tmp /run/vh /run/udev 2>&1")
-        check("vh-selabel --check /: every label as file_contexts says, the tmpfs mounts of stage 1 included", "chk=0" in out, out[-600:].replace("\n", " | "))
+        rc, out = run(ser, "vh-selabel --check / > /tmp/chk.txt; echo chk=$?; tail -12 /tmp/chk.txt; "
+                           "for d in / /run /dev /tmp /dev/shm /var/tmp /run/vh /run/udev; do echo \"$d $(tr -d '\\0' < /proc/self/attr/current >/dev/null; getfattr -h --only-values -n security.selinux $d 2>/dev/null || echo ?)\"; done")
+        check("vh-selabel --check /: every label as file_contexts says, the tmpfs mounts of stage 1 included", "chk=0" in out, out[-700:].replace("\n", " | "))
         rc, out = run(ser, PROCS)
         print(out)
         found = procs(out)
@@ -91,7 +92,7 @@ def step_selinux(a):
         check("vh-sched loaded the scheduler as sched_t (BPF under the policy)", re.search(r"vh-sched up \d+", out) is not None and "state=enabled" in out, out[-300:].replace("\n", " | "))
         rc, out = run(ser, DENIALS)
         at_boot = denials(out)
-        print(f"--- AVC denials after the boot: {at_boot}")
+        print(f"--- AVC denials after the boot: {at_boot}\n{out}")
         # the login of the everyday user on tty1, typed on the VM's keyboard (agetty, login, PAM,
         # vh-usersh = user_t), which goes straight into the desktop (zz-vh.sh: exec vh-session;
         # RefursWM on the virtio GPU, the pixman renderer when EGL does not come up)
@@ -113,6 +114,7 @@ def step_selinux(a):
         check("the session's programs in their domains (bar, filter, PipeWire)", not wrong, "; ".join(wrong)[-500:])
         rc, out = run(ser, DENIALS)
         after = denials(out)
+        print(f"--- AVC denials after the login and the desktop: {after}\n{out}")
         check("zero AVC denials after the boot, the login on tty1 and the start of the desktop (permissive)", after == 0,
               f"{at_boot} after the boot, {after} after the login and the desktop (the lines above, with the CIL each one asks for)")
         rc, out = run(ser, "doas vh-audit selinux", timeout=600)

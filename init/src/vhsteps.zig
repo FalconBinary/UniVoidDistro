@@ -517,21 +517,59 @@ pub fn selinuxLoad() void {
 /// The labels of the file systems stage 1 mounted (tmpfs: /run, /dev/shm, /tmp, /var/tmp; devtmpfs:
 /// /dev, whose nodes udev made meanwhile): vh-selabel by argv over them, after mount-all. Nothing
 /// to do without an active policy.
-pub fn selinuxLabel() void {
-    if (!vh.pathExists(sys.p("/run/vh/selinux"))) return;
+/// vh-selabel --one-fs over the given trees (the policy is active)
+fn selabel(what: []const u8, paths: []const []const u8) void {
     const prog = sys.p("/usr/local/sbin/vh-selabel");
     if (!vh.isRegular(prog)) {
-        sys.note("! SELinux: no {s}: the tmpfs mounts keep the kernel's labels", .{prog});
+        sys.note("! SELinux: no {s}: {s} keep the kernel's labels", .{ prog, what });
         return;
     }
-    sys.msg("vh: SELinux labels of /run, /dev, /tmp...", .{});
+    sys.msg("vh: SELinux labels of {s}...", .{what});
     var argv: std.ArrayList([]const u8) = .empty;
     argv.append(vh.gpa, prog) catch vh.oom();
     if (sys.root.len > 0) argv.appendSlice(vh.gpa, &.{ "--root", sys.root }) catch vh.oom();
-    // not /dev/pts: devpts takes no xattr, its labels are the policy's (fs_use / genfscon)
-    argv.appendSlice(vh.gpa, &.{ "--one-fs", "/run", "/dev", "/dev/shm", "/tmp", "/var/tmp" }) catch vh.oom();
+    argv.append(vh.gpa, "--one-fs") catch vh.oom();
+    argv.appendSlice(vh.gpa, paths) catch vh.oom();
     const rc = sys.exec(argv.items);
     if (rc != 0) sys.note("! vh-selabel returned {d}", .{rc});
+}
+
+/// Right after the policy: /run and /dev as the kernel just made them (tmpfs_t, device_t), before
+/// udevd makes /run/udev and the nodes in them (the policy's type transitions key on var_run_t;
+/// with the kernel's tmpfs_t udev's files took tmpfs_t, kvm-smoke run 40349043789).
+pub fn selinuxLabelEarly() void {
+    if (!vh.pathExists(sys.p("/run/vh/selinux"))) return;
+    selabel("/run and /dev", &.{ "/run", "/dev", "/dev/shm" });
+}
+
+/// the marker of the last boot's MAC: "selinux" when the policy was active, "none" on the stock
+/// kernel, which labels nothing (0700 /var/lib/vh: never chmod it, docs/uni/game.md)
+const last_mac = "/var/lib/vh/selinux.last";
+
+/// After mount-all: /run, /dev and the tmpfs mounts whose nodes udev made meanwhile (not
+/// /dev/pts: devpts takes no xattr, its labels are the policy's). When the previous boot ran
+/// without the policy (the stock kernel of the fallback UKI, VH_MAC=selinux), every file made
+/// then has no label (file_t to this kernel): /etc, /var, /root, /home and /usr/local are
+/// relabelled once, before any service starts; the stock kernel's own boots skip all of this
+/// and only write the marker. [VERIFY] the cost on a large /home (the step's time is in kmsg).
+pub fn selinuxLabel() void {
+    const active = vh.pathExists(sys.p("/run/vh/selinux"));
+    const marker = sys.p(last_mac);
+    if (!active) {
+        if (vh.pathExists(sys.p(selinux_dir))) {
+            vh.mkdirs(sys.p("/var/lib/vh"), 0o700);
+            _ = sys.writeFile(marker, "none\n", 0o644);
+        }
+        return;
+    }
+    selabel("/run, /dev, /tmp", &.{ "/run", "/dev", "/dev/shm", "/tmp", "/var/tmp" });
+    const last = vh.strip(vh.rd(marker));
+    if (!vh.eql(last, "selinux")) {
+        sys.msg("vh: SELinux labels of what the last boot ({s}) made unlabelled...", .{if (last.len == 0) "unknown" else last});
+        selabel("/etc, /var, /root, /home, /usr/local", &.{ "/etc", "/var", "/root", "/home", "/usr/local" });
+    }
+    vh.mkdirs(sys.p("/var/lib/vh"), 0o700);
+    _ = sys.writeFile(marker, "selinux\n", 0o644);
 }
 
 test "the policy file with the highest version wins" {

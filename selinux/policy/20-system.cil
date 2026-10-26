@@ -130,6 +130,12 @@
 (type user_shell_exec_t) (call executable (user_shell_exec_t))      ; /usr/local/bin/vh-usersh
 (type admin_shell_exec_t) (call executable (admin_shell_exec_t))    ; /usr/local/bin/vh-adminsh
 (type game_enter_exec_t) (call executable (game_enter_exec_t))      ; /usr/local/bin/vh-game-enter
+;; libxcrypt's yescrypt tries mmap(MAP_HUGETLB) for its memory before falling back to ordinary
+;; pages (an "anon_hugepage" file of hugetlbfs_t): refused silently in the domains that check
+;; a password, the fallback is the path every machine without reserved huge pages takes anyway
+(dontaudit login_t hugetlbfs_t (file (read map)))
+(dontaudit doas_t hugetlbfs_t (file (read map)))
+(dontaudit chkpwd_t hugetlbfs_t (file (read map)))
 (call domtrans (login_t user_shell_exec_t user_t))
 (call domtrans (login_t admin_shell_exec_t admin_t))
 (call domtrans (login_t game_enter_exec_t game_t))

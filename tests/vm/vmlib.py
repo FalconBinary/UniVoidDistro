@@ -192,7 +192,11 @@ def boot(a, extra=None, on_prompt=None):
                  f"bash /root/vh/install/build-tools.sh --prebuilt {VM_SRC}/build / >/dev/null && "
                  # a system without python3 (docs/17): ignorepkg and removal if a previous install had it
                  f"install -m 0644 {VM_SRC}/rootfs/etc/xbps.d/20-vh-ignorepkg.conf /etc/xbps.d/ && "
-                 "{ xbps-remove -Fy python3 >/dev/null 2>&1; true; }")
+                 "{ xbps-remove -Fy python3 >/dev/null 2>&1; true; } && "
+                 # with VH_MAC=selinux the refreshed files need their labels, as after vh-update
+                 # (docs/uni/selinux.md); on the stock kernel the xattrs are stored, the machine
+                 # kernel reads them (kvm-smoke 40349043789 ran the refreshed vh-init unlabelled)
+                 "{ [ ! -d /etc/vh/selinux ] || /usr/local/sbin/vh-selabel /usr/local /root/vh /etc/xbps.d | tail -1; }")
     return vm, ser
 
 
