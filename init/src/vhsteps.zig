@@ -528,7 +528,8 @@ pub fn selinuxLabel() void {
     var argv: std.ArrayList([]const u8) = .empty;
     argv.append(vh.gpa, prog) catch vh.oom();
     if (sys.root.len > 0) argv.appendSlice(vh.gpa, &.{ "--root", sys.root }) catch vh.oom();
-    argv.appendSlice(vh.gpa, &.{ "--one-fs", "/run", "/dev", "/dev/shm", "/dev/pts", "/tmp", "/var/tmp" }) catch vh.oom();
+    // not /dev/pts: devpts takes no xattr, its labels are the policy's (fs_use / genfscon)
+    argv.appendSlice(vh.gpa, &.{ "--one-fs", "/run", "/dev", "/dev/shm", "/tmp", "/var/tmp" }) catch vh.oom();
     const rc = sys.exec(argv.items);
     if (rc != 0) sys.note("! vh-selabel returned {d}", .{rc});
 }

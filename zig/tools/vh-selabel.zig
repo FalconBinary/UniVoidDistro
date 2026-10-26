@@ -12,8 +12,10 @@
 //!       --one-fs           do not cross into other file systems (the default for /)
 //!       -v                 every change
 //! Pseudo and foreign file systems (proc, sysfs, cgroup2, bpf, securityfs, selinuxfs, efivarfs,
-//! devpts, vfat, debugfs, tracefs, pstore, binfmt_misc, mqueue, hugetlbfs) are skipped: their
-//! labels come from the policy's genfscon and fsuse statements.
+//! devpts, vfat, debugfs, tracefs, pstore, binfmt_misc, mqueue, hugetlbfs) are skipped, their
+//! mount point included (its inode is the other file system's root and takes no xattr: the
+//! installer's chroot, kvm-smoke run 40333027036): their labels come from the policy's genfscon
+//! and fsuse statements. A named path on such a file system is skipped the same way.
 const std = @import("std");
 const linux = std.os.linux;
 const mem = std.mem;
@@ -119,9 +121,12 @@ fn walk(t: *const selabel.Table, o: Opts, real: []const u8, logical: []const u8,
         vh.warn("{s}: stat: {s}", .{ logical, vh.serr() });
         return;
     };
-    label(t, o, real, logical, st.mode, c);
-    if (!vh.S.isDir(st.mode)) return;
-    // another file system below: skipped when it is a pseudo one (or any, with --one-fs)
+    if (!vh.S.isDir(st.mode)) {
+        label(t, o, real, logical, st.mode, c);
+        return;
+    }
+    // another file system below: skipped with its mount point when it is a pseudo one (or
+    // any, with --one-fs); its root inode is the other file system's and takes no xattr
     if (st.dev_major != dev_major or st.dev_minor != dev_minor) {
         if (o.one_fs) {
             c.skipped_fs += 1;
@@ -131,9 +136,11 @@ fn walk(t: *const selabel.Table, o: Opts, real: []const u8, logical: []const u8,
             c.skipped_fs += 1;
             return;
         };
+        label(t, o, real, logical, st.mode, c);
         walkDir(t, o, real, logical, st.dev_major, st.dev_minor, c);
         return;
     }
+    label(t, o, real, logical, st.mode, c);
     walkDir(t, o, real, logical, dev_major, dev_minor, c);
 }
 
@@ -204,6 +211,12 @@ pub fn main(init: std.process.Init.Minimal) void {
             label(&table, o, real, logical, st.mode, &c);
             continue;
         }
+        // a named directory on a pseudo file system (/dev/pts, /proc): the kernel's labels
+        if (fsType(real)) |ft| if (skipFs(ft)) {
+            c.skipped_fs += 1;
+            if (o.verbose) vh.out("{s}: a file system whose labels are the kernel's, skipped\n", .{logical});
+            continue;
+        };
         label(&table, o, real, logical, st.mode, &c);
         walkDir(&table, o, real, logical, st.dev_major, st.dev_minor, &c);
     }

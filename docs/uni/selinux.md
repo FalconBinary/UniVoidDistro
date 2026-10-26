@@ -99,8 +99,9 @@ no SELinux, runs AppArmor with the same command line and the same files.
    `secure_mode_policyload` set and committed (the last boolean anyone sets this boot), and
    `/run/vh/selinux` written for the audit. Without selinuxfs (the stock kernel) the step says so
    and the boot goes on: AppArmor's step runs instead.
-2. `vh-selinux-label`, after `mount-all`: `vh-selabel --one-fs /run /dev /dev/shm /dev/pts /tmp
-   /var/tmp`, the tmpfs and devtmpfs mounts whose nodes udev made meanwhile.
+2. `vh-selinux-label`, after `mount-all`: `vh-selabel --one-fs /run /dev /dev/shm /tmp /var/tmp`,
+   the tmpfs and devtmpfs mounts whose nodes udev made meanwhile (devpts takes no xattr: its
+   labels are the policy's).
 
 Everything stage 1 runs is `kernel_t` (the policy is loaded by the process that is already
 running), which is an init domain like `init_t`; the manager (`vh-init --manager`), runsvdir and
@@ -135,8 +136,8 @@ small matcher for the subset the policy keeps to (literals, `\.`, `.`, `.*`, `[.
 `(a|b)`, `?`, `*`, `+`, `(/.*)?`); `tests/selinux/checks.py` fails on a pattern outside it. The
 most specific line wins as in libselinux: the exact path before a pattern, the longer literal
 prefix, the later line. `vh-selabel` walks the given trees (the whole root by default, crossing
-into the tmpfs mounts and skipping the pseudo file systems and vfat, whose labels are the
-kernel's), compares `security.selinux` and sets it where it differs; `--check` only reports
+into the tmpfs mounts and skipping the pseudo file systems and vfat, mount point included,
+whose labels are the kernel's), compares `security.selinux` and sets it where it differs; `--check` only reports
 (exit 1 on a difference); `--root DIR` for the installer's chroot and the tests.
 
 ## Definition of done, and what is verified
