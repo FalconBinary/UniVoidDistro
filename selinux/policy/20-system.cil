@@ -19,6 +19,7 @@
 (call manage_files (udev_t device_t))
 (allow udev_t device_node (chr_file (ioctl read write create getattr setattr lock append open unlink link rename relabelfrom relabelto)))
 (allow udev_t device_node (blk_file (ioctl read write create getattr setattr lock append open unlink link rename relabelfrom relabelto)))
+(allow udev_t device_node dir_manage)            ; /dev/snd, /dev/dri, /dev/input: the directories of the nodes it makes
 (allow udev_t sysfs_t (dir (ioctl read write getattr setattr lock open search add_name remove_name)))
 (allow udev_t sysfs_t (file (ioctl read write getattr setattr lock append open)))
 (allow udev_t sysfs_t (lnk_file (read getattr)))
@@ -183,6 +184,7 @@
 (call domtrans (doas_t initctl_exec_t initctl_t))
 (call domtrans (doas_t vh_sbin_exec_t vh_sbin_t))
 (call domtrans (doas_t shell_exec_t sysadm_t))
+(call domtrans (doas_t admin_shell_exec_t sysadm_t))   ; doas -s runs the admin's login shell, vh-adminsh
 (call domtrans (doas_t bin_t sysadm_t))
 (call domtrans (doas_t vh_tools_exec_t vh_tools_t))
 (call domtrans (doas_t pkg_exec_t pkg_t))

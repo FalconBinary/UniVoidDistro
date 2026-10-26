@@ -31,6 +31,7 @@
     (allow d devpts_t (dir (search getattr read)))
     (allow d devpts_t (chr_file (ioctl read write getattr setattr lock append open)))
     (allow d ptmx_t (chr_file (ioctl read write getattr lock append open)))
+    (allow d dri_device_t (dir (search getattr read open)))
     (allow d dri_device_t (chr_file (ioctl read write getattr lock append open map)))   ; the render node (group render)
     (allow d sound_device_t (chr_file (getattr)))
     (allow d var_run_t (dir (read)))
@@ -94,6 +95,8 @@
 (allow wm_t seatd_var_run_t sock_w)
 (allow wm_t seatd_t (fd (use)))
 (allow wm_t dri_device_t (chr_file (ioctl read write getattr lock append open map)))
+(allow wm_t dri_device_t (dir (search getattr read open)))
+(allow wm_t self (netlink_kobject_uevent_socket (create bind getattr setopt read write)))   ; libudev's monitor: the outputs and the input devices that come and go
 (allow wm_t input_device_t (chr_file (ioctl read write getattr lock append open)))
 (allow wm_t tty_device_t (chr_file (ioctl read write getattr open)))
 (allow wm_t console_device_t (chr_file (ioctl read write getattr open)))
@@ -169,6 +172,7 @@
 (allow pipewire_t self (process (setsched setrlimit)))
 (allow pipewire_t self (capability (sys_nice ipc_lock)))
 (allow pipewire_t sound_device_t (chr_file (ioctl read write getattr lock append open map)))
+(allow pipewire_t sound_device_t (dir (search getattr read open)))      ; ALSA enumerates /dev/snd
 (allow pipewire_t video_device_t (chr_file (ioctl read write getattr lock append open map)))
 (call manage_files (pipewire_t user_runtime_t))
 (call manage_files (pipewire_t vh_sandbox_run_t))
@@ -364,6 +368,7 @@
 (call manage_files (seatd_t var_run_t))
 (typetransition seatd_t var_run_t sock_file "seatd.sock" seatd_var_run_t)
 (allow seatd_t dri_device_t (chr_file (ioctl read write getattr setattr lock append open)))
+(allow seatd_t dri_device_t (dir (search getattr read open)))
 (allow seatd_t input_device_t (chr_file (ioctl read write getattr setattr lock append open)))
 (allow seatd_t tty_device_t (chr_file (ioctl read write getattr setattr lock append open)))
 (allow seatd_t console_device_t (chr_file (ioctl read write getattr setattr lock append open)))

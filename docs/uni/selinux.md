@@ -109,9 +109,9 @@ no SELinux, runs AppArmor with the same command line and the same files.
    has no SELinux and labels nothing it creates, so after a boot on it every new file is
    unlabelled (`file_t` to the machine kernel: unbound's `root.key`, chrony's NTS cookies, the
    logs, a shell's history). Stage 1 keeps the marker `/var/lib/vh/selinux.last` ("selinux" or
-   "none"); when the previous boot ran without the policy, `/etc`, `/var`, `/root`, `/home` and
-   `/usr/local` are relabelled once, before any service starts. [VERIFY] the cost on a large
-   `/home` (the step's time is in the kernel log).
+   "none"); when the previous boot ran without the policy, `/etc`, `/usr`, `/var`, `/root`,
+   `/home` and `/boot` are relabelled once, before any service starts. [VERIFY] the cost on a
+   large `/home` (the step's time is in the kernel log).
 
 Everything stage 1 runs is `kernel_t` (the policy is loaded by the process that is already
 running), which is an init domain like `init_t`; the manager (`vh-init --manager`), runsvdir and

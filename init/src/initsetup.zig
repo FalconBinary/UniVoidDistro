@@ -101,6 +101,11 @@ pub fn install() u8 {
     vh.mkdirs(sys.p("/etc/vh/services/enabled"), 0o755);
     vh.mkdirs(sys.p("/var/lib/vh/init"), 0o700);
     vh.mkdirs(sys.p("/var/log/vh"), 0o700);
+    // with VH_MAC=selinux the new files take their labels now, whatever kernel runs (the stock
+    // kernel labels nothing; the shim was file_t to the machine kernel, kvm-smoke run 40383056402)
+    if (vh.isRegular(sys.p("/etc/vh/selinux/file_contexts")) and vh.isRegular(sys.p("/usr/local/sbin/vh-selabel"))) {
+        _ = vh.run(&.{ "/usr/local/sbin/vh-selabel", sv, sv_runit, noextract_conf, "/etc/vh/services/enabled", "/var/lib/vh/init", "/var/log/vh" });
+    }
     vh.out("Next: rebuild and sign the UKI: doas xbps-reconfigure -f {s}\n(it replaces this kernel version's UKI: until the rollback no UKI boots runit). Then reboot and check: vh-init --status, doas vh-audit init\nBack to runit as PID 1: doas vh-init --rollback, then the same xbps-reconfigure\n", .{kernelName()});
     return 0;
 }
