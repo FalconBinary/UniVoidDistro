@@ -26,7 +26,8 @@ CONFIG_SECURITY_YAMA=y
 CONFIG_SECURITY_APPARMOR=y
 CONFIG_LSM="landlock,lockdown,yama,apparmor"
 # CONFIG_BPF_LSM is not set
-# CONFIG_SECURITY_SELINUX is not set (features/selinux turns it on)
+# features/selinux turns SELinux on in the machine kernel (VH_MAC=selinux)
+# CONFIG_SECURITY_SELINUX is not set
 # CONFIG_SECURITY_SMACK is not set
 # CONFIG_SECURITY_TOMOYO is not set
 # CONFIG_SECURITY_LOADPIN is not set
