@@ -90,8 +90,9 @@ kernel-custom run 40321559300, `linux-6.18.57-vh`, `CONFIG_SCHED_CLASS_EXT=y`, E
 KVM, `check.py vhinit,sched`): the installer puts `vh-sched` and `vh_sched.o` in place with the
 tools; on the stock kernel `vh-ctl enable vh-sched` starts the loader, which says "no sched_ext
 in this kernel" (the BTF has no `task_struct.scx`) and exits, and the manager waits with its
-backoff; on the machine kernel's trial boot under vh-init the service is up 56 ms after the
-manager started (4 ms to ready): the loader found 4 CPUs in 1 LLC by cache, loaded the 10
+backoff; on the machine kernel's trial boot under vh-init the manager starts the service 64 ms
+after its own start and it is ready 83 ms later, when the kernel has enabled the scheduler
+(`vh-ctl blame`): the loader found 4 CPUs in 1 LLC by cache, loaded the 10
 programs in 41 ms (insn_processed 586 in all) and the kernel reports `state=enabled switch_all=1
 enable_seq=1 nr_rejected=0 root/ops=vh_sched`, with every service up and `vh-kconf check` finding
 the rig; `vh-ctl stop vh-sched -w 15` ends the loader through SIGTERM (`link closed (signal)`,
