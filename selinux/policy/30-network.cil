@@ -30,6 +30,9 @@
 (call manage_files (chronyd_t chrony_var_lib_t))
 (call manage_files (chronyd_t var_run_t))
 (typetransition chronyd_t var_run_t dir "chrony" chrony_var_run_t)
+(typetransition initrc_t var_run_t dir "chrony" chrony_var_run_t)        ; /etc/sv/chronyd/run makes it
+(typetransition init_domain var_run_t dir "chrony" chrony_var_run_t)
+(call read_files (chronyd_t resolv_conf_t))                             ; the NTS servers by name
 (type chrony_var_run_t) (call file (chrony_var_run_t)) (typeattributeset tmpfs_type chrony_var_run_t)
 (call manage_files (chronyd_t chrony_var_run_t))
 (allow chronyd_t clock_device_t (chr_file (ioctl read write getattr open)))

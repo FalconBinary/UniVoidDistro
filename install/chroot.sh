@@ -221,6 +221,9 @@ if [ "$VH_MAC" = selinux ]; then
 	say "SELinux: the policy's mode and the labels of every file"
 	[ -s /etc/vh/selinux/file_contexts ] || die "no /etc/vh/selinux/file_contexts (10-install.sh installs the live image's policy)"
 	echo "$VH_SELINUX_MODE" > /etc/vh/selinux/mode
+	# the admin's home is the admin's (admin_home_t, like /root): the policy cannot name the
+	# account, so this installation's line goes next to the table (vh-selabel reads FILE.local)
+	printf '# this installation (install/chroot.sh): the admin account'"'"'s home\n/home/%s(/.*)?\tsystem_u:object_r:admin_home_t:s0\n' "$VH_ADMIN" > /etc/vh/selinux/file_contexts.local
 	# the labels into the xattrs now, with no policy active: the kernel takes security.selinux
 	# from a process with CAP_SYS_ADMIN. The root file system alone (--one-fs): /dev here is the
 	# live system's, where udev adds and removes nodes meanwhile (kvm-smoke 40337571376 saw a

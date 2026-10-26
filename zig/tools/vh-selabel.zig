@@ -8,7 +8,8 @@
 //!       --check            report what differs, change nothing (exit 1 when something does)
 //!       --root DIR         the system's root is DIR (the installer's chroot, the tests): the
 //!                          table's paths are relative to it
-//!       --contexts FILE    the table (default /etc/vh/selinux/file_contexts)
+//!       --contexts FILE    the table (default /etc/vh/selinux/file_contexts); FILE.local, when it
+//!                          exists, adds this installation's lines (the admin's home)
 //!       --one-fs           do not cross into other file systems (the default for /)
 //!       -v                 every change
 //! Pseudo and foreign file systems (proc, sysfs, cgroup2, bpf, securityfs, selinuxfs, efivarfs,
@@ -217,7 +218,13 @@ pub fn main(init: std.process.Init.Minimal) void {
         o.one_fs = !(paths.items.len == 1 and vh.eql(paths.items[0], "/"));
     }
     const cpath = if (vh.eql(contexts, default_contexts) and o.root.len > 0) vh.fmt("{s}{s}", .{ o.root, contexts }) else contexts;
-    const text = vh.readFile(cpath) catch vh.die("{s}: {s}", .{ cpath, vh.serr() });
+    var text = vh.readFile(cpath) catch vh.die("{s}: {s}", .{ cpath, vh.serr() });
+    // FILE.local: the lines of this installation (the admin's home directory, which the policy
+    // cannot name), after the table's; the most specific line wins as everywhere
+    const lpath = vh.fmt("{s}.local", .{cpath});
+    if (vh.readFile(lpath)) |local| {
+        text = vh.fmt("{s}\n{s}", .{ text, local });
+    } else |_| {}
     const table = selabel.Table.parse(text) catch |e| vh.die("{s}: {s}", .{ cpath, @errorName(e) });
     var c: Counts = .{};
     for (paths.items) |p| {

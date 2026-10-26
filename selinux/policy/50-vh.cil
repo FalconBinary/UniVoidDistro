@@ -67,7 +67,11 @@
 ;; vh-selabel: the labels of the system's files (can_relabel), run by the installer, by vh-update
 ;; (pkg_t) and by hand (sysadm_t); it must see and set the label of everything
 (typeattributeset can_relabel vh_tools_t)
-(allow vh_tools_t file_type (dir (search read getattr relabelfrom relabelto)))
+(allow vh_tools_t file_type (dir (search read getattr open relabelfrom relabelto)))
+(allow vh_tools_t device_t (filesystem (getattr)))                       ; statfs of /dev (devtmpfs)
+(allow vh_tools_t device_t (chr_file (read write getattr ioctl)))        ; the console before its label at the early step
+(call read_files (vh_tools_t admin_home_t))                              ; vh-kconf reads the repository copy in /root/vh
+(allow vh_tools_t tmp_t (file (write append getattr)))                   ; output redirected by the admin
 (allow vh_tools_t file_type (file (getattr relabelfrom relabelto)))
 (allow vh_tools_t file_type (lnk_file (getattr read relabelfrom relabelto)))
 (allow vh_tools_t file_type (sock_file (getattr relabelfrom relabelto)))

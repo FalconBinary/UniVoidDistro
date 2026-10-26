@@ -350,6 +350,15 @@ run chroot "$MNT" efibootmgr -q -c -d "$VH_DISK" -p 1 -L "Void Linux (Limine)" -
 # The package cache (~1.5 GB) is not needed on the target system.
 run rm -rf "$MNT/var/cache/xbps"
 
+# the labels of what came after the chroot's relabel: the kernel package (its modules), the UKI
+# hook's files (the mounted ESP itself takes no label; /boot is relabelled at boot)
+if [ "$VH_MAC" = selinux ] && [ "$DRY_RUN" != 1 ]; then
+	say "SELinux: the labels of the kernel's files"
+	chroot "$MNT" /usr/local/sbin/vh-selabel --one-fs / | tail -1
+	selabel_diff=$(chroot "$MNT" /usr/local/sbin/vh-selabel --check --one-fs / 2>&1) \
+		|| { printf '%s\n' "$selabel_diff" | tail -25; die "vh-selabel: a label differs after the kernel's installation"; }
+fi
+
 say "thor policy: enforce (baseline: $(grep -vc '^#' "$MNT/etc/thor/baseline" 2>/dev/null || echo 0) entries)"
 if [ "$DRY_RUN" = 1 ]; then echo "   + /etc/thor/policy.conf: mode=enforce"
 else printf '# thor (docs/18): enforce -- the policy applies; learn -- only while the system is being installed\nmode=enforce\n' > "$MNT/etc/thor/policy.conf"; fi

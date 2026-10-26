@@ -549,7 +549,7 @@ const last_mac = "/var/lib/vh/selinux.last";
 /// After mount-all: /run, /dev and the tmpfs mounts whose nodes udev made meanwhile (not
 /// /dev/pts: devpts takes no xattr, its labels are the policy's). When the previous boot ran
 /// without the policy (the stock kernel of the fallback UKI, VH_MAC=selinux), every file made
-/// then has no label (file_t to this kernel): /etc, /var, /root, /home and /usr/local are
+/// then has no label (file_t to this kernel): /etc, /var, /root, /home, /usr/local and /boot are
 /// relabelled once, before any service starts; the stock kernel's own boots skip all of this
 /// and only write the marker. [VERIFY] the cost on a large /home (the step's time is in kmsg).
 pub fn selinuxLabel() void {
@@ -566,7 +566,7 @@ pub fn selinuxLabel() void {
     const last = vh.strip(vh.rd(marker));
     if (!vh.eql(last, "selinux")) {
         sys.msg("vh: SELinux labels of what the last boot ({s}) made unlabelled...", .{if (last.len == 0) "unknown" else last});
-        selabel("/etc, /var, /root, /home, /usr/local", &.{ "/etc", "/var", "/root", "/home", "/usr/local" });
+        selabel("/etc, /var, /root, /home, /usr/local, /boot", &.{ "/etc", "/var", "/root", "/home", "/usr/local", "/boot" });
     }
     vh.mkdirs(sys.p("/var/lib/vh"), 0o700);
     _ = sys.writeFile(marker, "selinux\n", 0o644);

@@ -1,10 +1,11 @@
 """Track E: the SELinux policy of this system on the VM rig (docs/uni/selinux.md): permissive on
 the machine kernel built with features/selinux, under vh-init, on an installation with VH_MAC=selinux."""
+import argparse
 import re
 import time
 
 import vhvm
-from steps.init import ctl_status, pid1
+from steps.init import ctl_status, parse_status, pid1
 from steps.kernel import JUDGED, install_trial, need_run_files, started
 from vmlib import audit, boot, check, keys, run, shutdown
 
@@ -58,7 +59,10 @@ def step_selinux(a):
         mid, name = install_trial(ser)
     finally:
         shutdown(vm, ser)
-    vm, ser = boot(a)                     # the machine kernel, on trial: SELinux is its first exclusive LSM
+    # the machine kernel, on trial: SELinux is its first exclusive LSM. Without --repo: the
+    # refresh writes programs as the admin, which the policy forbids by design (neverallow 7),
+    # and would fill the denials with the rig's own doing; the tools of the previous boot stay
+    vm, ser = boot(argparse.Namespace(**{**vars(a), "repo": False}))
     try:
         rc, out = run(ser, JUDGED, timeout=300)
         check("the trial boot: Limine started the machine entry (the one-shot entry)", started(out) == mid, started(out))
@@ -67,11 +71,11 @@ def step_selinux(a):
         lsm = re.search(r"LSM=(\S+)", out)
         check("SELinux is the active LSM of the machine kernel, AppArmor is not", lsm is not None and "selinux" in lsm.group(1) and "apparmor" not in lsm.group(1) and "active: yes" in out,
               out[-600:].replace("\n", " | "))
-        check("stage 1 loaded the policy, permissive this boot and the next", "enforcing: 0 (this boot); permissive at the next boot" in out and "loaded: policy policy." in out,
+        check("stage 1 loaded the policy, permissive this boot and the next", "enforcing: 0 (this boot); permissive at the next boot" in out and "loaded: policy /etc/vh/selinux/policy." in out,
               out[-600:].replace("\n", " | "))
         check("secure_mode_policyload is set: no policy load, no setenforce until the next boot", "secure_mode_policyload: 1" in out, out[-400:].replace("\n", " | "))
         check("the admin's root shell (doas -s) runs as sysadm_t", re.search(r"this shell: \S+:sysadm_t:", out) is not None, out[-300:].replace("\n", " | "))
-        rc, out = run(ser, "vh-selabel --check / > /tmp/chk.txt; echo chk=$?; tail -12 /tmp/chk.txt; "
+        rc, out = run(ser, "vh-selabel --check / > /tmp/chk.txt; echo chk=$?; grep -v /usr/lib/modules/ /tmp/chk.txt | head -30; tail -1 /tmp/chk.txt; "
                            "for d in / /run /dev /tmp /dev/shm /var/tmp /run/vh /run/udev; do echo \"$d $(tr -d '\\0' < /proc/self/attr/current >/dev/null; getfattr -h --only-values -n security.selinux $d 2>/dev/null || echo ?)\"; done")
         check("vh-selabel --check /: every label as file_contexts says, the tmpfs mounts of stage 1 included", "chk=0" in out, out[-700:].replace("\n", " | "))
         rc, out = run(ser, PROCS)
@@ -89,7 +93,7 @@ def step_selinux(a):
         bad = [f"{n}({s})" for n, s in st.items() if s not in ("up", "done", "delayed")]
         check("every service up under SELinux permissive", st and not bad, "; ".join(bad)[-400:])
         rc, out = run(ser, "vh-ctl status vh-sched; vh-sched state")
-        check("vh-sched loaded the scheduler as sched_t (BPF under the policy)", re.search(r"vh-sched up \d+", out) is not None and "state=enabled" in out, out[-300:].replace("\n", " | "))
+        check("vh-sched loaded the scheduler as sched_t (BPF under the policy)", parse_status(out).get("vh-sched") == "up" and "state=enabled" in out, out[-300:].replace("\n", " | "))
         rc, out = run(ser, DENIALS)
         at_boot = denials(out)
         print(f"--- AVC denials after the boot: {at_boot}\n{out}")
@@ -110,7 +114,7 @@ def step_selinux(a):
         print(f"--- the user's processes: {user}")
         check("the login on tty1: the desktop runs as wm_t, started from user_t", user.get("refurswm") == "wm_t" and "user_t" in [t for p, t, c in found if c in ("vh-session", "bash")],
               out[-600:].replace("\n", " | "))
-        wrong = [f"{c}[{p}]={t}" for p, t, c in found if c in DOMAINS and t != DOMAINS[c]]
+        wrong = [f"{c}[{p}]={t}" for p, t, c in found if c in DOMAINS and t != DOMAINS[c] and p != 1]
         check("the session's programs in their domains (bar, filter, PipeWire)", not wrong, "; ".join(wrong)[-500:])
         rc, out = run(ser, DENIALS)
         after = denials(out)

@@ -232,3 +232,8 @@
 (allow initctl_t wtmp_t (file (read write getattr open lock append)))
 (allow initctl_t tty_device_t chr_rw)
 (allow initctl_t devpts_t (chr_file (read write getattr ioctl)))
+;; what stage 1 and the manager make in /run gets its own type at creation (the rig's first
+;; permissive boot found them as var_run_t and vh_run_t, kvm-smoke run 40373457582)
+(typetransition init_domain var_run_t dir "vh-sandbox" vh_sandbox_run_t)
+(typetransition init_domain var_run_t file "utmp" utmp_t)
+(typetransition init_domain vh_run_t sock_file "init.sock" vh_init_sock_t)

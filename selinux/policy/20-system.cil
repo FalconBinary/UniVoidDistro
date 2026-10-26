@@ -112,6 +112,7 @@
 (typetransition login_t var_run_t dir "faillock" faillock_t)
 (typetransition init_domain var_run_t dir "faillock" faillock_t)
 (call rw_files (login_t utmp_t))
+(allow login_t self (file (write)))              ; /proc/self/loginuid (pam_loginuid)
 (call rw_files (login_t wtmp_t))
 (call rw_files (login_t var_log_t))              ; lastlog, btmp
 (allow login_t tty_device_t (chr_file (ioctl read write getattr setattr lock append open relabelfrom relabelto)))
@@ -227,6 +228,13 @@
 (call manage_files (sysadm_t var_tmp_t))
 (call manage_files (sysadm_t tmp_t))
 (call manage_files (sysadm_t utmp_t))
+;; the admin looks at every process (ps, pgrep: /proc/PID of any domain), never into it (no ptrace,
+;; neverallow #2; the capability a shell asks for while reading another uid's /proc/PID/exe is refused quietly)
+(allow sysadm_t domain (dir (search getattr read open)))
+(allow sysadm_t domain (file (read getattr open)))
+(allow sysadm_t domain (lnk_file (read)))
+(dontaudit sysadm_t self (capability (sys_ptrace)))
+(allow sysadm_t home_root_t (dir (read getattr open search)))
 (call manage_files (sysadm_t runit_var_run_t))
 (call manage_files (sysadm_t vh_run_t))
 (call manage_files (sysadm_t vh_state_t))

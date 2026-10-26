@@ -76,6 +76,7 @@
 (type lock_t)
 (type lock_exec_t) (call executable (lock_exec_t))              ; swaylock
 (call domtrans (user_t wm_exec_t wm_t))
+(call read_files (wm_t udev_rules_t))           ; libudev's hwdb.bin in /etc/udev
 (roletype user_r wm_t)
 (roletype user_r bar_t)
 (roletype user_r pipewire_t)
