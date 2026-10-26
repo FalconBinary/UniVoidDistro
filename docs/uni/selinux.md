@@ -171,25 +171,28 @@ has 4 unit tests over the policy's own patterns); the stage-1 steps parse and co
 
 **Verified on the VM rig, permissive** (2026-10-26, kvm-smoke `mac=selinux`, `step=vhinit,selinux`
 with the machine kernel of kernel-custom run 40321559300, features `auto,selinux`; the runs
-40349043789, 40373457582, 40383056402, 40388319429 and 40394832080, each a boot after the
-previous one's rules): the installation with `VH_MAC=selinux` labels every file (the installer
+40349043789, 40373457582, 40383056402, 40388319429, 40401275073 and 40407123621, each a boot
+after the previous one's rules): the installation with `VH_MAC=selinux` labels every file (the installer
 relabels once more after the kernel package, whose modules came after the chroot's pass); on
 the machine kernel SELinux is the active LSM (`lockdown,capability,landlock,yama,selinux`),
 stage 1 loads `policy.33` (114 KB) in its first step, sets `secure_mode_policyload`, labels
 `/run` and `/dev` before udev and, after a boot on the stock kernel, relabels `/etc`, `/usr`,
-`/var`, `/root`, `/home` and `/boot` (stage 1 took 1008 ms with it against 970 to 1118 without);
+`/var`, `/root`, `/home` and `/boot` (stage 1 took 955 to 1008 ms with it against 970 to 1118 without);
 `vh-selabel --check /` then finds no difference, `/run` included; PID 1 is `kernel_t`, the manager
 `init_t`, every daemon in its domain (udev, dbus, socklog, agetty, unbound, chronyd, seatd,
 dhcpcd, vh-acpid, vh-sched as `sched_t` with the scheduler loaded); the admin's login shell is
 `admin_t` and `doas -s` gives `sysadm_t`; a login on tty1 typed on the VM's keyboard starts
 the desktop on the virtio GPU as `user_t` with RefursWM `wm_t`, RefursLine `bar_t`,
 `vh-wlfilter` `wlfilter_t`, PipeWire and WirePlumber `pipewire_t`; `vh-audit` has no FAIL in
-its SELinux area. The first boot logged 195 AVC lines, the fourth 18: what the rig taught the
-policy is in the git history of `selinux/policy` (no `filesystem associate` rule at all, the
-role change at login, every domain's own `/proc` entry, the type transitions of what stage 1
-and the run scripts make in `/run`, the device directories, libudev's hwdb and monitor, the
-session programs' inherited log and tty, yescrypt's huge-page attempt and the three exec
-sanitising checks as `dontaudit`), and two things beyond the policy: the manager's channel to
+its SELinux area. The first boot logged 195 AVC lines, the sixth 18, each boot a new layer
+once the previous one's accesses were allowed: what the rig taught the policy is in the git
+history of `selinux/policy` (no `filesystem associate` rule at all, the role change at login,
+every domain's own `/proc` entry, the type transitions of what stage 1 and the run scripts
+make in `/run`, the device directories and symlinks of udev and its inotify watches, libudev's
+hwdb, data and monitor for the compositor and the bar, the bar's lock and rtnetlink, the
+session programs' inherited log and tty, init reading what a stock-kernel boot left
+unlabelled, yescrypt's huge-page attempt and the three exec sanitising checks as `dontaudit`),
+and two things beyond the policy: the manager's channel to
 PID 1 was inherited by every service (CLOEXEC now), and the admin's home had the user's type
 (`file_contexts.local`). **Not verified:** enforcing mode (the definition of done above), a
 day of use, the browser (`browser_t`, bwrap's caps, Firefox's crash reporter ptrace), the

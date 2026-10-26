@@ -251,17 +251,17 @@ scheduled run is unchanged.
   kernel the loader says "no sched_ext in this kernel" and the manager waits with its backoff.
   No speed claim: the bench method applies.
 - **SELinux permissive: verified as far as the rig goes** ([selinux.md](selinux.md), runs
-  40349043789, 40373457582, 40383056402, 40388319429, 40394832080). With `VH_MAC=selinux` the
+  40349043789, 40373457582, 40383056402, 40388319429, 40401275073, 40407123621). With `VH_MAC=selinux` the
   installation is labelled, the machine kernel (features `auto,selinux`) runs SELinux as its
   LSM, stage 1 loads the policy and locks it, every label is as `file_contexts` says
   (`vh-selabel --check /` clean), every daemon runs in its domain, the admin reaches `sysadm_t`
   through doas, a login on tty1 starts the desktop as `user_t` and `wm_t`, `vh-audit`'s SELinux
   area has no FAIL. Each boot taught the policy its missing rules (195 AVC lines on the first,
-  18 on the fourth) and two faults beyond it: the manager's channel to PID 1 was inherited by
+  18 on the sixth, a new layer each time) and two faults beyond it: the manager's channel to PID 1 was inherited by
   every service (closed on exec now) and the admin's home carried the user's type
   (`file_contexts.local`). The dual-kernel cost: the stock kernel labels nothing, so stage 1
   relabels `/etc`, `/usr`, `/var`, `/root`, `/home` and `/boot` once after a boot on it (stage 1
-  1008 ms with it on the rig; [VERIFY] a large `/home`). Not verified: enforcing mode, a day of
+  955 to 1008 ms with it on the rig; [VERIFY] a large `/home`). Not verified: enforcing mode, a day of
   use, the browser, the gaming session, iwd and bluetoothd, real hardware. `VH_MAC=selinux` stays
   opt-in and permissive.
 
