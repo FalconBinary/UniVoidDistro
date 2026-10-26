@@ -105,7 +105,6 @@ load_config() {
 	case $VH_SECURITY in strict|tiered) ;; *) die "VH_SECURITY: strict or tiered" ;; esac
 	case $VH_MAC in apparmor|selinux) ;; *) die "VH_MAC: apparmor or selinux" ;; esac
 	case $VH_SELINUX_MODE in permissive|enforcing) ;; *) die "VH_SELINUX_MODE: permissive or enforcing" ;; esac
-	[ -z "$VH_SELINUX_DIR" ] || [ -s "$VH_SELINUX_DIR/SHA256SUMS" ] || die "VH_SELINUX_DIR: $VH_SELINUX_DIR has no SHA256SUMS (sh selinux/build.sh DIR)"
 	case $VH_GPU in auto|igpu|nouveau) ;; *) die "VH_GPU: auto, igpu or nouveau" ;; esac
 	case $VH_BLUETOOTH in off|optional|on) ;; *) die "VH_BLUETOOTH: off, optional or on" ;; esac
 	case $VH_ETH in auto|dhcp|static|off) ;; *) die "VH_ETH: auto, dhcp, static or off" ;; esac

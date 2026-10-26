@@ -289,7 +289,9 @@ if [ "$VH_MAC" = selinux ]; then
 	if [ -n "$PREBUILT" ] && [ -s "$PREBUILT/selinux/file_contexts" ]; then
 		SELINUX_SRC=$PREBUILT/selinux
 	elif [ -n "$VH_SELINUX_DIR" ]; then
-		# a policy built elsewhere (sh selinux/build.sh DIR, on a USB stick or the VM rig's repository copy)
+		# a policy built elsewhere (sh selinux/build.sh DIR, on a USB stick or the VM rig's repository
+		# copy); checked here and not in load_config, which chroot.sh runs where DIR does not exist
+		[ -s "$VH_SELINUX_DIR/SHA256SUMS" ] || die "VH_SELINUX_DIR: $VH_SELINUX_DIR has no SHA256SUMS (sh selinux/build.sh DIR)"
 		( cd "$VH_SELINUX_DIR" && sha256sum -c --quiet SHA256SUMS ) || die "$VH_SELINUX_DIR: a file does not match its SHA256SUMS"
 		[ -s "$VH_SELINUX_DIR/file_contexts" ] || die "$VH_SELINUX_DIR: no file_contexts"
 		SELINUX_SRC=$VH_SELINUX_DIR
