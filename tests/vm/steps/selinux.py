@@ -76,7 +76,7 @@ def step_selinux(a):
         rc, out = run(ser, PROCS)
         print(out)
         found = procs(out)
-        wrong = [f"{c}[{p}]={t}" for p, t, c in found if c in DOMAINS and t != DOMAINS[c]]
+        wrong = [f"{c}[{p}]={t}" for p, t, c in found if c in DOMAINS and t != DOMAINS[c] and p != 1]
         seen = {c for p, t, c in found}
         p1 = [t for p, t, c in found if p == 1]
         check("PID 1 runs as kernel_t (the policy's loader), the manager and the daemons in their domains",

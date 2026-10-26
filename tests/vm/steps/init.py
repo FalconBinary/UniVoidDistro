@@ -105,7 +105,7 @@ def sv_status(ser):
     for l in lines(out):
         m = re.match(r"(run|down|fail|warning|timeout|ok): ([^:]+):", l)
         if m:
-            st[m.group(2)] = m.group(1)
+            st[m.group(2).rsplit("/", 1)[-1]] = m.group(1)     # runit's sv names the path it was given
     return st, out
 
 
@@ -135,7 +135,7 @@ def step_vhinit(a):
         rc, out = run(ser, "sv status /var/service/* | grep -c '^run:'; sv status /var/service/* | grep -vc '^run:'")
         nums = [l.strip() for l in lines(out) if l.strip().isdigit()]
         check("the sv shim runs runit's sv while runit is PID 1 (every service run:)", len(nums) == 2 and nums[1] == "0" and int(nums[0]) > 5, out[-300:].replace("\n", " | "))
-        rc, out = run(ser, ". /etc/vh/vh.env; xbps-reconfigure -f $VH_KERNEL >/tmp/uki.log 2>&1; echo uki=$?; tail -3 /tmp/uki.log; "
+        rc, out = run(ser, ". /etc/vh/vh.env; xbps-reconfigure -f $VH_KERNEL >/tmp/uki.log 2>&1; echo uki=$?; tail -6 /tmp/uki.log; "
                            "mount -o ro /boot/efi; ls /boot/efi/EFI/void/; umount /boot/efi", timeout=1800)
         check("the UKI with init= was rebuilt and enrolled (the previous one kept)", "uki=0" in out and "enrolled into Limine" in out and out.count(".efi") >= 2, out[-500:].replace("\n", " | "))
     finally:
