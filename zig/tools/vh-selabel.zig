@@ -84,6 +84,14 @@ const Opts = struct {
 
 const Counts = struct { seen: usize = 0, changed: usize = 0, unlabeled: usize = 0, errors: usize = 0, skipped_fs: usize = 0 };
 
+/// A file with several names has one label: the first name visited decides, as setfiles
+/// does, and a name that would give another is reported (Void's /usr/bin/getconf and its
+/// links under /usr/lib/getconf, bin_t against lib_t, kvm-smoke run 40343290525: the policy
+/// names them now; this keeps the check consistent with the relabel for the next pair)
+const LinkKey = struct { dev: u64, ino: u64 };
+const First = struct { want: []const u8, path: []const u8 };
+var links: std.AutoHashMapUnmanaged(LinkKey, First) = .empty;
+
 fn currentLabel(path: []const u8, buf: []u8) ?[]const u8 {
     const rc = linux.lgetxattr(vh.z(path).ptr, xattr, buf.ptr, buf.len);
     if (linux.errno(rc) != .SUCCESS) return null;
@@ -93,13 +101,22 @@ fn currentLabel(path: []const u8, buf: []u8) ?[]const u8 {
 }
 
 /// one path: compare and set
-fn label(t: *const selabel.Table, o: Opts, real: []const u8, logical: []const u8, mode: u32, c: *Counts) void {
+fn label(t: *const selabel.Table, o: Opts, real: []const u8, logical: []const u8, st: vh.Stat, c: *Counts) void {
     c.seen += 1;
-    const want = t.lookup(logical, selabel.kindOf(mode)) orelse {
+    var want = t.lookup(logical, selabel.kindOf(st.mode)) orelse {
         c.unlabeled += 1;
         if (o.verbose) vh.out("no line for {s}\n", .{logical});
         return;
     };
+    if (st.nlink > 1 and !vh.S.isDir(st.mode)) {
+        const key: LinkKey = .{ .dev = (@as(u64, st.dev_major) << 32) | st.dev_minor, .ino = st.ino };
+        if (links.get(key)) |first| {
+            if (!vh.eql(first.want, want)) {
+                vh.warn("{s}: a hard link of {s}: {s} kept, not {s}", .{ logical, first.path, first.want, want });
+                want = first.want;
+            }
+        } else links.put(vh.gpa, key, .{ .want = want, .path = vh.dupe(logical) }) catch vh.oom();
+    }
     var buf: [256]u8 = undefined;
     const have = currentLabel(real, &buf);
     if (have != null and vh.eql(have.?, want)) return;
@@ -122,7 +139,7 @@ fn walk(t: *const selabel.Table, o: Opts, real: []const u8, logical: []const u8,
         return;
     };
     if (!vh.S.isDir(st.mode)) {
-        label(t, o, real, logical, st.mode, c);
+        label(t, o, real, logical, st, c);
         return;
     }
     // another file system below: skipped with its mount point when it is a pseudo one (or
@@ -136,11 +153,11 @@ fn walk(t: *const selabel.Table, o: Opts, real: []const u8, logical: []const u8,
             c.skipped_fs += 1;
             return;
         };
-        label(t, o, real, logical, st.mode, c);
+        label(t, o, real, logical, st, c);
         walkDir(t, o, real, logical, st.dev_major, st.dev_minor, c);
         return;
     }
-    label(t, o, real, logical, st.mode, c);
+    label(t, o, real, logical, st, c);
     walkDir(t, o, real, logical, dev_major, dev_minor, c);
 }
 
@@ -208,7 +225,7 @@ pub fn main(init: std.process.Init.Minimal) void {
         const real = if (o.root.len == 0) logical else if (vh.eql(logical, "/")) o.root else vh.fmt("{s}{s}", .{ o.root, logical });
         const st = vh.stat(real, false) catch vh.die("{s}: {s}", .{ real, vh.serr() });
         if (!vh.S.isDir(st.mode)) {
-            label(&table, o, real, logical, st.mode, &c);
+            label(&table, o, real, logical, st, &c);
             continue;
         }
         // a named directory on a pseudo file system (/dev/pts, /proc): the kernel's labels
@@ -217,7 +234,7 @@ pub fn main(init: std.process.Init.Minimal) void {
             if (o.verbose) vh.out("{s}: a file system whose labels are the kernel's, skipped\n", .{logical});
             continue;
         };
-        label(&table, o, real, logical, st.mode, &c);
+        label(&table, o, real, logical, st, &c);
         walkDir(&table, o, real, logical, st.dev_major, st.dev_minor, &c);
     }
     vh.out("{d} files, {d} {s}, {d} without a line, {d} other file systems skipped, {d} errors ({d} contexts from {s})\n", .{ c.seen, c.changed, if (o.check) "differ" else "relabelled", c.unlabeled, c.skipped_fs, c.errors, table.specs.len, cpath });

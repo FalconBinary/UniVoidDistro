@@ -18,6 +18,7 @@
 (filecon "/usr/lib/ld-linux.*\.so.*" file (system_u object_r ld_so_t s0r))
 (filecon "/usr/lib/ld-musl.*\.so.*" file (system_u object_r ld_so_t s0r))
 (filecon "/usr/lib/locale(/.*)?" any (system_u object_r locale_t s0r))
+(filecon "/usr/lib/getconf(/.*)?" any (system_u object_r bin_t s0r))       ; hard links of /usr/bin/getconf (glibc)
 (filecon "/usr/lib/modules(/.*)?" any (system_u object_r modules_object_t s0r))
 (filecon "/usr/lib/firmware(/.*)?" any (system_u object_r firmware_t s0r))
 (filecon "/usr/share/locale(/.*)?" any (system_u object_r locale_t s0r))
