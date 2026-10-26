@@ -2,6 +2,9 @@
 # headers for building xbps, gcc for the C check programs, and Zig (the archive is verified
 # by tests/docker/build.sh).
 FROM ghcr.io/void-linux/void-glibc-full:latest
+# the package mirror (tests/docker/build.sh: VH_MIRROR; the default one was down for hours on 2026-10-26)
+ARG VH_MIRROR=https://repo-default.voidlinux.org
+RUN mkdir -p /etc/xbps.d && echo "repository=${VH_MIRROR}/current" > /etc/xbps.d/00-repository-main.conf
 RUN xbps-install -Syu xbps && xbps-install -Syu && xbps-install -Sy openssl-devel libarchive-devel \
 	zlib-devel pkgconf make xz patch libcap-progs gcc libxcrypt-devel python3 zstd lz4 bash openssl
 ARG ZIG_TARBALL

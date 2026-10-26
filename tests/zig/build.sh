@@ -39,7 +39,7 @@ rm -rf "$b/thor-repo"
 docker run --rm -v "$repo:/src:ro" -v "$b:/out" "$img" sh -c "
 	set -e
 	mkdir -p /sx/var/db/xbps/keys && cp -a /var/db/xbps/keys/. /sx/var/db/xbps/keys/
-	XBPS_ARCH=x86_64 xbps-install -SyU -r /sx -R https://repo-default.voidlinux.org/current \
+	XBPS_ARCH=x86_64 xbps-install -SyU -r /sx -R ${VH_MIRROR:-https://repo-default.voidlinux.org}/current \
 		glibc-devel openssl-devel libarchive-devel zlib-devel libxcrypt-devel >/dev/null
 	cp -R /src/zig /tmp/zs && cd /tmp/zs && zig build -Dtarget=x86_64-linux-gnu.2.41 -Dcpu=baseline -Dlibc-tools=true \
 		--search-prefix /sx/usr --prefix /tmp/zl >/dev/null

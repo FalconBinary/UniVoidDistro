@@ -47,6 +47,10 @@ fi
 MNT=/mnt
 REPO=$VH_MIRROR/current
 NONFREE=$VH_MIRROR/current/nonfree
+# the live environment's own xbps (the headers, Zig's dependencies, xbps itself) takes the same
+# mirror: /etc/xbps.d overrides the image's /usr/share/xbps.d file of this name (the default
+# mirror was unreachable for hours on 2026-10-26; the rig passes another through VH_MIRROR)
+[ "$DRY_RUN" = 1 ] || { mkdir -p /etc/xbps.d && echo "repository=$REPO" > /etc/xbps.d/00-repository-main.conf; }
 
 # ---------------------------------------------------------------- checks
 say "checks"

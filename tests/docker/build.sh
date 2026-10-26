@@ -20,5 +20,5 @@ grep -q "^trusted comment: .*file:$t[[:space:]]" "$ctx/$t.minisig"
 cp "$repo/tests/docker/Dockerfile" "$ctx/"
 # the base image of the wanted architecture (an old docker builder would otherwise reuse the one already pulled)
 docker pull -q --platform "$plat" ghcr.io/void-linux/void-glibc-full:latest >&2
-docker build -q --platform "$plat" --build-arg ZIG_TARBALL="$t" -t "$img" "$ctx" >&2
+docker build -q --platform "$plat" --build-arg ZIG_TARBALL="$t" --build-arg VH_MIRROR="${VH_MIRROR:-https://repo-default.voidlinux.org}" -t "$img" "$ctx" >&2
 echo "$img"

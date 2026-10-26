@@ -37,6 +37,9 @@ on:
       security:
         description: "VH_SECURITY of the installation: strict, or tiered (below 2 GiB strict refuses: Argon2id with 1 GiB)"
         default: strict
+      mirror:
+        description: "the Void package mirror (VH_MIRROR, https://...) for the installer, the dev image and the sysroot; empty: repo-default"
+        default: ""
   schedule:
     - cron: "17 4 * * 1"
 permissions:
@@ -54,6 +57,7 @@ env:
   VH_MEM: ${{ github.event.inputs.mem || '3072' }}
   VH_SECURITY: ${{ github.event.inputs.security || 'strict' }}
   VH_MAC: ${{ github.event.inputs.mac || 'apparmor' }}
+  VH_MIRROR: ${{ github.event.inputs.mirror || 'https://repo-default.voidlinux.org' }}
 jobs:
   smoke:
     runs-on: ubuntu-latest
@@ -152,7 +156,7 @@ jobs:
           set --
           [ "$VH_MAC" != selinux ] || set -- --selinux build/selinux
           python3 tests/vm/vhvm.py install --iso "$VH_ISO" --mem "$VH_MEM" --timeout 10800 \
-            --conf "VH_SECURITY=\"$VH_SECURITY\"" --conf "VH_MAC=\"$VH_MAC\"" "$@"
+            --conf "VH_SECURITY=\"$VH_SECURITY\"" --conf "VH_MAC=\"$VH_MAC\"" --conf "VH_MIRROR=\"$VH_MIRROR\"" "$@"
       - name: check
         env:
           VH_ACCEL: kvm
