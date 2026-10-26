@@ -21,6 +21,7 @@
 (allow udev_t device_node (blk_file (ioctl read write create getattr setattr lock append open unlink link rename relabelfrom relabelto)))
 (allow udev_t device_node dir_manage)            ; /dev/snd, /dev/dri, /dev/input: the directories of the nodes it makes
 (allow udev_t device_node (lnk_file (create read getattr setattr unlink rename write)))   ; /dev/dri/by-path, /dev/char/MAJ:MIN
+(allow udev_t device_node (blk_file (watch)))    ; inotify on the block devices (a changed partition table)
 (allow udev_t self (file (write)))              ; its own oom_score_adj
 (allow udev_t udev_rules_t (dir (watch)))        ; inotify on the rules directories
 (allow udev_t udev_var_run_t (dir (watch)))

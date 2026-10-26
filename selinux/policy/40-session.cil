@@ -151,6 +151,10 @@
 (call wayland_client (bar_t))
 (call dbus_client (bar_t))
 (allow bar_t self (process (setrlimit)))
+(call manage_files (bar_t user_runtime_t))      ; its lock and state in /run/user/UID
+(allow bar_t self (netlink_route_socket (create bind getattr setopt read write nlmsg_read)))   ; the network's state (rtnetlink)
+(allow bar_t self (netlink_kobject_uevent_socket (create bind getattr setopt read write)))     ; the battery and the backlight as they change (libudev)
+(call read_files (bar_t udev_var_run_t))         ; libudev's /run/udev/data
 (call rw_files (bar_t user_home_t))
 (allow bar_t user_home_dir_t (dir (search getattr)))
 (allow bar_t sysfs_t (file (read getattr open)))

@@ -7,6 +7,15 @@
 
 (typeattributeset domain (kernel_t init_t))
 (typeattributeset init_domain (kernel_t init_t))
+;; what a boot on the stock kernel left without a label (file_t): init reads the marker of the
+;; last boot's MAC in /var/lib/vh before the relabel that gives those files their types, and
+;; remounts /dev (nosuid, noexec) in its vh-mounts step
+(allow init_domain file_t (dir (search getattr read open)))
+(allow init_domain file_t (file (read getattr open)))
+(allow init_domain device_t (filesystem (remount)))
+;; stage 1 reads other processes' /proc entries (udevadm settle, the module lock): the ptrace
+;; capability that reading another uid's /proc/PID/exe asks for is refused quietly (neverallow #2)
+(dontaudit init_domain self (capability (sys_ptrace)))
 (roletype system_r kernel_t)
 (roletype system_r init_t)
 (call domain_type (kernel_t))
