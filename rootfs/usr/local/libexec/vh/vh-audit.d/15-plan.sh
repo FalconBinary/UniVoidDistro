@@ -31,7 +31,7 @@ else
 	# the services the hardware needs (iwd with Wi-Fi, vh-acpid with a lid or a button ...)
 	for s in $(plan SERVICES); do
 		if [ ! -e "/var/service/$s" ]; then bad "service $s of the plan is not enabled"
-		elif sv status "$s" 2>/dev/null | grep -q '^run:'; then ok "service $s of the plan is running"
+		elif svc_up "$s"; then ok "service $s of the plan is running"
 		else bad "service $s of the plan is not running"; fi
 	done
 

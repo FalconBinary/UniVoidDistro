@@ -2,7 +2,8 @@
 # the scheduler (an error, sysrq-S) the loader exits and vh-init starts it again with a
 # backoff; between the two the kernel's own scheduler runs. Enabled by
 # doas vh-ctl enable vh-sched after the kernel of the machine has sched_ext.
-exec = /usr/local/sbin/vh-sched run
+exec = /usr/local/sbin/vh-sched run --ready-fd 3
+ready = fd 3
 restart = always
 restart_delay = 2s
 restart_max = 60s

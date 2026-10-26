@@ -1,9 +1,10 @@
 # shellcheck shell=sh
 # vh-audit: runit services (docs/05). Sourced by vh-audit.
 sec "Services"
-# every machine's; what the hardware needs (iwd, vh-acpid ...) is checked against the plan (area plan)
+# every machine's; what the hardware needs (iwd, vh-acpid ...) is checked against the plan (area
+# plan). svc_up (vh-audit): under vh-init a oneshot that ran is done, a timer delayed
 for sv in dbus unbound chronyd seatd socklog-unix nanoklogd vh-check vh-boot-assess; do
-	sv status "$sv" 2>/dev/null | grep -q '^run:' && ok "service $sv is running" || bad "service $sv is not running"
+	svc_up "$sv" && ok "service $sv is running" || bad "service $sv is not running"
 done
 for sv in sshd acpid dhcpcd wpa_supplicant cronie snooze-daily; do
 	[ -e "/var/service/$sv" ] && bad "unwanted service enabled: $sv"

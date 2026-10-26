@@ -22,10 +22,11 @@ def step_base(a):
         if vhinit:
             # the sv shim: a oneshot that ran to its end (vh-check, vh-boot-assess) is "down:" to sv
             # and done to vh-ctl; the services' states are vh-ctl's (init/README.md)
+            from steps.init import parse_status
             rc, st = run(ser, "doas vh-ctl status")
-            bad = [l for l in st.splitlines() if len(l.split()) >= 8 and l.split()[5] in ("want-up", "want-down")
-                   and l.split()[1] not in ("up", "done", "delayed")]
-            check("all services up or done (vh-ctl status; PID 1 is vh-init)", not bad, "; ".join(bad)[-600:])
+            states = parse_status(st)
+            bad = [f"{n}({s})" for n, s in states.items() if s not in ("up", "done", "delayed")]
+            check("all services up or done (vh-ctl status; PID 1 is vh-init)", states and not bad, "; ".join(bad)[-600:] or st[-300:])
             rc, out = run(ser, "find /etc/sv -maxdepth 3 -name supervise ! -type l; echo ===; ls -l /run/vh/init.sock")
             ondisk = [l for l in out.split("===")[0].splitlines() if l.startswith("/etc/sv/")]
             check("no runit state on disk; the manager's control socket", not ondisk and "/run/vh/init.sock" in out,
@@ -34,7 +35,7 @@ def step_base(a):
             rc, out = run(ser, "vh-ctl disable vh-acpid; sleep 3; vh-ctl status vh-acpid; echo ===; vh-ctl enable vh-acpid; "
                                "for i in $(seq 1 30); do vh-ctl status vh-acpid 2>/dev/null | grep -q ' up ' && break; sleep 1; done; vh-ctl status vh-acpid")
             check("vh-ctl disable stops a runit service, enable starts it again",
-                  "disabled vh-acpid" in out and " up " not in out.split("===")[0] and re.search(r"vh-acpid up \d+", out.split("===")[-1]) is not None,
+                  "disabled vh-acpid" in out and parse_status(out.split("===")[0]).get("vh-acpid") != "up" and parse_status(out.split("===")[-1]).get("vh-acpid") == "up",
                   out[-500:].replace("\n", " | "))
         else:
             bad = [l for l in out.splitlines() if l.startswith(("down:", "fail:", "warning:"))]

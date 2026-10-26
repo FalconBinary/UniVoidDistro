@@ -85,7 +85,7 @@ reboots, checks the marker, every service, the audit, and rolls back. The measur
 manager, two processes from one binary (docs/ROADMAP.md, I: "Process split"):
 
 ```
-vh-init (PID 1, ~300 KiB RSS)   stage 1 in-process (the steps above), the manager as its child,
+vh-init (PID 1, 4.2 MiB RSS)    stage 1 in-process (the steps above), the manager as its child,
                                  zombies, the shutdown signals, stage 3
   '- vh-init --manager           the service graph: epoll over a signalfd, the control socket,
                                  the services' log and readiness pipes; starts, stops, restarts

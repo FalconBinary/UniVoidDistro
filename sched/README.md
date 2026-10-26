@@ -49,7 +49,8 @@ out/bin/vh-sched topology                                     # the machine as t
 out/bin/vh-sched lint out/bpf/vh_sched.o                      # no kernel needed
 out/bin/vh-sched load out/bpf/vh_sched.o --hold 10 --stats    # as root, on a kernel with CONFIG_SCHED_CLASS_EXT
 out/bin/vh-sched run                                          # the service: /usr/local/lib/vh/vh_sched.o, until
-                                                              # SIGTERM (exit 0) or the kernel ends it (exit 1)
+                                                              # SIGTERM (exit 0) or the kernel ends it (exit 1);
+                                                              # --ready-fd 3: a line to fd 3 once the scheduler runs
 doas vh-ctl enable vh-sched                                   # under vh-init: rootfs/etc/vh/services/vh-sched.svc
 VHL_SMP="sockets=2,cores=2,threads=1" sched/test/run-vm.sh arm64   # the QEMU rig (sched/test/README.md)
 python3 tests/vm/check.py vhinit,sched --repo                 # the VM rig: the service under vh-init on the machine

@@ -87,15 +87,23 @@ def pid1(ser):
     return "vh-init" if "vh-init" in out else ("runit" if "runit" in out else out.strip()[-60:])
 
 
+STATUS_RX = re.compile(r"^(\S+)\s+(" + "|".join(STATES) + r")\s+pid \+(\d+)\s+(\d+)s")
+
+
+def parse_status(out):
+    """vh-ctl's status lines ("NAME STATE pid +PID Ns [restarts N] [(wanted down)]") as {name: state}"""
+    st = {}
+    for l in lines(out):
+        m = STATUS_RX.match(l)
+        if m:
+            st[m.group(1)] = m.group(2)
+    return st
+
+
 def ctl_status(ser):
     """vh-ctl status as {name: state}, and the raw output"""
     rc, out = run(ser, "vh-ctl status")
-    st = {}
-    for l in lines(out):
-        w = l.split()
-        if len(w) >= 8 and w[1] in STATES and w[5] in ("want-up", "want-down"):
-            st[w[0]] = w[1]
-    return st, out
+    return parse_status(out), out
 
 
 def sv_status(ser):
@@ -186,7 +194,7 @@ def step_vhinit(a):
         rc, out = run(ser, "vh-audit init")
         check("vh-audit init area: PID 1 is vh-init, no FAIL", "[FAIL]" not in out and "PID 1 is vh-init" in out, out[-500:].replace("\n", " | "))
         rc, out = run(ser, "vh-ctl restart chronyd -w 10; vh-ctl status chronyd; sv status chronyd; ls /var/log/vh/; tail -2 /var/log/vh/vh-acpid/current")
-        check("vh-ctl restart of a runit service; sv sees it; the log directories", re.search(r"chronyd up \d+", out) is not None and "run: chronyd" in out and "vh-acpid" in out, out[-400:].replace("\n", " | "))
+        check("vh-ctl restart of a runit service; sv sees it; the log directories", parse_status(out).get("chronyd") == "up" and "run: chronyd" in out and "vh-acpid" in out, out[-400:].replace("\n", " | "))
         # the poweroff of runit-void (/run/runit/stopit and SIGCONT): the manager stops the services,
         # PID 1 runs stage 3 and calls reboot(2); stage 3's notes go to the console, the kernel's
         # "Power down" is the last line
