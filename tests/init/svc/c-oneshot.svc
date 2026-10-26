@@ -1,0 +1,2 @@
+kind = oneshot
+exec = /bin/sh -c "date +%s%N > /tmp/c-done"

@@ -1,0 +1,5 @@
+# the driver of the container test: checks everything above through vh-ctl, then asks for the poweroff
+kind = oneshot
+log = none
+after = a b c-oneshot crash sockready user caps rootcaps logtest nice cgtest env
+exec = /bin/bash /t/init_driver.sh

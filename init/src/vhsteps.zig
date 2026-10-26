@@ -436,3 +436,110 @@ test "nftables: the emergency ruleset flushes and drops" {
     try testing.expect(mem.startsWith(u8, failsafe, "flush ruleset\n"));
     try testing.expect(mem.indexOf(u8, failsafe, "policy drop") != null);
 }
+
+// ---------------------------------------------------------------- vh-selinux (docs/uni/selinux.md)
+
+pub const selinux_dir = "/etc/vh/selinux";
+pub const selinuxfs = "/sys/fs/selinux";
+
+/// the policy file in /etc/vh/selinux: policy.NN with the highest NN
+pub fn policyFile(dir: []const u8) ?[]const u8 {
+    var best: ?[]const u8 = null;
+    var best_v: u32 = 0;
+    for (vh.listDir(dir) catch return null) |n| {
+        if (!vh.startsWith(n, "policy.")) continue;
+        const v = std.fmt.parseInt(u32, n[7..], 10) catch continue;
+        if (v > best_v) {
+            best_v = v;
+            best = vh.fmt("{s}/{s}", .{ dir, n });
+        }
+    }
+    return best;
+}
+
+/// The policy load, right after the pseudo file systems: selinuxfs mounted, the whole policy in
+/// one write to /sys/fs/selinux/load, enforcing when /etc/vh/selinux/mode says so (permissive
+/// until the policy has passed its definition of done), then the one-way boolean
+/// secure_mode_policyload set and committed: from here to the next boot nothing can load another
+/// policy, switch enforcing off or set a boolean. A kernel without SELinux active (the stock
+/// kernel, lsm= with AppArmor) has no selinuxfs: the step says so and the boot goes on.
+pub fn selinuxLoad() void {
+    const policy = policyFile(sys.p(selinux_dir)) orelse {
+        sys.detail("SELinux: no policy in {s}, skipped", .{selinux_dir});
+        return;
+    };
+    const fs = sys.p(selinuxfs);
+    if (!vh.isDir(fs)) {
+        sys.detail("SELinux: no {s} in this kernel, skipped", .{selinuxfs});
+        return;
+    }
+    if (!sys.isMountpoint(fs)) {
+        sys.mount("selinuxfs", fs, "selinuxfs", 0, null) catch {
+            sys.detail("SELinux: selinuxfs did not mount ({s}): not active in this kernel, skipped", .{vh.serr()});
+            return;
+        };
+    }
+    const mode = vh.strip(vh.rd(sys.p(selinux_dir ++ "/mode")));
+    const enforcing = vh.eql(mode, "enforcing");
+    sys.msg("vh: SELinux policy ({s})...", .{if (enforcing) "enforcing" else "permissive"});
+    const blob = vh.readFile(policy) catch {
+        sys.fail("SELinux: {s}: {s}", .{ policy, vh.serr() });
+        return;
+    };
+    // the kernel takes the policy in one write
+    const lfd = vh.openFd(vh.fmt("{s}/load", .{fs}), .{ .ACCMODE = .WRONLY }, 0) catch {
+        sys.fail("SELinux: {s}/load: {s}", .{ selinuxfs, vh.serr() });
+        return;
+    };
+    const w = vh.sys(linux.write(lfd, blob.ptr, blob.len)) catch {
+        vh.close(lfd);
+        sys.fail("SELinux: loading {s} ({d} bytes): {s}; the kernel log has the reason", .{ policy, blob.len, vh.serr() });
+        return;
+    };
+    vh.close(lfd);
+    if (w != blob.len) {
+        sys.fail("SELinux: the kernel took {d} of {d} bytes of the policy", .{ w, blob.len });
+        return;
+    }
+    _ = sys.kmsg("vh-selinux: policy {s} loaded ({d} bytes)", .{ policy, blob.len });
+    // enforcing before the boolean: after it, setenforce is denied to everyone
+    if (!vh.writeStr(vh.fmt("{s}/enforce", .{fs}), if (enforcing) "1" else "0")) sys.fail("SELinux: enforce: {s}", .{vh.serr()});
+    const b = vh.fmt("{s}/booleans/secure_mode_policyload", .{fs});
+    if (vh.pathExists(b)) {
+        if (!vh.writeStr(b, "1") or !vh.writeStr(vh.fmt("{s}/commit_pending_bools", .{fs}), "1")) {
+            sys.fail("SELinux: secure_mode_policyload: {s}", .{vh.serr()});
+        } else sys.detail("SELinux: secure_mode_policyload set: the policy is fixed until the next boot", .{});
+    } else sys.note("! SELinux: the policy has no secure_mode_policyload boolean", .{});
+    vh.mkdirs(sys.p("/run/vh"), 0o755);
+    _ = sys.writeFile(sys.p("/run/vh/selinux"), vh.fmt("policy {s}\nmode {s}\nbytes {d}\n", .{ policy, if (enforcing) "enforcing" else "permissive", blob.len }), 0o644);
+}
+
+/// The labels of the file systems stage 1 mounted (tmpfs: /run, /dev/shm, /tmp, /var/tmp; devtmpfs:
+/// /dev, whose nodes udev made meanwhile): vh-selabel by argv over them, after mount-all. Nothing
+/// to do without an active policy.
+pub fn selinuxLabel() void {
+    if (!vh.pathExists(sys.p("/run/vh/selinux"))) return;
+    const prog = sys.p("/usr/local/sbin/vh-selabel");
+    if (!vh.isRegular(prog)) {
+        sys.note("! SELinux: no {s}: the tmpfs mounts keep the kernel's labels", .{prog});
+        return;
+    }
+    sys.msg("vh: SELinux labels of /run, /dev, /tmp...", .{});
+    var argv: std.ArrayList([]const u8) = .empty;
+    argv.append(vh.gpa, prog) catch vh.oom();
+    if (sys.root.len > 0) argv.appendSlice(vh.gpa, &.{ "--root", sys.root }) catch vh.oom();
+    argv.appendSlice(vh.gpa, &.{ "--one-fs", "/run", "/dev", "/dev/shm", "/dev/pts", "/tmp", "/var/tmp" }) catch vh.oom();
+    const rc = sys.exec(argv.items);
+    if (rc != 0) sys.note("! vh-selabel returned {d}", .{rc});
+}
+
+test "the policy file with the highest version wins" {
+    const dir = "/tmp/vh-selinux-test";
+    _ = vh.runOpts(&.{ "rm", "-rf", dir }, .{});
+    vh.mkdirs(dir, 0o700);
+    try std.testing.expectEqual(@as(?[]const u8, null), policyFile(dir));
+    _ = sys.writeFile(dir ++ "/policy.33", "a", 0o644);
+    _ = sys.writeFile(dir ++ "/policy.34", "b", 0o644);
+    _ = sys.writeFile(dir ++ "/policy.txt", "c", 0o644);
+    try std.testing.expectEqualStrings(dir ++ "/policy.34", policyFile(dir).?);
+}

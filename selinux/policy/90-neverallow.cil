@@ -1,0 +1,114 @@
+;; selinux/policy/90-neverallow.cil: the invariants. secilc refuses the policy when any rule,
+;; a conditional one included, violates one of them: this is where "stronger than Fedora"
+;; (docs/uni/selinux.md) is kept true at build time, not by review. CIL takes no set expression
+;; in a rule, so every "everyone but" is an attribute, named nv_*.
+
+
+;; 1. The policy is one-way: nothing loads another policy, switches enforcing off or sets a
+;;    boolean except init, and init only while secure_mode_policyload is off (10-init.cil).
+(typeattribute nv_not_init) (typeattributeset nv_not_init (and domain (not init_domain)))
+(neverallow nv_not_init security_t (security (load_policy setenforce setbool setsecparam)))
+(neverallow domain security_t (security (setcheckreqprot)))
+;; 2. No ptrace, by anyone, on anyone: not even a domain on itself (Fedora: deny_ptrace off).
+(neverallow domain domain (process (ptrace)))
+(neverallow domain domain (capability (sys_ptrace)))
+(neverallow domain domain (cap_userns (sys_ptrace)))
+;; 3. Executable memory only where a JIT lives: the browser and the gaming root; init's own
+;;    path is exempt (the dynamic loader at boot).
+(typeattribute nv_no_jit) (typeattributeset nv_no_jit (and domain (not (or browser_t (or game_t init_domain)))))
+(neverallow nv_no_jit self (process (execmem execheap)))
+(typeattribute nv_no_execstack) (typeattributeset nv_no_execstack (and domain (not (or browser_t game_t))))
+(neverallow nv_no_execstack self (process (execstack)))
+(typeattribute nv_no_execmod_files) (typeattributeset nv_no_execmod_files (and file_type (not game_root_t)))
+(neverallow domain nv_no_execmod_files (file (execmod)))
+;; 4. Modules: loaded by init during stage 1 and by udev for the hardware it finds; nobody
+;;    else, and nobody else has sys_module (the module lock closes the rest after boot).
+(typeattribute nv_not_modloader) (typeattributeset nv_not_modloader (and domain (not (or init_domain udev_t))))
+(neverallow nv_not_modloader modules_object_t (system (module_load)))
+(neverallow nv_not_modloader self (capability (sys_module)))
+(neverallow domain domain (system (kexec_image_load kexec_initramfs_load)))
+;; 5. Raw I/O: the file-system tools, the dead man's switch and udev only; the memory devices and
+;;    the MSRs are nobody's (the kernel has no /dev/mem, the policy names them so that a node
+;;    that appears is a denial).
+(typeattribute nv_not_rawio) (typeattributeset nv_not_rawio (and domain (not (or fsadm_t (or deadman_t udev_t)))))
+(neverallow nv_not_rawio self (capability (sys_rawio)))
+(neverallow domain memory_device_t (chr_file (read write open)))
+(neverallow domain cpu_device_t (chr_file (read write open)))
+(neverallow domain proc_mem_t (file (read open)))
+;; 6. BPF: the scheduler's loader and init; the browser, the people, the admin cannot load programs.
+(typeattribute nv_not_bpf) (typeattributeset nv_not_bpf (and domain (not (or sched_t init_domain))))
+(neverallow nv_not_bpf self (bpf (prog_load map_create)))
+(neverallow nv_not_bpf self (capability2 (bpf)))
+;; 7. Program files are written by the package manager and init alone: a service or a person
+;;    that is compromised cannot leave a program behind in /usr or in a service's path.
+(typeattribute nv_not_pkg) (typeattributeset nv_not_pkg (and domain (not (or pkg_t init_domain))))
+(neverallow nv_not_pkg exec_type (file (write append create unlink rename link)))
+(neverallow nv_not_pkg exec_type (dir (write add_name remove_name)))
+(neverallow nv_not_pkg bin_t (file (write append create unlink rename link)))
+(neverallow nv_not_pkg lib_t (file (write append create unlink rename link)))
+(neverallow nv_not_pkg usr_t (file (write append create unlink rename link)))
+(neverallow nv_not_pkg modules_object_t (file (write append create unlink rename)))
+(neverallow nv_not_pkg firmware_t (file (write append create unlink rename)))
+;; 8. The secrets: shadow is read by login, doas, the password helper, the admin's domain and
+;;    the package manager (its hooks); the Wi-Fi passphrases by iwd; the Secure Boot keys by
+;;    the package manager's hooks, the boot tools and the admin; the seed by init.
+(typeattribute nv_not_shadow) (typeattributeset nv_not_shadow (and domain (not (or login_t (or doas_t (or chkpwd_t (or sysadm_t pkg_t)))))))
+(neverallow nv_not_shadow shadow_t (file (read open)))
+(typeattribute nv_not_iwd) (typeattributeset nv_not_iwd (and domain (not (or iwd_t (or sysadm_t (or pkg_t vh_tools_t))))))
+(neverallow nv_not_iwd iwd_var_lib_t (file (read open write)))
+(typeattribute nv_not_sbkeys) (typeattributeset nv_not_sbkeys (and domain (not (or pkg_t (or sysadm_t vh_tools_t)))))
+(neverallow nv_not_sbkeys sbctl_keys_t (file (read open write)))
+(typeattribute nv_not_seed) (typeattributeset nv_not_seed (and domain (not (or init_domain vh_tools_t))))
+(neverallow nv_not_seed seedrng_var_lib_t (file (read open write)))
+(typeattribute nv_not_bt) (typeattributeset nv_not_bt (and domain (not (or bluetoothd_t (or sysadm_t (or pkg_t vh_tools_t))))))
+(neverallow nv_not_bt bluetooth_var_lib_t (file (read open write)))
+;; 9. The people's files: the everyday user's home is the user's and the desktop's, not the
+;;    admin's, not a daemon's, not the browser's (which has /home/xfer for that).
+(typeattribute nv_not_user) (typeattributeset nv_not_user (and domain (not (or user_t (or wm_t (or bar_t (or pipewire_t (or lock_t (or init_domain vh_tools_t)))))))))
+(neverallow nv_not_user user_home_t (file (read write open)))
+(typeattribute nv_browser_writable) (typeattributeset nv_browser_writable (and file_type (not (or browser_home_t (or xfer_t (or tmp_t tmpfs_t))))))
+(neverallow browser_t nv_browser_writable (file (write append create unlink)))
+(neverallow browser_t home_type (file (read write open)))
+(neverallow daemon home_type (file (read write open)))
+(typeattribute nv_not_admin) (typeattributeset nv_not_admin (and domain (not (or admin_t (or sysadm_t (or init_domain vh_tools_t))))))
+(neverallow nv_not_admin admin_home_t (file (read write open)))
+;; 10. The input devices: the compositor (through seatd), seatd, vh-acpid and the dead man's
+;;     switch (the lid, the power button, the alarm keys), the gaming session, udev, the admin
+;;     as root; no other program reads keystrokes.
+(typeattribute nv_not_input) (typeattributeset nv_not_input (and domain (not (or wm_t (or seatd_t (or acpid_t (or deadman_t (or game_t (or udev_t (or init_domain (or bluetoothd_t sysadm_t)))))))))))
+(neverallow nv_not_input input_device_t (chr_file (read write open)))
+;; 11. Mounting: init, the admin's domain, the package manager's hooks, the two sandboxes (their
+;;     user namespaces), the boot tools (the ESP), the dead man's switch (unmount at the end).
+(typeattribute nv_not_mount) (typeattributeset nv_not_mount (and domain (not (or mount_domain deadman_t))))
+(neverallow nv_not_mount fs_type (filesystem (mount remount unmount)))
+(neverallow nv_not_mount fs_t (filesystem (mount remount unmount)))
+;; 12. Labels change only through init, the admin's domain, the package manager and vh-selabel.
+(typeattribute nv_not_relabel) (typeattributeset nv_not_relabel (and domain (not can_relabel)))
+(neverallow nv_not_relabel file_type (file (relabelto relabelfrom)))
+(neverallow nv_not_relabel file_type (dir (relabelto relabelfrom)))
+;; 13. The network: a daemon connects only to the ports it is for.
+(typeattribute nv_not_dot) (typeattributeset nv_not_dot (and port_type (not dot_port_t)))
+(neverallow unbound_t nv_not_dot (tcp_socket (name_connect)))
+(typeattribute nv_not_ntske) (typeattributeset nv_not_ntske (and port_type (not ntske_port_t)))
+(neverallow chronyd_t nv_not_ntske (tcp_socket (name_connect)))
+(typeattribute nv_not_http) (typeattributeset nv_not_http (and port_type (not http_port_t)))
+(neverallow browser_t nv_not_http (tcp_socket (name_connect)))
+(typeattribute nv_daemon_no_net) (typeattributeset nv_daemon_no_net (and daemon (not (or unbound_t (or chronyd_t (or iwd_t (or dhcpcd_t (or pkg_t vh_tools_t))))))))
+(neverallow nv_daemon_no_net port_type (tcp_socket (name_connect)))
+(typeattribute nv_not_unbound) (typeattributeset nv_not_unbound (and domain (not unbound_t)))
+(neverallow nv_not_unbound dns_port_t (tcp_socket (name_bind)))
+(neverallow nv_not_unbound dns_port_t (udp_socket (name_bind)))
+;; 14. The kernel's knobs: sysctls are written by init, the admin's domain and the few daemons
+;;     that own one (iwd, dhcpcd: net; udev: hotplug; the dead man's switch: drop_caches; the
+;;     scheduler's tests: sysrq); the module loader's path by init and the admin only.
+(typeattribute nv_not_sysctl) (typeattributeset nv_not_sysctl (and domain (not (or init_domain (or sysadm_t (or iwd_t (or dhcpcd_t (or udev_t (or deadman_t sched_t)))))))))
+(neverallow nv_not_sysctl sysctl_type (file (write append)))
+(typeattribute nv_not_modprobe) (typeattributeset nv_not_modprobe (and domain (not (or init_domain sysadm_t))))
+(neverallow nv_not_modprobe sysctl_modprobe_t (file (write append)))
+;; 15. No domain changes its own context at run time (no dyntransition, no setcurrent) but init
+;;     during the boot.
+(neverallow nv_not_init domain (process (dyntransition)))
+(neverallow nv_not_init self (process (setcurrent)))
+;; 16. Every domain is in a role (the roletype statements); the attribute the audit reads.
+(typeattribute confined)
+(typeattributeset confined domain)

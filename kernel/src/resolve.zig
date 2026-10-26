@@ -52,7 +52,7 @@ pub fn loadPlan(path: []const u8) PlanView {
 
 /// the fragments in the order they are applied; the features follow
 const fixed_fragments = [_][]const u8{ "base", "mandatory", "hardening", "perf" };
-pub const all_features = [_][]const u8{ "usb-common", "bluetooth", "wifi", "camera", "virt", "game" };
+pub const all_features = [_][]const u8{ "usb-common", "bluetooth", "wifi", "camera", "virt", "game", "selinux" };
 
 const Conflict = struct { name: []const u8, first_src: []const u8, first: []const u8, src: []const u8, value: []const u8 };
 

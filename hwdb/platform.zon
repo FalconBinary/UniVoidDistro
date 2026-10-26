@@ -204,5 +204,12 @@
             .why = "No hardware watchdog known: softdog, which does not survive a hung kernel (a row in the cost table).",
             .set = .{.{ .key = "watchdog", .value = "softdog" }},
         },
+        // ---------------------------------------------------------------- the mandatory access control
+        .{
+            .id = "security.mac.selinux",
+            .why = "VH_MAC=selinux: the machine kernel is built with SELinux (features/selinux); the command line names selinux before apparmor, so the stock kernel, which has no SELinux, keeps AppArmor (docs/uni/selinux.md).",
+            .when = .{ .config = .{.{ .key = "VH_MAC", .any = .{"selinux"} }} },
+            .features = .{"selinux"},
+        },
     },
 }

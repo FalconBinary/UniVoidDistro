@@ -1,0 +1,2 @@
+exec = /bin/sh -c "sleep 0.3; : > /tmp/sock-ready; exec sleep 1000"
+ready = socket /tmp/sock-ready

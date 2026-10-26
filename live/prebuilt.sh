@@ -1,10 +1,12 @@
 #!/bin/sh
 # The programs of the live image, built (docs/uni/live-image.md), into OUT:
-#   OUT/bin                       vh-kconf, vh-plan, the Zig tools and the gaming session's programs
-#                                 (install/build-tools.sh's list)
+#   OUT/bin                       vh-kconf, vh-plan, the Zig tools, the gaming session's programs and
+#                                 vh-stage1, vh-init, vh-ctl (install/build-tools.sh's list)
 #   OUT/thor/{dest,repo}          thor and its package (install/build-thor.sh --out)
 #   OUT/desktop/x86-64-LEVEL-BT   RefursWM and RefursLine for x86-64-v1 and -v3, without and with
 #                                 the bar's Bluetooth menu (install/build-desktop.sh --out)
+#   OUT/selinux                   the SELinux policy and its file contexts (selinux/build.sh, secilc
+#                                 in a Fedora container)
 #   OUT/BUILD, OUT/SHA256SUMS     the commit and the run; every file's sha256
 #   sh live/prebuilt.sh OUT       (x86_64 Linux with docker and zig: the live-image workflow)
 # The static programs are built by zig on the host (-Dcpu=baseline, as the installer builds them);
@@ -18,10 +20,10 @@ rm -rf "$out"
 mkdir -p "$out/bin"
 
 echo "== static programs (x86_64, baseline)"
-for c in zig kernel adapt session; do
+for c in zig kernel adapt session init; do
 	(cd "$repo/$c" && zig build -Dtarget=x86_64-linux -Dcpu=baseline --prefix "$out/.z-$c")
 done
-cp "$out"/.z-zig/bin/* "$out"/.z-session/bin/* "$out/bin/"
+cp "$out"/.z-zig/bin/* "$out"/.z-session/bin/* "$out"/.z-init/bin/* "$out/bin/"
 cp "$out/.z-kernel/bin/vh-kconf" "$out/.z-adapt/bin/vh-plan" "$out/bin/"
 rm -rf "$out"/.z-*
 
@@ -44,6 +46,9 @@ docker run --rm -v "$repo:/src:ro" -v "$out:/out" "$img" bash -c '
 			|| { echo "x86-64-$lvl-plain: RefursLine with the Bluetooth menu" >&2; exit 1; }
 	done
 	chown -R '"$(id -u):$(id -g)"' /out'
+
+echo "== the SELinux policy (selinux/build.sh)"
+sh "$repo/selinux/build.sh" "$out/selinux"
 
 {
 	echo "COMMIT=$(git -C "$repo" rev-parse HEAD)"

@@ -103,6 +103,8 @@ load_config() {
 	yesno VH_HOME_NOEXEC "$VH_HOME_NOEXEC"
 	yesno VH_FIRMWARE_TRIM "$VH_FIRMWARE_TRIM"
 	case $VH_SECURITY in strict|tiered) ;; *) die "VH_SECURITY: strict or tiered" ;; esac
+	case $VH_MAC in apparmor|selinux) ;; *) die "VH_MAC: apparmor or selinux" ;; esac
+	case $VH_SELINUX_MODE in permissive|enforcing) ;; *) die "VH_SELINUX_MODE: permissive or enforcing" ;; esac
 	case $VH_GPU in auto|igpu|nouveau) ;; *) die "VH_GPU: auto, igpu or nouveau" ;; esac
 	case $VH_BLUETOOTH in off|optional|on) ;; *) die "VH_BLUETOOTH: off, optional or on" ;; esac
 	case $VH_ETH in auto|dhcp|static|off) ;; *) die "VH_ETH: auto, dhcp, static or off" ;; esac
@@ -451,7 +453,9 @@ vh_cmdline() {
 		quiet loglevel=3 net.ifnames=0
 		panic=10
 		lockdown=confidentiality module.sig_enforce=1
-		lsm=landlock,lockdown,yama,apparmor
+		# the mandatory access control: with VH_MAC=selinux the machine kernel runs SELinux (the
+		# first exclusive LSM it has) and the stock kernel, which has none, AppArmor (docs/uni/selinux.md)
+		"lsm=landlock,lockdown,yama,$( [ "$VH_MAC" = selinux ] && printf 'selinux,' )apparmor"
 		iommu.strict=1 iommu.passthrough=0
 		init_on_alloc=1 init_on_free=1 slab_nomerge page_alloc.shuffle=1
 		debugfs=off

@@ -81,6 +81,13 @@ echo "==> inspecting the updated packages (new SUID, sysctl.d, udev, hooks: vh-p
 echo "==> SUID and capabilities"
 /usr/local/sbin/vh-suid-strip
 
+# SELinux (docs/uni/selinux.md): a package's new files take their directory's label; the
+# programs that enter a domain (a new /usr/bin/unbound) get theirs here
+if [ -s /etc/vh/selinux/file_contexts ] && [ -x /usr/local/sbin/vh-selabel ]; then
+	echo "==> SELinux labels of /usr and /etc"
+	/usr/local/sbin/vh-selabel /usr /etc
+fi
+
 if echo "$updates" | grep -q '^ca-certificates-'; then
 	echo "==> certificates for DoT (unbound)"
 	if [ -e /etc/vh/optional/dns-pin ]; then

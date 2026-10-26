@@ -1,0 +1,5 @@
+# UniVoidDistro: the services of vh-init (init/README.md, "Services"). A NAME.svc here says how
+# vh-init runs the service NAME; the service is enabled by /var/service/NAME (as under runit,
+# which keeps using /etc/sv/NAME) or, for a service without a runit directory, by
+# /etc/vh/services/enabled/NAME (doas vh-ctl enable NAME). `key = value` lines; the keys are
+# listed in init/README.md. Under runit these files do nothing.

@@ -416,3 +416,33 @@ test "dmesg: the level prefix is removed" {
     try testing.expectEqualStrings("[    0.000000] Linux version\n[    0.1] x\n<nolevel", stripLevels("<5>[    0.000000] Linux version\n<6>[    0.1] x\n<nolevel"));
     try testing.expectEqualStrings("", stripLevels(""));
 }
+
+// ---------------------------------------------------------------- halt -w (vh-init's stage 3)
+
+pub const RUN_LVL: i16 = 1;
+
+/// the record `halt -w` writes at shutdown: RUN_LVL, user shutdown, line ~, id ~~
+pub fn shutdownRecord(now_sec: i64, now_usec: i64, release: []const u8) Utmp {
+    var u = bootRecord(now_sec, now_usec, release);
+    u.type = RUN_LVL;
+    u.user = @splat(0);
+    @memcpy(u.user[0..8], "shutdown");
+    return u;
+}
+
+/// appended to /var/log/wtmp (vh-init stage 3); runit-void does it in its 3
+pub fn wtmpShutdown() void {
+    var ts: linux.timespec = undefined;
+    _ = linux.clock_gettime(.REALTIME, &ts);
+    const rec = shutdownRecord(ts.sec, @divTrunc(ts.nsec, 1000), sys.release());
+    const fd = vh.openFd(sys.p("/var/log/wtmp"), .{ .ACCMODE = .WRONLY, .APPEND = true }, 0) catch return;
+    defer vh.close(fd);
+    vh.writeAllFd(fd, mem.asBytes(&rec)) catch {};
+}
+
+test "the shutdown record of halt -w" {
+    const u = shutdownRecord(1_700_000_000, 0, "6.18.57_1");
+    try testing.expectEqual(RUN_LVL, u.type);
+    try testing.expectEqualStrings("shutdown", mem.sliceTo(&u.user, 0));
+    try testing.expectEqualStrings("~~", mem.sliceTo(&u.id, 0));
+}

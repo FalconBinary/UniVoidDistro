@@ -279,6 +279,23 @@ if command -v nft >/dev/null || xbps-install -Sy nftables >/dev/null 2>&1; then
 	else skip "nft cannot talk to this kernel: nftables not tested"; fi
 else skip "nftables not installable (no network): nftables not tested"; fi
 
+echo "== vh-selinux under a fake root: skipped without a policy, without selinuxfs, without vh-selabel"
+RS=/tmp/rsel; rm -rf $RS; mkdir -p $RS/etc/vh/selinux $RS/sys/fs $RS/run/vh
+out=$("$S" --root $RS --step vh-selinux -v 2>&1); rc=$?
+chk "vh-selinux: no policy: exit 0" "$rc" 0
+has "vh-selinux: no policy: skipped" "$out" 'no policy in /etc/vh/selinux, skipped'
+printf 'not a policy' > $RS/etc/vh/selinux/policy.33
+out=$("$S" --root $RS --step vh-selinux -v 2>&1); rc=$?
+chk "vh-selinux: a policy but no selinuxfs in this kernel: exit 0" "$rc" 0
+has "vh-selinux: a policy but no selinuxfs in this kernel: skipped" "$out" 'no .*/sys/fs/selinux in this kernel, skipped'
+[ -e $RS/run/vh/selinux ] && bad "vh-selinux: a state file although nothing was loaded" || ok "vh-selinux: no state file when nothing was loaded"
+out=$("$S" --root $RS --step vh-selinux-label -v 2>&1); rc=$?
+chk "vh-selinux-label: nothing to do without a loaded policy" "rc=$rc $(echo "$out" | grep -c SELinux)" "rc=0 0"
+: > $RS/run/vh/selinux
+out=$("$S" --root $RS --step vh-selinux-label -v 2>&1); rc=$?
+chk "vh-selinux-label: a loaded policy but no vh-selabel: exit 0" "$rc" 0
+has "vh-selinux-label: a loaded policy but no vh-selabel: noted" "$out" 'SELinux: no .*vh-selabel'
+
 echo "== --install, --status, --rollback under a fake root"
 printf '#!/bin/sh\n# the stock stage 1\n' > $R/etc/runit/1
 chmod 755 $R/etc/runit/1

@@ -1,0 +1,21 @@
+# kernel/profiles/features/selinux: SELinux as the mandatory access control (docs/uni/selinux.md),
+# selected by the plan with VH_MAC=selinux (hwdb/security.zon, security.mac.selinux). The stock
+# Void kernel has no SELinux (kernel/pins: CONFIG_SECURITY_SELINUX is not set): this feature
+# exists in the machine kernel only. AppArmor stays built: the command line's lsm= lists
+# selinux before apparmor, and the kernel takes the first exclusive LSM it has, so the same
+# command line gives SELinux on the machine kernel and AppArmor on the stock one.
+CONFIG_SECURITY_SELINUX=y
+# selinux=0 on the command line cannot switch it off (the UKI's command line is signed anyway;
+# Fedora leaves this on)
+# CONFIG_SECURITY_SELINUX_BOOTPARAM is not set
+# permissive mode exists (enforcing=0, /sys/fs/selinux/enforce): the policy itself forbids the
+# switch after boot (secure_mode_policyload); without this a denial could never be studied
+CONFIG_SECURITY_SELINUX_DEVELOP=y
+# the AVC statistics in selinuxfs: a few bytes per CPU, read by vh-audit
+CONFIG_SECURITY_SELINUX_AVC_STATS=y
+# the SID tables: the Void defaults
+CONFIG_SECURITY_SELINUX_SIDTAB_HASH_BITS=9
+CONFIG_SECURITY_SELINUX_SID2STR_CACHE_SIZE=256
+# CONFIG_SECURITY_SELINUX_DEBUG is not set
+# the policy is loaded by stage 1 (vh-init), the labels set by vh-selabel: no initial "unlabeled"
+# denial of the kernel's own objects is expected

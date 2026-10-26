@@ -42,11 +42,17 @@ for g in render netdev netdiag backlight proc xfer; do
 	getent group "$g" >/dev/null || groupadd -r "$g"
 done
 getent group _seatd >/dev/null || die "no _seatd group (is the seatd package installed?)"
+# the login shells: vh-adminsh and vh-usersh run bash and nothing else; two files, so that an
+# SELinux policy tells the admin's shell from the user's by the file login executes
+# (docs/uni/selinux.md); under AppArmor they are the same two execs
+for sh in /usr/local/bin/vh-usersh /usr/local/bin/vh-adminsh; do
+	grep -qx "$sh" /etc/shells || echo "$sh" >> /etc/shells
+done
 if ! id "$VH_ADMIN" >/dev/null 2>&1; then
-	useradd -m -s /bin/bash -G wheel,netdiag,proc,netdev "$VH_ADMIN"
+	useradd -m -s /usr/local/bin/vh-adminsh -G wheel,netdiag,proc,netdev "$VH_ADMIN"
 fi
 if ! id "$VH_USER" >/dev/null 2>&1; then
-	useradd -m -s /bin/bash -G _seatd,audio,render,netdev,backlight,netdiag,xfer "$VH_USER"
+	useradd -m -s /usr/local/bin/vh-usersh -G _seatd,audio,render,netdev,backlight,netdiag,xfer "$VH_USER"
 fi
 if ! id "$VH_BROWSER_USER" >/dev/null 2>&1; then
 	useradd -r -m -d /var/lib/vh-browser -s /usr/bin/nologin -G render,xfer "$VH_BROWSER_USER"
@@ -209,5 +215,17 @@ for u in "$VH_ADMIN" "$VH_USER"; do
 		*) die "the password of $u is not a yescrypt hash" ;;
 	esac
 done
+
+# ---------------------------------------------------------------- SELinux (docs/uni/selinux.md)
+if [ "$VH_MAC" = selinux ]; then
+	say "SELinux: the policy's mode and the labels of every file"
+	[ -s /etc/vh/selinux/file_contexts ] || die "no /etc/vh/selinux/file_contexts (10-install.sh installs the live image's policy)"
+	echo "$VH_SELINUX_MODE" > /etc/vh/selinux/mode
+	# the labels into the xattrs now, with no policy active: the kernel takes security.selinux
+	# from a process with CAP_SYS_ADMIN; stage 1 relabels the tmpfs mounts at every boot
+	/usr/local/sbin/vh-selabel / || die "vh-selabel failed"
+	/usr/local/sbin/vh-selabel --check / >/dev/null || die "vh-selabel: a label differs right after the relabel"
+	ok "SELinux: $VH_SELINUX_MODE at boot; every file labelled"
+fi
 
 ok "chroot: configuration finished"

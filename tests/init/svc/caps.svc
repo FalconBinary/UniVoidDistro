@@ -1,0 +1,3 @@
+user = nobody
+caps = net_bind_service
+exec = /bin/sh -c "grep -E 'Cap(Eff|Bnd|Amb)|NoNewPrivs|Seccomp:' /proc/self/status > /tmp/caps; exec sleep 1000"

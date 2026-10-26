@@ -26,6 +26,10 @@ pub const Error = error{Load};
 pub const SectionType = struct { section: []const u8, type_name: []const u8 };
 /// a value written into `.rodata` before it is frozen: the symbol's field, by the generated BTF
 pub const Patch = struct { symbol: []const u8, field: []const u8, value: u64 };
+/// the whole initial value of a `.rodata` symbol (the machine's topology in vh_cfg), before the patches
+pub const RodataInit = struct { symbol: []const u8, bytes: []const u8 };
+/// the BTF types of a `.maps` map's key and value (a task storage map must have them)
+pub const MapTypeDef = struct { map: []const u8, key: []const u8, value: []const u8 };
 
 pub const Options = struct {
     /// the kernel struct: sched_ext_ops, tcp_congestion_ops
@@ -34,6 +38,8 @@ pub const Options = struct {
     name: []const u8 = "vh_sched",
     own_btf: []const u8,
     section_types: []const SectionType = &.{},
+    map_types: []const MapTypeDef = &.{},
+    rodata_init: ?RodataInit = null,
     patches: []const Patch = &.{},
     /// the `flags` member (sched_ext_ops.flags), when not 0
     ops_flags: u64 = 0,
@@ -181,7 +187,10 @@ pub fn load(obj_data: []const u8, vmlinux_data: []const u8, opts: Options) Error
         const data = vh.gpa.alloc(u8, size) catch vh.oom();
         @memset(data, 0);
         if (sh.type == elf.SHT_PROGBITS) @memcpy(data, o.sectionData(idx));
-        if (readonly) try applyPatches(o, own, opts, idx, name, data);
+        if (readonly) {
+            if (opts.rodata_init) |ri| try applyInit(o, idx, name, data, ri);
+            try applyPatches(o, own, opts, idx, name, data);
+        }
         var key: u32 = 0;
         attr = uapi.Attr.zero;
         attr.elem = .{ .map_fd = @intCast(fd), .key = @intFromPtr(&key), .value = @intFromPtr(data.ptr), .flags = 0 };
@@ -215,6 +224,15 @@ pub fn load(obj_data: []const u8, vmlinux_data: []const u8, opts: Options) Error
             attr.map_create.max_entries = def.max_entries;
             attr.map_create.map_flags = def.flags;
             attr.map_create.map_name = objName(o.symName(s));
+            for (opts.map_types) |mt| {
+                if (!vh.eql(mt.map, o.symName(s))) continue;
+                const kid = own.find(.int, mt.key) orelse return fail("generated BTF has no int {s} for the key of {s}", .{ mt.key, mt.map });
+                const vid = own.find(.@"struct", mt.value) orelse return fail("generated BTF has no struct {s} for the value of {s}", .{ mt.value, mt.map });
+                if (own.size(vid) != def.value_size) return fail("map {s}: the value has {d} bytes, struct {s} {d}", .{ mt.map, def.value_size, mt.value, own.size(vid) });
+                attr.map_create.btf_fd = @intCast(btf_fd);
+                attr.map_create.btf_key_type_id = kid;
+                attr.map_create.btf_value_type_id = vid;
+            }
             const fd: linux.fd_t = @intCast(sys(.map_create, &attr) catch return fail("map {s}: BPF_MAP_CREATE (type {d}): {s}", .{ o.symName(s), def.type, @tagName(uapi.errno) }));
             if (opts.verbose) vh.log("map {s}: fd {d}, type {d}, {d} entries", .{ o.symName(s), fd, def.type, def.max_entries });
             maps.append(vh.gpa, .{ .name = o.symName(s), .shndx = mi, .fd = fd, .size = def.max_entries, .readonly = false, .is_def = true, .def_offset = s.value }) catch vh.oom();
@@ -310,6 +328,18 @@ fn btfLoad(blob: []const u8, verbose: bool) Error!linux.fd_t {
     };
     if (verbose) vh.log("BPF_BTF_LOAD: fd {d}", .{rc});
     return @intCast(rc);
+}
+
+/// the initial bytes of a `.rodata` symbol (vh_cfg filled from the topology)
+fn applyInit(o: elf.Object, shndx: u32, section: []const u8, data: []u8, ri: RodataInit) Error!void {
+    for (o.symtab) |s| {
+        if (s.shndx != shndx or s.kind() != elf.STT_OBJECT or !vh.eql(o.symName(s), ri.symbol)) continue;
+        if (s.size != ri.bytes.len) return fail("{s}: symbol {s} has {d} bytes, the initial value {d}", .{ section, ri.symbol, s.size, ri.bytes.len });
+        if (s.value + s.size > data.len) return fail("{s}: symbol {s} outside the section", .{ section, ri.symbol });
+        @memcpy(data[s.value .. s.value + s.size], ri.bytes);
+        return;
+    }
+    return fail("{s}: no symbol {s} for the initial value", .{ section, ri.symbol });
 }
 
 fn applyPatches(o: elf.Object, own: btf.Btf, opts: Options, shndx: u32, section: []const u8, data: []u8) Error!void {

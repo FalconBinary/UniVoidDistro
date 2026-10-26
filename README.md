@@ -32,9 +32,12 @@ verify   the stock signed UKI always stays in Limine; vh-audit shows the protect
 
 **Current state: M0, U1, U2, U3 and U6 for x86_64 are done** (detect and decide; the runtime
 rules; the machine kernel; our own live image), verified on a KVM rig, not yet on real hardware.
-Next: the first real machine (the GF63), then U5 (ARM64); U4, the scheduler (`vh-sched`), comes
-after them. What is verified and what is not:
-[docs/uni/ROADMAP.md](docs/uni/ROADMAP.md#state-2026-10-20). Track G, the gaming session on tty3, is under way
+Since 2026-10-26 three more pieces exist and are verified in containers and on a QEMU rig, not
+on the VM rig: `vh-init` v0.2 as PID 1 with its service manager ([init/README.md](init/README.md)),
+`vh-sched` v1, the scheduler of any topology, U4 ([sched/README.md](sched/README.md)), and an
+SELinux policy of this system, opt-in with `VH_MAC=selinux` ([docs/uni/selinux.md](docs/uni/selinux.md)).
+Next: the first real machine (the GF63), then U5 (ARM64). What is verified and what is not:
+[docs/uni/ROADMAP.md](docs/uni/ROADMAP.md#state-2026-10-26-init-scheduler-selinux-the-desktop-configuration). Track G, the gaming session on tty3, is under way
 ([docs/uni/game.md](docs/uni/game.md)): a root of its own with the GPU's Vulkan driver, the login
 of `game` in namespaces and its own sound server are built, and the gaming boot, in which only the
 gaming session reaches the kernel's 32-bit code. How to install it on a machine:

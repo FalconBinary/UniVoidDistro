@@ -1,0 +1,4 @@
+# needs a (ready first), after the oneshot c
+exec = /bin/sh -c "trap 'date +%s%N > /tmp/stop-b; exit 0' TERM; date +%s%N > /tmp/start-b; while :; do sleep 0.2; done"
+needs = a
+after = c-oneshot

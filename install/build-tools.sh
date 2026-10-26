@@ -16,6 +16,11 @@ VH_ROOT=$(cd "$(dirname "$0")/.." && pwd)
 MAP=(
 	"vh-seccomp       /usr/local/libexec/vh/vh-seccomp"
 	"vh-wlfilter      /usr/local/bin/vh-wlfilter"
+	# SELinux (docs/uni/selinux.md): the labels, and the login shells that pick the domain of an
+	# account (the same program under two names, two files, two labels)
+	"vh-selabel       /usr/local/sbin/vh-selabel"
+	"vh-shell         /usr/local/bin/vh-usersh"
+	"vh-shell         /usr/local/bin/vh-adminsh"
 	"vh-acpid         /usr/local/sbin/vh-acpid"
 	"vh-limine-update /usr/local/sbin/vh-limine-update"
 	"vh-pkg           /usr/local/sbin/vh-pkg"
@@ -30,6 +35,10 @@ MAP=(
 	"vh-root          /usr/local/sbin/vh-root"
 	"vh-game          /usr/local/sbin/vh-game"
 	"vh-game-enter    /usr/local/bin/vh-game-enter"
+	# PID 1 and the services (init/, track I): runit stays PID 1 until doas vh-init --install
+	"vh-stage1        /usr/local/sbin/vh-stage1"
+	"vh-init          /usr/local/sbin/vh-init"
+	"vh-ctl           /usr/local/sbin/vh-ctl"
 )
 
 need_root
@@ -46,10 +55,12 @@ else
 	cp -R "$VH_ROOT/zig" "$BUILD/src"
 	( cd "$BUILD/src" && ZIG_GLOBAL_CACHE_DIR=$BUILD/gcache ZIG_LOCAL_CACHE_DIR=$BUILD/cache \
 		"$ZIG" build -Dtarget=native -Dcpu=baseline -Dlibc-tools=true --prefix "$BUILD/out" )
-	# session/ reads ../zig/lib in place: the same layout
-	mkdir -p "$BUILD/s" && cp -R "$VH_ROOT/zig" "$VH_ROOT/session" "$BUILD/s/"
-	( cd "$BUILD/s/session" && ZIG_GLOBAL_CACHE_DIR=$BUILD/gcache ZIG_LOCAL_CACHE_DIR=$BUILD/cache \
-		"$ZIG" build -Dtarget=native -Dcpu=baseline --prefix "$BUILD/out" )
+	# session/ and init/ read ../zig/lib in place: the same layout
+	mkdir -p "$BUILD/s" && cp -R "$VH_ROOT/zig" "$VH_ROOT/session" "$VH_ROOT/init" "$BUILD/s/"
+	for c in session init; do
+		( cd "$BUILD/s/$c" && ZIG_GLOBAL_CACHE_DIR=$BUILD/gcache ZIG_LOCAL_CACHE_DIR=$BUILD/cache \
+			"$ZIG" build -Dtarget=native -Dcpu=baseline --prefix "$BUILD/out" )
+	done
 	mv "$BUILD/out/bin"/* "$BUILD/"
 	"$BUILD/vh-seccomp" --selftest >/dev/null || die "vh-seccomp --selftest failed"
 fi
