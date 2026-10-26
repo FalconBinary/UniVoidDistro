@@ -189,6 +189,7 @@
 (filecon "/home/[^/]+/.*" any (system_u object_r user_home_t s0r))
 (filecon "/home/xfer(/.*)?" any (system_u object_r xfer_t s0r))
 (filecon "/root(/.*)?" any (system_u object_r admin_home_t s0r))
+(filecon "/root/vh(/.*)?" any (system_u object_r vh_repo_t s0r))       ; the system's own, not the admin's files: the tools read it (neverallow #9 keeps daemons out of home_type)
 (filecon "/boot(/.*)?" any (system_u object_r boot_t s0r))
 (filecon "/boot/efi" dir (system_u object_r efi_t s0r))
 (filecon "/mnt(/.*)?" any (system_u object_r root_t s0r))

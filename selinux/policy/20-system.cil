@@ -228,6 +228,7 @@
 (call manage_files (sysadm_t var_tmp_t))
 (call manage_files (sysadm_t tmp_t))
 (call manage_files (sysadm_t utmp_t))
+(call manage_files (sysadm_t vh_repo_t))
 ;; the admin looks at every process (ps, pgrep: /proc/PID of any domain), never into it (no ptrace,
 ;; neverallow #2; the capability a shell asks for while reading another uid's /proc/PID/exe is refused quietly)
 (allow sysadm_t domain (dir (search getattr read open)))
@@ -334,6 +335,7 @@
 (roletype system_r pkg_t)
 (allow pkg_t self (capability (chown dac_override dac_read_search fowner fsetid kill setgid setuid setpcap linux_immutable net_admin sys_chroot sys_admin sys_nice sys_resource sys_tty_config mknod setfcap)))
 (allow pkg_t self (process (setexec setfscreate setrlimit)))
+(call exec_files (pkg_t vh_repo_t))              ; vh-update runs the scripts of the repository copy
 (typeattributeset mount_domain pkg_t)
 (typeattributeset can_relabel pkg_t)
 (allow pkg_t fs_type (filesystem (mount remount unmount getattr)))

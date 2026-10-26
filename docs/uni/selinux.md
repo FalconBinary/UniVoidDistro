@@ -123,6 +123,12 @@ it runs bash) under two names, two files, two labels; `login` executing one or t
 one point where the policy tells the admin from the user without a PAM module. The game user's
 shell is `vh-game-enter`.
 
+The admin account's home is `admin_home_t`, like `/root`: the policy cannot name the account,
+so `chroot.sh` writes its line into `/etc/vh/selinux/file_contexts.local`, which `vh-selabel`
+reads after the table. `/root/vh`, the installer's copy of the repository (the plan, `vh.conf`,
+the scripts), is `vh_repo_t`, the system's and not the admin's: the tools read it, `vh-update`
+runs it, and the rule that keeps every daemon out of the people's files holds.
+
 **After an update**, `vh-update` runs `vh-selabel /usr /etc`: a package's new files take their
 directory's label (the kernel's inheritance), the few programs that enter a domain get theirs.
 

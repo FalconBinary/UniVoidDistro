@@ -280,6 +280,7 @@
 (type xbps_db_t) (call file (xbps_db_t))                ; /var/db/xbps
 (type xbps_cache_t) (call file (xbps_cache_t))          ; /var/cache/xbps
 (type vh_conf_t) (call file (vh_conf_t))                ; /etc/vh (plan, hw.zon, policy)
+(type vh_repo_t) (call file (vh_repo_t))        ; /root/vh: the installer's copy of the repository (vh.conf, the plan, the scripts the tools read)
 (type vh_state_t) (call file (vh_state_t))              ; /var/lib/vh
 (type vh_log_t) (call file (vh_log_t))                  ; /var/log/vh
 (type vh_run_t) (call file (vh_run_t)) (typeattributeset tmpfs_type vh_run_t)             ; /run/vh
