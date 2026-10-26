@@ -83,10 +83,25 @@ patching the `scx_enabled` static key, before any program of ours had run for th
 translated block of QEMU's MTTCG at a text-patching site, not a fault of the scheduler (the same
 enable path passed 30 times on arm64 under hvf and on x86_64 under single-threaded TCG); the panic
 log is kept as `~/.cache/vhl-s1/serial-x86_64-mttcg-panic.log` and the script now defaults to one
-thread. [VERIFY on real x86_64 hardware] the two-LLC run under KVM. **Not verified:** any claim of
-speed (docs/ROADMAP.md: faster only by the bench method); the big-core path on a real hybrid CPU;
-the fat kernel of `kernel-fat` with the loader; the service under vh-init on the rig. **Not done**
-(v2): fairness per session cgroup, a battery mode, frequencies through `cpuperf`.
+thread. [VERIFY on real x86_64 hardware] the two-LLC run under KVM.
+
+**Verified on the VM rig** (2026-10-26, kvm-smoke run 40340658992 with the machine kernel of
+kernel-custom run 40321559300, `linux-6.18.57-vh`, `CONFIG_SCHED_CLASS_EXT=y`, EPYC-Milan ×4 under
+KVM, `check.py vhinit,sched`): the installer puts `vh-sched` and `vh_sched.o` in place with the
+tools; on the stock kernel `vh-ctl enable vh-sched` starts the loader, which says "no sched_ext
+in this kernel" (the BTF has no `task_struct.scx`) and exits, and the manager waits with its
+backoff; on the machine kernel's trial boot under vh-init the service is up 56 ms after the
+manager started (4 ms to ready): the loader found 4 CPUs in 1 LLC by cache, loaded the 10
+programs in 41 ms (insn_processed 586 in all) and the kernel reports `state=enabled switch_all=1
+enable_seq=1 nr_rejected=0 root/ops=vh_sched`, with every service up and `vh-kconf check` finding
+the rig; `vh-ctl stop vh-sched -w 15` ends the loader through SIGTERM (`link closed (signal)`,
+the exit record `SCX_EXIT_UNREG`, exit code 0) and the kernel is back on its own scheduler
+(`state=disabled`); `vh-ctl start` loads it again and returns once the scheduler runs
+(`--ready-fd`); `vh-ctl disable` stops it and the machine UKI's removal leaves the stock one.
+**Not verified:** any claim of speed (docs/ROADMAP.md: faster only by the bench method); the
+big-core path on a real hybrid CPU; the fat kernel of `kernel-fat` with the loader; a machine
+with two LLCs under KVM; real hardware. **Not done** (v2): fairness per session cgroup, a
+battery mode, frequencies through `cpuperf`.
 
 
 ```
