@@ -214,6 +214,34 @@ hardware enters: N shows the plan and the tier and runs the gate; G is GPU-vendo
 | **U6: live image** | x86_64 and aarch64 images | U1 |
 | **V (continuous)** | the VM matrix, the fixture corpus from real snapshots, runbooks per vendor | — |
 
+### State (2026-10-26): init, scheduler, SELinux, the desktop configuration
+
+Three tracks moved on the Mac (containers and the S1 QEMU rig), none on the VM rig or real
+hardware yet; every claim below says which.
+
+- **Track I, `vh-init` v0.2** ([init/README.md](../../init/README.md)): PID 1 with a separate
+  manager process (the same binary), runit directories and the native `.svc` format, readiness
+  (started, exit, fd, socket, check), restarts with backoff, a cgroup per service, adoption of the
+  services after a manager crash, native logs with rotation, oneshots and timers, per-service user,
+  capabilities, `no_new_privs` and the ABI seccomp filter, `vh-ctl` and the `sv` shim, stage 3
+  natively. Verified as PID 1 of a privileged container (`tests/init/init_test.sh`, 13 s, every
+  check) and by the stage-1 oracles; the runit path stays the default `init=` until the rig has
+  booted it (`tests/vm/steps/init.py`, [VERIFY on the rig]).
+- **Track S, `vh-sched` v1 = U4** ([sched/README.md](../../sched/README.md)): the topology read at
+  load time (LLCs, big cores, NUMA) into the frozen `.rodata`, one DSQ per LLC, weighted vtime, the
+  interactive bonus, big-core preference, a cross-LLC steal. Verified on the S1 rig with the
+  6.18.57 kernels: arm64 under hvf and x86_64 with two sockets under TCG, seven loads each. No
+  speed claim yet: the bench method applies, and the first measurement is the GF63's.
+- **Track E, SELinux** ([selinux.md](selinux.md)): one policy for this system's inventory, no
+  unconfined domain, roles chosen at login, a one-way policy lock after stage 1; compiles with
+  every invariant satisfied, 19 checks over the compiled policy, `vh-selabel` relabels a tree
+  idempotently. `VH_MAC=selinux` is opt-in and permissive until the rig boots it enforcing with no
+  denial: the stock kernel keeps AppArmor on the same command line.
+- **Track D, the configuration** ([desktop.md](desktop.md)): both configs reviewed setting by
+  setting for run-time cost; one change (the font search order); the measurable work is in the
+  programs and stays on upstream's D list.
+- The sysctl set reviewed and left as it is ([runtime.md](runtime.md#the-sysctl-set)).
+
 ### State (2026-10-20)
 
 M0, U1, U2 and U3 are done; U3 but for what waits: the local build in the kbuild root

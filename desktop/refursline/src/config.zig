@@ -47,8 +47,8 @@ pub const hover_effect = true; // подсветка кнопки под кур�
 /// Шрифт панели и меню — первый найденный файл (TrueType .ttf с контурами glyf; CFF/OTF нет).
 /// Свой путь — первым. Моноширинные цифры (Noto Sans, DejaVu Sans) не дают часам дёргаться.
 pub const font_paths = [_][]const u8{
+    "/usr/share/fonts/TTF/DejaVuSans.ttf", // Void (dejavu-fonts-ttf, installed by install/packages.sh), Arch: first, so the bar opens its font with one openat
     "/usr/share/fonts/noto/NotoSans-Regular.ttf", // Arch
-    "/usr/share/fonts/TTF/DejaVuSans.ttf", // Arch, Void
     "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf", // Debian/Ubuntu
     "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", // Debian/Ubuntu
     "/usr/share/fonts/google-noto/NotoSans-Regular.ttf", // Fedora

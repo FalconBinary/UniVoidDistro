@@ -265,3 +265,25 @@ vh-deadman (`WATCHDOG=yes`) is asked a timeout of 60 s. A directory a runsv work
 `supervise/` directory under `/etc/sv`. `tests/install/services_test.sh` checks the links,
 `install_tree` and the tool under runit's own runsv and runsvdir; `tests/vm` checks on the
 installed system that no state is on the disk and that the tool moves a running vh-acpid's.
+
+## The sysctl set
+
+Reviewed on 2026-10-26 against the kernel self-protection recommendations (KSPP) and the
+workload of this system (a desktop on zram, a scheduler of our own). `30-vh-hardening.conf`
+is the complete KSPP set for a 6.18 kernel (`kptr_restrict 2`, `dmesg_restrict`,
+`perf_event_paranoid 2`, `unprivileged_bpf_disabled 1`, `bpf_jit_harden 2`, `kexec_load_disabled`,
+`ptrace_scope 2`, `io_uring_disabled 2`, `unprivileged_userfaultfd 0`, `sysrq 0`, `ldisc_autoload 0`,
+`legacy_tiocsti 0`, `memfd_noexec 2`, the `protected_*` four, `suid_dumpable 0`, a core pattern that
+discards, `oops_limit`, the lockup panics); `40-vh-network.conf` the full RFC 1122/3704 set with
+`fq` + BBR; `50-vh-performance.conf` the zram tuning (`swappiness 180`, `page-cluster 0`, the
+watermarks, the dirty bytes). Nothing was changed:
+
+- `kernel.sched_autogroup_enabled = 1` matters to EEVDF only; under `vh-sched` the weight comes
+  from nice and the lag bonus. It stays for the fallback scheduler.
+- `vm.compaction_proactiveness` (default 20) and `vm.dirty_writeback_centisecs` (500) are the two
+  values a desktop on zram might lower for fewer background wakeups; [VERIFY] by the bench's
+  idle-wakeup measurement before either changes: no number, no change.
+- `kernel.nmi_watchdog` stays on: `hardlockup_panic 1` depends on it; its cost is one performance
+  counter and one NMI every few seconds.
+- the per-process limits of games (`vm.max_map_count`) belong to the gaming root
+  ([game.md](game.md)), not to the base.

@@ -15,7 +15,7 @@ kernel/
   profiles/            Kconfig fragments, every option with its reason: base, mandatory,
                        hardening, perf (what every machine gets), class/ (what a hardware
                        class needs: cpu-intel, gpu-amdgpu, storage-nvme, ...; the machine's plan
-                       names them), features/{usb-common,bluetooth,wifi,camera,virt,game}
+                       names them), features/{usb-common,bluetooth,wifi,camera,virt,game,selinux}
                        (+ NAME.modules: the stock modules a feature stands for), modules.deny
   pins/                the Void linux6.18 .config and its modules.alias / modules.builtin* /
                        modules.firmware, with the void-packages commit and hashes; kernel.org
