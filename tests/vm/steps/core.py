@@ -101,7 +101,13 @@ def step_base(a):
         check("RefursLine is a static binary without libc", "not a dynamic" in out or "statically" in out)
         print(out)
         rc, out = run(ser, "doas xbps-pkgdb -a; echo pkgdb=$?")
-        check("xbps-pkgdb -a (with firmware noextract)", "pkgdb=0" in out, out.strip().splitlines()[-1] if out.strip() else "")
+        if vhinit:
+            # the sv shim is runit's /usr/bin/sv replaced (vh-init --install): the one mismatch pkgdb may report
+            errs = [l for l in out.splitlines() if l.startswith("ERROR")]
+            check("xbps-pkgdb -a: nothing but the sv shim's hash mismatch (vh-init is installed)",
+                  "pkgdb=" in out and all("runit:" in l and ("/usr/bin/sv" in l or "files check" in l) for l in errs), " | ".join(errs)[-300:])
+        else:
+            check("xbps-pkgdb -a (with firmware noextract)", "pkgdb=0" in out, out.strip().splitlines()[-1] if out.strip() else "")
         rc, out = run(ser, "du -sm /usr/lib/firmware; doas du -sxm / 2>/dev/null | tail -1; free -m; ls -d /proc/[0-9]* | wc -l; swapon --show")
         print(out)
         rc, out = run(ser, "doas nft list ruleset | grep -c . ; doas nft list set inet vh people_tmp")

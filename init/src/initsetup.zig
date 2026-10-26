@@ -19,6 +19,11 @@ pub const init_param = "init=/usr/local/sbin/vh-init";
 pub const sv = "/usr/bin/sv";
 pub const sv_runit = "/usr/bin/sv.runit";
 pub const vh_ctl = "/usr/local/sbin/vh-ctl";
+/// while the shim is /usr/bin/sv, an update of runit must not extract its sv over it; the same
+/// mechanism keeps runit-void's ctrlaltdel out (rootfs/etc/xbps.d/30-vh-noextract.conf).
+/// xbps-pkgdb -a reports the hash mismatch of /usr/bin/sv meanwhile: that is the shim
+pub const noextract_conf = "/etc/xbps.d/31-vh-init.conf";
+const noextract_text = "# vh-init --install: /usr/bin/sv is the vh-ctl shim (init/README.md); runit's own sv is\n# /usr/bin/sv.runit. An update of runit must not put it back; --rollback removes this file.\nnoextract=/usr/bin/sv\n";
 
 fn needRoot() void {
     if (linux.geteuid() != 0) vh.die("run as root: doas vh-init ...", .{});
@@ -89,6 +94,10 @@ pub fn install() u8 {
         _ = vh.sys(linux.symlink(vh.z(vh_ctl).ptr, vh.z(svp).ptr)) catch vh.die("{s}: {s}", .{ sv, vh.serr() });
         vh.out("{s} -> {s} (the shim runs sv.runit while runit is PID 1)\n", .{ sv, vh_ctl });
     } else vh.out("no {s}: the sv shim is not installed\n", .{sv});
+    if (vh.eql(vh.readlink(svp) catch "", vh_ctl)) {
+        vh.writeAtomic(sys.p(noextract_conf), noextract_text, 0o644);
+        vh.out("{s}: noextract=/usr/bin/sv (an update of runit keeps the shim; xbps-pkgdb -a reports the mismatch meanwhile)\n", .{noextract_conf});
+    }
     vh.mkdirs(sys.p("/etc/vh/services/enabled"), 0o755);
     vh.mkdirs(sys.p("/var/lib/vh/init"), 0o700);
     vh.mkdirs(sys.p("/var/log/vh"), 0o700);
@@ -112,6 +121,10 @@ pub fn rollback() u8 {
         _ = linux.unlink(vh.z(svp).ptr);
         _ = vh.sys(linux.rename(vh.z(keep).ptr, vh.z(svp).ptr)) catch vh.die("{s} -> {s}: {s}", .{ sv_runit, sv, vh.serr() });
         vh.out("runit's sv restored as {s}\n", .{sv});
+    }
+    if (vh.pathExists(sys.p(noextract_conf))) {
+        _ = linux.unlink(vh.z(sys.p(noextract_conf)).ptr);
+        vh.out("{s} removed\n", .{noextract_conf});
     }
     vh.out("Rebuild the UKI: doas xbps-reconfigure -f {s}; the next boot runs runit as PID 1 again\n", .{kernelName()});
     return 0;

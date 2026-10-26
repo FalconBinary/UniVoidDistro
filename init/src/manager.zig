@@ -53,6 +53,8 @@ const Inst = struct {
     waiters: std.ArrayList(Waiter) = .empty,
     /// a request to start again after the stop
     restart_pending: bool = false,
+    /// no longer enabled: being stopped, dropped at the next reload once down
+    gone: bool = false,
     /// the time stamp file of a periodic oneshot
     stamp: ?[]const u8 = null,
 };
@@ -199,6 +201,12 @@ pub const Manager = struct {
             if (m.find(s.name)) |old| {
                 var i = old.*;
                 i.s = s;
+                if (i.gone) {
+                    // enabled again before its stop was dropped (vh-ctl disable, then enable;
+                    // the rig's base step, kvm-smoke 40333007498): wanted up as a new one
+                    i.gone = false;
+                    i.want_up = !s.down;
+                }
                 fresh.append(vh.gpa, i) catch vh.oom();
             } else {
                 var i: Inst = .{ .s = s, .logw = log.Writer.init(s.name, if (s.log == .kmsg) .kmsg else .file, s.log_size, s.log_keep) };
@@ -218,6 +226,7 @@ pub const Manager = struct {
             if (!still and (old.state != .down and old.state != .failed and old.state != .done)) {
                 vh.log("{s}: no longer enabled: stopping", .{old.s.name});
                 old.want_up = false;
+                old.gone = true;
                 fresh.append(vh.gpa, old.*) catch vh.oom();
             }
         }

@@ -139,7 +139,9 @@ vh-ctl / sv                      the client over /run/vh/init.sock (root only)
   sv(8)'s commands (`up`, `down`, `restart`, `status`, `once`, `check`, `-w`, the signal letters)
   and prints sv's lines (`run: NAME: (pid N) Ns`), so vh-audit, iwd's `conf`, `ctrlaltdel` and
   the tests work unchanged; while runit is PID 1 the shim runs runit's own `sv`, kept as
-  `/usr/bin/sv.runit`.
+  `/usr/bin/sv.runit`. `--install` writes `/etc/xbps.d/31-vh-init.conf` (`noextract=/usr/bin/sv`)
+  so that an update of runit keeps the shim; `xbps-pkgdb -a` reports the hash mismatch of
+  `/usr/bin/sv` meanwhile, and `--rollback` takes both away.
 
 ```sh
 cd init && zig build -Dtarget=x86_64-linux -Dcpu=baseline --prefix DIR   # DIR/bin/{vh-stage1,vh-init,vh-ctl}
