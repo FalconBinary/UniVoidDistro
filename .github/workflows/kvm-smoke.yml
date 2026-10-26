@@ -120,9 +120,16 @@ jobs:
           set -euo pipefail
           . tests/vm/void-live.pins
           mkdir -p iso && cd iso
-          curl -fsSL -o "$ISO" "$BASE/$ISO"
-          curl -fsSL -o sha256sum.txt "$BASE/sha256sum.txt"
-          curl -fsSL -o sha256sum.sig "$BASE/sha256sum.sig"
+          # the first mirror that answers serves all three files; the signature decides, not the mirror
+          got=""
+          for m in $MIRRORS; do
+            echo "== $m"
+            if curl -fsSL --connect-timeout 20 -m 1200 -o "$ISO" "$m/$ISO" \
+               && curl -fsSL --connect-timeout 20 -m 120 -o sha256sum.txt "$m/sha256sum.txt" \
+               && curl -fsSL --connect-timeout 20 -m 120 -o sha256sum.sig "$m/sha256sum.sig"; then got=$m; break; fi
+            echo "$m: not reachable or incomplete, the next mirror"
+          done
+          [ -n "$got" ] || { echo "no mirror served $ISO"; exit 1; }
           minisign -Vm sha256sum.txt -x sha256sum.sig -P "$KEY"
           # sha256sum.txt is in the BSD format, "SHA256 (NAME) = HASH": the ISO's own hash must
           # be in the signed file, on exactly that line
