@@ -78,8 +78,8 @@ def step_selinux(a):
               out[-600:].replace("\n", " | "))
         check("secure_mode_policyload is set: no policy load, no setenforce until the next boot", "secure_mode_policyload: 1" in out, out[-400:].replace("\n", " | "))
         check("the admin's root shell (doas -s) runs as sysadm_t", re.search(r"this shell: \S+:sysadm_t:", out) is not None, out[-300:].replace("\n", " | "))
-        rc, out = run(ser, "vh-init --status | grep -a 'steps\\|stage 1 done'")
-        print(f"--- stage 1 on the machine kernel (the relabel after a boot without the policy): {out[-600:]}")
+        rc, out = run(ser, "vh-init --status | grep -a 'stage 1 done\\|steps'")
+        print(f"--- stage 1 on the machine kernel (the relabel after a boot without the policy): {out.replace(chr(10), ' | ')[-700:]}")
         rc, out = run(ser, "vh-selabel --check / > /tmp/chk.txt; echo chk=$?; grep -v /usr/lib/modules/ /tmp/chk.txt | head -30; tail -1 /tmp/chk.txt; "
                            "for d in / /run /dev /tmp /dev/shm /var/tmp /run/vh /run/udev; do echo \"$d $(tr -d '\\0' < /proc/self/attr/current >/dev/null; getfattr -h --only-values -n security.selinux $d 2>/dev/null || echo ?)\"; done")
         check("vh-selabel --check /: every label as file_contexts says, the tmpfs mounts of stage 1 included", "chk=0" in out, out[-700:].replace("\n", " | "))

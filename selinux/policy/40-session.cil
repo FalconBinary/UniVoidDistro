@@ -155,6 +155,11 @@
 (allow bar_t self (netlink_route_socket (create bind getattr setopt read write nlmsg_read)))   ; the network's state (rtnetlink)
 (allow bar_t self (netlink_kobject_uevent_socket (create bind getattr setopt read write)))     ; the battery and the backlight as they change (libudev)
 (call read_files (bar_t udev_var_run_t))         ; libudev's /run/udev/data
+(allow bar_t user_home_dir_t (dir (search getattr read open write add_name remove_name create)))   ; ~/.cache/refursline: the wallpaper it rendered
+(call manage_files (bar_t user_home_t))
+(typetransition bar_t user_home_dir_t dir user_home_t)
+(typetransition bar_t user_home_dir_t file user_home_t)
+(allow bar_t self (bluetooth_socket (create ioctl getattr bind read write)))   ; the Bluetooth menu asks the HCI for the adapters
 (call rw_files (bar_t user_home_t))
 (allow bar_t user_home_dir_t (dir (search getattr)))
 (allow bar_t sysfs_t (file (read getattr open)))
@@ -181,6 +186,7 @@
 (allow pipewire_t self (capability (sys_nice ipc_lock)))
 (allow pipewire_t sound_device_t (chr_file (ioctl read write getattr lock append open map)))
 (allow pipewire_t sound_device_t (dir (search getattr read open)))      ; ALSA enumerates /dev/snd
+(allow pipewire_t root_t (dir (read open)))                             ; it lists / looking for its plugin directories
 (allow pipewire_t video_device_t (chr_file (ioctl read write getattr lock append open map)))
 (call manage_files (pipewire_t user_runtime_t))
 (call manage_files (pipewire_t vh_sandbox_run_t))

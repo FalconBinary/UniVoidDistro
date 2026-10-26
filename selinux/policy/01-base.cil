@@ -154,7 +154,7 @@
     ;; its own /proc entry (the self type: /proc/self/status, fd, exe, loginuid), and the kernel's
     ;; answers about itself; open on the directories, which opendir(3) asks for
     (allow d self (dir (search getattr read open)))
-    (allow d self (file (read getattr open)))
+    (allow d self (file (read write getattr open)))   ; write: its own comm (thread names), oom_score_adj, loginuid
     (allow d self (lnk_file (read)))
     (allow d proc_t (dir (search getattr read open)))
     (allow d proc_t (lnk_file (read getattr)))

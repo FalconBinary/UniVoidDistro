@@ -100,6 +100,9 @@
 (allow getty_t tty_device_t (chr_file (ioctl read write getattr setattr lock append open)))
 (allow getty_t console_device_t (chr_file (ioctl read write getattr setattr lock append open)))
 (call rw_files (getty_t utmp_t))
+(allow getty_t var_log_t (dir (search)))         ; /var/log/wtmp: the login record
+(call rw_files (getty_t wtmp_t))
+(dontaudit getty_t self (capability2 (checkpoint_restore)))   ; asked for on the way, not needed
 (call read_files (getty_t etc_runtime_t))
 (call domtrans (getty_t login_exec_t login_t))
 
