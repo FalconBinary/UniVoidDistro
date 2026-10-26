@@ -5,6 +5,8 @@
 #   OUT/thor/{dest,repo}          thor and its package (install/build-thor.sh --out)
 #   OUT/desktop/x86-64-LEVEL-BT   RefursWM and RefursLine for x86-64-v1 and -v3, without and with
 #                                 the bar's Bluetooth menu (install/build-desktop.sh --out)
+#   OUT/selinux                   the SELinux policy and its file contexts (selinux/build.sh, secilc
+#                                 in a Fedora container)
 #   OUT/BUILD, OUT/SHA256SUMS     the commit and the run; every file's sha256
 #   sh live/prebuilt.sh OUT       (x86_64 Linux with docker and zig: the live-image workflow)
 # The static programs are built by zig on the host (-Dcpu=baseline, as the installer builds them);
@@ -44,6 +46,9 @@ docker run --rm -v "$repo:/src:ro" -v "$out:/out" "$img" bash -c '
 			|| { echo "x86-64-$lvl-plain: RefursLine with the Bluetooth menu" >&2; exit 1; }
 	done
 	chown -R '"$(id -u):$(id -g)"' /out'
+
+echo "== the SELinux policy (selinux/build.sh)"
+sh "$repo/selinux/build.sh" "$out/selinux"
 
 {
 	echo "COMMIT=$(git -C "$repo" rev-parse HEAD)"

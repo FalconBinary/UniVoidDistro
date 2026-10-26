@@ -1,0 +1,96 @@
+;; selinux/policy/30-network.cil: the network daemons. Each one talks to exactly the ports it
+;; is for; nftables per UID (rootfs/etc/nftables.conf) is the other half of the same rule.
+
+;; ---------------------------------------------------------------- unbound: the local resolver, DoT upstreams
+(type unbound_t)
+(type unbound_exec_t) (call executable (unbound_exec_t))
+(call daemon_type (unbound_t unbound_exec_t))
+(call net_client (unbound_t))
+(allow unbound_t self (capability (setuid setgid sys_chroot net_bind_service sys_resource dac_override dac_read_search)))
+(allow unbound_t self inet_server)
+(allow unbound_t dns_port_t (tcp_socket (name_bind)))
+(allow unbound_t dns_port_t (udp_socket (name_bind)))
+(allow unbound_t dot_port_t (tcp_socket (name_connect)))
+(call read_files (unbound_t unbound_conf_t))
+(call manage_files (unbound_t unbound_var_t))
+(allow unbound_t unbound_conf_t (dir (mounton)))      ; chroot: /etc/unbound
+(allow unbound_t sysctl_net_t (dir (search)))
+(allow unbound_t sysctl_net_t (file (read getattr open)))
+
+;; ---------------------------------------------------------------- chronyd: time over NTS
+(type chronyd_t)
+(type chronyd_exec_t) (call executable (chronyd_exec_t))
+(type clock_device_t) (call device (clock_device_t))         ; /dev/rtc*
+(call daemon_type (chronyd_t chronyd_exec_t))
+(call net_client (chronyd_t))
+(allow chronyd_t self (capability (setuid setgid sys_time net_bind_service sys_resource dac_override chown fowner)))
+(allow chronyd_t ntp_port_t (udp_socket (name_bind)))
+(allow chronyd_t ntske_port_t (tcp_socket (name_connect)))
+(allow chronyd_t self (process (setcap)))
+(call manage_files (chronyd_t chrony_var_lib_t))
+(call manage_files (chronyd_t var_run_t))
+(typetransition chronyd_t var_run_t dir "chrony" chrony_var_run_t)
+(type chrony_var_run_t) (call file (chrony_var_run_t)) (typeattributeset tmpfs_type chrony_var_run_t)
+(call manage_files (chronyd_t chrony_var_run_t))
+(allow chronyd_t clock_device_t (chr_file (ioctl read write getattr open)))
+(allow chronyd_t sysctl_net_t (dir (search)))
+(allow chronyd_t sysctl_net_t (file (read getattr open)))
+;; chronyc (the admin's) over the unix socket
+(allow sysadm_t chrony_var_run_t (dir (search getattr write add_name remove_name)))
+(allow sysadm_t chrony_var_run_t (sock_file (create getattr write unlink)))
+(allow chronyd_t sysadm_t (unix_dgram_socket (sendto)))
+
+;; ---------------------------------------------------------------- iwd: Wi-Fi, its own DHCP client
+(type iwd_t)
+(type iwd_exec_t) (call executable (iwd_exec_t))        ; iwd, iwmon
+(call daemon_type (iwd_t iwd_exec_t))
+(call net_client (iwd_t))
+(call dbus_client (iwd_t))
+(allow iwd_t self (capability (net_admin net_raw net_bind_service dac_override dac_read_search fowner fsetid chown)))
+(allow iwd_t self (netlink_generic_socket (ioctl read write create getattr setattr lock append bind connect getopt setopt shutdown recvfrom sendto name_bind)))
+(allow iwd_t self (netlink_route_socket (nlmsg_write)))
+(allow iwd_t self (packet_socket (ioctl read write create getattr setattr lock append bind connect getopt setopt shutdown recvfrom sendto)))
+(allow iwd_t self (alg_socket (ioctl read write create getattr setattr lock append bind connect getopt setopt shutdown recvfrom sendto accept)))   ; the kernel's crypto for WPA
+(allow iwd_t dhcp_port_t (udp_socket (name_bind)))
+(call read_files (iwd_t iwd_conf_t))
+(call manage_files (iwd_t iwd_var_lib_t))
+(call manage_files (iwd_t var_run_t))
+(allow iwd_t rfkill_device_t chr_rw)
+(allow iwd_t sysctl_net_t (dir (search)))
+(allow iwd_t sysctl_net_t (file (read write getattr open)))
+(allow iwd_t sysfs_t (file (write)))                     ; /sys/class/net/*/... as it brings the interface up
+
+;; ---------------------------------------------------------------- dhcpcd: the wired interface
+(type dhcpcd_t)
+(type dhcpcd_exec_t) (call executable (dhcpcd_exec_t))
+(type dhcpcd_var_run_t) (call file (dhcpcd_var_run_t)) (typeattributeset tmpfs_type dhcpcd_var_run_t)
+(call daemon_type (dhcpcd_t dhcpcd_exec_t))
+(call net_client (dhcpcd_t))
+(allow dhcpcd_t self (capability (net_admin net_raw net_bind_service setuid setgid chown dac_override fowner sys_chroot)))
+(allow dhcpcd_t self (netlink_route_socket (nlmsg_write)))
+(allow dhcpcd_t self (packet_socket (ioctl read write create getattr setattr lock append bind connect getopt setopt shutdown recvfrom sendto)))
+(allow dhcpcd_t dhcp_port_t (udp_socket (name_bind)))
+(call manage_files (dhcpcd_t dhcpcd_var_lib_t))
+(call manage_files (dhcpcd_t dhcpcd_var_run_t))
+(call manage_files (dhcpcd_t var_run_t))
+(typetransition dhcpcd_t var_run_t dir "dhcpcd" dhcpcd_var_run_t)
+(call exec_files (dhcpcd_t shell_exec_t))               ; /usr/libexec/dhcpcd-run-hooks
+(call exec_files (dhcpcd_t bin_t))
+(allow dhcpcd_t sysctl_net_t (dir (search)))
+(allow dhcpcd_t sysctl_net_t (file (read write getattr open)))
+(allow dhcpcd_t sysfs_t (file (write)))
+
+;; ---------------------------------------------------------------- bluetoothd (VH_BLUETOOTH optional or on)
+(type bluetoothd_t)
+(type bluetoothd_exec_t) (call executable (bluetoothd_exec_t))
+(type bluetooth_var_lib_t) (call secret (bluetooth_var_lib_t))     ; /var/lib/bluetooth: the link keys
+(call daemon_type (bluetoothd_t bluetoothd_exec_t))
+(call dbus_client (bluetoothd_t))
+(allow bluetoothd_t self (capability (net_admin net_raw net_bind_service dac_override)))
+(allow bluetoothd_t self (bluetooth_socket (ioctl read write create getattr setattr lock append bind connect listen accept getopt setopt shutdown recvfrom sendto name_bind)))
+(allow bluetoothd_t self (alg_socket (ioctl read write create getattr setattr lock append bind connect getopt setopt shutdown recvfrom sendto accept)))
+(call manage_files (bluetoothd_t bluetooth_var_lib_t))
+(call manage_files (bluetoothd_t var_run_t))
+(allow bluetoothd_t rfkill_device_t chr_rw)
+(allow bluetoothd_t input_device_t chr_rw)              ; HID over Bluetooth makes input devices
+(allow bluetoothd_t sysfs_t (file (write)))

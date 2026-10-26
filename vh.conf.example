@@ -10,6 +10,17 @@
 # tiered -- the machine is installed, every missing property is shown with its residual
 #           risk and must be confirmed by typing; vh-audit marks it.
 VH_SECURITY="strict"
+# The mandatory access control (docs/uni/selinux.md):
+# apparmor -- the profiles of rootfs/etc/apparmor.d on the stock kernel and the machine kernel;
+# selinux  -- the policy of selinux/ (one monolithic policy for this system, no unconfined
+#             domain, one-way after boot) on the machine kernel, which gets CONFIG_SECURITY_SELINUX;
+#             the stock kernel of the fallback UKI has no SELinux and keeps AppArmor. Needs the
+#             policy built (selinux/build.sh: our live image brings it). Until its definition of
+#             done, VH_SELINUX_MODE=permissive: every denial is logged, nothing is refused;
+#             doas vh-selinux denials shows them, doas vh-selinux mode enforcing switches at the
+#             next boot (vh-audit selinux checks the state).
+VH_MAC="apparmor"
+VH_SELINUX_MODE="permissive"
 
 # ---------------------------------------------------------------- disk
 # The target disk, WHOLE. Everything on it will be destroyed. Required.

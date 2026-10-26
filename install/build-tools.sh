@@ -16,6 +16,11 @@ VH_ROOT=$(cd "$(dirname "$0")/.." && pwd)
 MAP=(
 	"vh-seccomp       /usr/local/libexec/vh/vh-seccomp"
 	"vh-wlfilter      /usr/local/bin/vh-wlfilter"
+	# SELinux (docs/uni/selinux.md): the labels, and the login shells that pick the domain of an
+	# account (the same program under two names, two files, two labels)
+	"vh-selabel       /usr/local/sbin/vh-selabel"
+	"vh-shell         /usr/local/bin/vh-usersh"
+	"vh-shell         /usr/local/bin/vh-adminsh"
 	"vh-acpid         /usr/local/sbin/vh-acpid"
 	"vh-limine-update /usr/local/sbin/vh-limine-update"
 	"vh-pkg           /usr/local/sbin/vh-pkg"

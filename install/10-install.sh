@@ -105,6 +105,7 @@ Installation plan:
   kernel          $VH_KERNEL, initramfs $VH_INITRD_COMPRESS, Limine timeout $VH_LIMINE_TIMEOUT
   machine         $VH_PLAN_CLASS ($VH_PLAN_ARCH), protection $VH_PLAN_TIER ($VH_SECURITY), $PLAN_DIR/plan-report.txt
   GPU             $VH_GPU   Bluetooth $VH_BLUETOOTH   Ethernet $VH_ETH   IPv6 $VH_IPV6
+  MAC             $VH_MAC$( [ "$VH_MAC" = selinux ] && printf ' (%s at boot)' "$VH_SELINUX_MODE")
   hardware        $(printf '%s' "$VH_PLAN_PACKAGES" | fold -s -w 80 | sed '2,$s/^/                  /')
   TRIM            $VH_TRIM  zram $VH_ZRAM_ALGO ${VH_ZRAM_PERCENT}%
   desktop         RefursWM + RefursLine from desktop/ (built in the live environment's RAM)
@@ -279,6 +280,14 @@ if [ -n "$PREBUILT" ]; then
 	run bash "$VH_ROOT/install/build-tools.sh" --prebuilt "$PREBUILT/bin" "$MNT"
 else
 	run bash "$VH_ROOT/install/build-tools.sh" "$MNT"
+fi
+# the SELinux policy (docs/uni/selinux.md): built by secilc, which Void lacks; our live image
+# brings it (live/prebuilt.sh), the installer only copies it. The machine kernel of the plan
+# gets CONFIG_SECURITY_SELINUX from the feature the rule security.mac.selinux selects.
+if [ "$VH_MAC" = selinux ]; then
+	[ -n "$PREBUILT" ] && [ -s "$PREBUILT/selinux/file_contexts" ] || die "VH_MAC=selinux needs the policy built: install from UniVoidDistro's live image (live/prebuilt.sh builds selinux/ with secilc), or build it with sh selinux/build.sh and set VH_SELINUX_DIR"
+	run install -d -m 0755 "$MNT/etc/vh/selinux"
+	run install -m 0644 "$PREBUILT"/selinux/policy.* "$PREBUILT/selinux/file_contexts" "$PREBUILT/selinux/BUILD" "$PREBUILT/selinux/SHA256SUMS" "$MNT/etc/vh/selinux/"
 fi
 [ -f "$CFG" ] && run install -m 0600 "$CFG" "$MNT/root/vh/vh.conf"
 if [ "$DRY_RUN" != 1 ]; then

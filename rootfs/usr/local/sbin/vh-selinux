@@ -1,0 +1,61 @@
+#!/bin/sh
+# vh-selinux: the SELinux policy of this system, for the admin (docs/uni/selinux.md).
+#   doas vh-selinux status             the state: active, the policy, the mode, the boolean, the denials
+#   doas vh-selinux denials            this boot's AVC denials, one line each, with the CIL rule each one asks for
+#   doas vh-selinux mode permissive|enforcing   the mode of the next boot (/etc/vh/selinux/mode);
+#                                      the running mode cannot change: the policy is one-way after boot
+#   doas vh-selinux relabel [PATH...]  the labels from the policy's file_contexts (vh-selabel; default /)
+#   doas vh-selinux context [PID]      the domain of a process (default: the shell's)
+set -eu
+PATH=/usr/bin:/usr/local/sbin
+[ "$(id -u)" = 0 ] || { echo "run: doas vh-selinux ..." >&2; exit 1; }
+cmd=${1:-status}
+[ $# -gt 0 ] && shift
+case $cmd in
+status)
+	if [ -d /sys/fs/selinux ] && grep -q selinux /sys/kernel/security/lsm; then
+		echo "active: yes ($(cat /sys/kernel/security/lsm))"
+		echo "enforcing: $(cat /sys/fs/selinux/enforce) (this boot); $(cat /etc/vh/selinux/mode 2>/dev/null || echo unset) at the next boot (/etc/vh/selinux/mode)"
+		[ -s /run/vh/selinux ] && sed 's/^/loaded: /' /run/vh/selinux
+		b=/sys/fs/selinux/booleans/secure_mode_policyload
+		[ -r "$b" ] && echo "secure_mode_policyload: $(cut -d' ' -f1 "$b") (1: no policy load and no setenforce until the next boot)"
+		echo "this shell: $(cat /proc/self/attr/current)"
+		echo "denials this boot: $(dmesg 2>/dev/null | grep -ac 'avc:  denied')"
+		echo "policy: $(sed -n 's/^COMMIT=//p' /etc/vh/selinux/BUILD 2>/dev/null) ($(wc -l < /etc/vh/selinux/file_contexts 2>/dev/null || echo 0) file contexts)"
+	else
+		echo "active: no (lsm: $(cat /sys/kernel/security/lsm 2>/dev/null)); VH_MAC=$(sed -n 's/^VH_MAC=//p' /root/vh/vh.conf 2>/dev/null | tr -d '"')"
+		echo "the stock kernel has no SELinux: it runs on the machine kernel built with features/selinux"
+	fi
+	;;
+denials)
+	# "avc:  denied  { read } for  pid=N comm="x" name="y" dev=".." ino=N scontext=u:r:a_t:s0 tcontext=u:r:b_t:s0 tclass=file permissive=1"
+	# -> one line each, and the CIL that would allow it (for selinux/policy, never for the running system)
+	dmesg 2>/dev/null | grep -a 'avc:  denied' | sed 's/.*avc:  denied  //' | sort | uniq -c | sort -rn | while read -r n rest; do
+		perms=$(printf '%s' "$rest" | sed 's/^{ \(.*\) } for .*/\1/')
+		comm=$(printf '%s' "$rest" | sed -n 's/.* comm="\([^"]*\)".*/\1/p')
+		name=$(printf '%s' "$rest" | sed -n 's/.* name="\([^"]*\)".*/\1/p')
+		s=$(printf '%s' "$rest" | sed -n 's/.* scontext=[^:]*:[^:]*:\([^:]*\):.*/\1/p')
+		t=$(printf '%s' "$rest" | sed -n 's/.* tcontext=[^:]*:[^:]*:\([^:]*\):.*/\1/p')
+		c=$(printf '%s' "$rest" | sed -n 's/.* tclass=\([a-z_0-9]*\).*/\1/p')
+		printf '%4d  %-14s %-18s %s %s { %s }%s\n' "$n" "$comm" "$s" "$t" "$c" "$perms" "${name:+  ($name)}"
+		printf '      (allow %s %s (%s (%s)))\n' "$s" "$t" "$c" "$perms"
+	done
+	[ "$(dmesg 2>/dev/null | grep -ac 'avc:  denied')" = 0 ] && echo "no denials this boot"
+	;;
+mode)
+	m=${1:?"permissive or enforcing"}
+	case $m in permissive|enforcing) ;; *) echo "mode: permissive or enforcing" >&2; exit 2 ;; esac
+	[ -d /etc/vh/selinux ] || { echo "no /etc/vh/selinux: VH_MAC is not selinux" >&2; exit 1; }
+	echo "$m" > /etc/vh/selinux/mode
+	echo "$m from the next boot (this boot stays as it is: the policy is one-way after the load)"
+	[ "$m" = enforcing ] && echo "before rebooting: doas vh-selinux denials should be empty after a day of normal use"
+	;;
+relabel)
+	exec /usr/local/sbin/vh-selabel "$@"
+	;;
+context)
+	cat "/proc/${1:-self}/attr/current"; echo
+	;;
+*)
+	sed -n '2,9p' "$0"; exit 2 ;;
+esac

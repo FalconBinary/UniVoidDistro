@@ -17,14 +17,16 @@ CONFIG_SECURITY_LOCKDOWN_LSM=y
 CONFIG_SECURITY_LOCKDOWN_LSM_EARLY=y
 CONFIG_LOCK_DOWN_KERNEL_FORCE_CONFIDENTIALITY=y
 # lsm=landlock,lockdown,yama,apparmor: the same order, as the default; the BPF LSM is off
-# (docs/principles.md: unprivileged BPF off, BPF LSM off).
+# (docs/principles.md: unprivileged BPF off, BPF LSM off). With VH_MAC=selinux the plan adds
+# features/selinux (CONFIG_SECURITY_SELINUX) and the command line names selinux before apparmor:
+# the first exclusive LSM the kernel has is the one that runs (docs/uni/selinux.md).
 CONFIG_SECURITY=y
 CONFIG_SECURITY_LANDLOCK=y
 CONFIG_SECURITY_YAMA=y
 CONFIG_SECURITY_APPARMOR=y
 CONFIG_LSM="landlock,lockdown,yama,apparmor"
 # CONFIG_BPF_LSM is not set
-# CONFIG_SECURITY_SELINUX is not set
+# CONFIG_SECURITY_SELINUX is not set (features/selinux turns it on)
 # CONFIG_SECURITY_SMACK is not set
 # CONFIG_SECURITY_TOMOYO is not set
 # CONFIG_SECURITY_LOADPIN is not set

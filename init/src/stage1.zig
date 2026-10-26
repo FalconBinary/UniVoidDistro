@@ -52,6 +52,7 @@ const Step = struct {
 /// the order of runit-void's core-services with the vh scripts interleaved by their numbers
 pub const steps = [_]Step{
     .{ .name = "pseudofs", .run = stPseudofs }, // 00-pseudofs.sh
+    .{ .name = "vh-selinux", .run = vhsteps.selinuxLoad }, // the policy, before any process is started (docs/uni/selinux.md)
     .{ .name = "static-devnodes", .run = misc.staticDevnodes }, // 01-static-devnodes.sh
     .{ .name = "kmods", .run = misc.kmods, .not_in_container = true }, // 02-kmods.sh
     .{ .name = "udev-start", .run = udev.start, .not_in_container = true }, // 02-udev.sh
@@ -60,6 +61,7 @@ pub const steps = [_]Step{
     .{ .name = "console", .run = stConsole, .not_in_container = true }, // 03-console-setup.sh
     .{ .name = "remount-root", .run = mounts.remountRoot, .not_in_container = true }, // 03-filesystems.sh
     .{ .name = "mount-all", .run = mounts.mountAll, .not_in_container = true },
+    .{ .name = "vh-selinux-label", .run = vhsteps.selinuxLabel }, // the labels of what stage 1 mounted
     .{ .name = "swap", .run = mounts.swapAll, .not_in_container = true }, // 04-swap.sh
     .{ .name = "vh-mounts", .run = stVhMounts }, // 04-vh-mounts.sh
     .{ .name = "misc", .run = stMisc }, // 05-misc.sh
@@ -259,7 +261,7 @@ const testing = std.testing;
 
 test "steps: the order of the core-services" {
     var prev: usize = 0;
-    for ([_][]const u8{ "pseudofs", "udev-settle", "remount-root", "vh-mounts", "vh-zram", "vh-nftables", "sysctl", "vh-apparmor", "vh-suid", "vh-game", "cleanup", "vh-modlock" }) |name| {
+    for ([_][]const u8{ "pseudofs", "vh-selinux", "udev-settle", "remount-root", "vh-selinux-label", "vh-mounts", "vh-zram", "vh-nftables", "sysctl", "vh-apparmor", "vh-suid", "vh-game", "cleanup", "vh-modlock" }) |name| {
         var idx: usize = 0;
         for (steps, 0..) |s, i| if (vh.eql(s.name, name)) {
             idx = i;

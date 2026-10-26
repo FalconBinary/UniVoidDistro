@@ -1,0 +1,475 @@
+;; selinux/policy/01-base.cil: the foundation of UniVoidDistro's policy (docs/uni/selinux.md).
+;; One monolithic policy written for this system alone, in CIL: no reference policy, no
+;; modules, no unconfined domain. Every process runs in a domain this file or its siblings
+;; declare; what a domain may do is listed, everything else is denied.
+;;
+;; Conventions: types end in _t, the executable of a domain in _exec_t, a daemon's data in
+;; _var_lib_t / _var_run_t / _conf_t. The macros below are the vocabulary of the other files.
+
+(handleunknown deny)
+;; MLS is on with one sensitivity and no categories: every context ends in s0. The type
+;; enforcement carries the separation; categories (MCS, as Fedora uses them for containers)
+;; would add nothing until the two browser profiles get domains of their own.
+(mls true)
+(sensitivity s0)
+(sensitivityorder (s0))
+(level low (s0))
+(levelrange s0r (low low))
+
+;; the capabilities of the policy format the kernel is asked to use
+(policycap network_peer_controls)
+(policycap open_perms)
+(policycap extended_socket_class)
+(policycap cgroup_seclabel)
+(policycap nnp_nosuid_transition)
+(policycap genfs_seclabel_symlinks)
+(policycap ioctl_skip_cloexec)
+
+;; ---------------------------------------------------------------- users and roles
+;; One SELinux user: the roles and the types carry the separation (no libselinux, no seusers:
+;; the login shell of an account decides its domain, 40-session.cil).
+(user system_u)
+(role object_r)
+(role system_r)
+(role user_r)
+(role admin_r)
+(role game_r)
+(userrole system_u system_r)
+(userrole system_u user_r)
+(userrole system_u admin_r)
+(userrole system_u game_r)
+(userrole system_u object_r)
+(userlevel system_u low)
+(userrange system_u s0r)
+(roleattribute roles)
+(roleattributeset roles (system_r user_r admin_r game_r))
+
+;; ---------------------------------------------------------------- attributes
+(typeattribute domain)          ; every process type
+(typeattribute init_domain)     ; PID 1 and what stage 1 runs in: kernel_t, init_t
+(typeattribute daemon)          ; a service started by init
+(typeattribute userdomain)      ; a logged-in person's shell and what it runs
+(typeattribute netdomain)       ; may open network sockets
+(typeattribute file_type)       ; every type a file may carry
+(typeattribute exec_type)       ; executables that enter a domain
+(typeattribute device_node)     ; /dev nodes
+(typeattribute fs_type)         ; file system types
+(typeattribute tmpfs_type)      ; tmpfs and its contents
+(typeattribute sysctl_type)     ; /proc/sys subtrees
+(typeattribute port_type)
+(typeattribute secret_type)     ; keys, passphrases, shadow: only their owner domain reads them
+(typeattribute home_type)       ; the people's files
+(typeattribute mount_domain)    ; may mount: init, the admin's tools, the sandboxes (user namespaces)
+(typeattribute can_relabel)     ; may change file labels: init, the admin's tools, the package manager
+
+;; ---------------------------------------------------------------- permission sets
+(classpermission file_r) (classpermissionset file_r (file (ioctl read getattr lock open map)))
+(classpermission file_x) (classpermissionset file_x (file (ioctl read getattr lock open map execute execute_no_trans)))
+(classpermission file_rw) (classpermissionset file_rw (file (ioctl read write getattr setattr lock append open map)))
+(classpermission file_manage) (classpermissionset file_manage (file (ioctl read write create getattr setattr lock append open map unlink link rename)))
+(classpermission dir_r) (classpermissionset dir_r (dir (ioctl read getattr lock open search)))
+(classpermission dir_rw) (classpermissionset dir_rw (dir (ioctl read write getattr setattr lock open search add_name remove_name)))
+(classpermission dir_manage) (classpermissionset dir_manage (dir (ioctl read write create getattr setattr lock open search add_name remove_name reparent rmdir)))
+(classpermission lnk_r) (classpermissionset lnk_r (lnk_file (read getattr)))
+(classpermission lnk_manage) (classpermissionset lnk_manage (lnk_file (read getattr setattr create unlink rename)))
+(classpermission chr_rw) (classpermissionset chr_rw (chr_file (ioctl read write getattr lock append open)))
+(classpermission chr_r) (classpermissionset chr_r (chr_file (ioctl read getattr lock open)))
+(classpermission sock_manage) (classpermissionset sock_manage (sock_file (ioctl read write create getattr setattr lock append open unlink link rename)))
+(classpermission sock_w) (classpermissionset sock_w (sock_file (getattr write open)))
+(classpermission fifo_rw) (classpermissionset fifo_rw (fifo_file (ioctl read write getattr lock append open)))
+(classpermission fifo_manage) (classpermissionset fifo_manage (fifo_file (ioctl read write create getattr setattr lock append open unlink link rename)))
+(classpermission process_self) (classpermissionset process_self (process (fork sigchld sigkill sigstop signull signal getsched setsched getsession getpgid setpgid getcap setcap getattr setrlimit getrlimit)))
+(classpermission unix_stream_all) (classpermissionset unix_stream_all (unix_stream_socket (ioctl read write create getattr setattr lock append bind connect listen accept getopt setopt shutdown recvfrom sendto name_bind connectto)))
+(classpermission unix_dgram_all) (classpermissionset unix_dgram_all (unix_dgram_socket (ioctl read write create getattr setattr lock append bind connect getopt setopt shutdown recvfrom sendto name_bind)))
+(classpermission inet_client) (classpermissionset inet_client (tcp_socket (ioctl read write create getattr setattr lock append connect getopt setopt shutdown recvfrom sendto name_connect)))
+(classpermission inet_server) (classpermissionset inet_server (tcp_socket (ioctl read write create getattr setattr lock append bind connect listen accept getopt setopt shutdown recvfrom sendto name_bind node_bind)))
+(classpermission udp_all) (classpermissionset udp_all (udp_socket (ioctl read write create getattr setattr lock append bind connect getopt setopt shutdown recvfrom sendto name_bind node_bind)))
+
+;; ---------------------------------------------------------------- macros
+(macro read_files ((type d) (type f))
+    (allow d f file_r)
+    (allow d f dir_r)
+    (allow d f lnk_r))
+(macro rw_files ((type d) (type f))
+    (allow d f file_rw)
+    (allow d f dir_rw)
+    (allow d f lnk_r))
+(macro manage_files ((type d) (type f))
+    (allow d f file_manage)
+    (allow d f dir_manage)
+    (allow d f lnk_manage)
+    (allow d f fifo_manage)
+    (allow d f sock_manage))
+(macro exec_files ((type d) (type f))
+    (allow d f file_x)
+    (allow d f dir_r)
+    (allow d f lnk_r))
+(macro search_dirs ((type d) (type f))
+    (allow d f (dir (search getattr)))
+    (allow d f lnk_r))
+
+;; a process type: what every domain of this system may do with itself and the base system
+(macro domain_type ((type d))
+    (typeattributeset domain d)
+    (allow d self process_self)
+    (allow d self (fd (use)))
+    (allow d self fifo_rw)
+    (allow d self unix_stream_all)
+    (allow d self unix_dgram_all)
+    (allow d self (sem (create destroy getattr setattr read write associate unix_read unix_write)))
+    (allow d self (shm (create destroy getattr setattr read write associate unix_read unix_write lock)))
+    (allow d self (key (view read write search link setattr create)))
+    (allow d self (anon_inode (create getattr setattr read write map)))
+    ;; the shared libraries, the loader, locales, time zones, /etc (not its secrets), /usr
+    (call exec_files (d lib_t))
+    (call exec_files (d ld_so_t))
+    (call read_files (d ld_so_cache_t))
+    (call read_files (d etc_t))
+    (call read_files (d locale_t))
+    (call read_files (d zoneinfo_t))
+    (call read_files (d usr_t))
+    (call read_files (d fonts_t))
+    (call read_files (d passwd_file_t))
+    (call search_dirs (d root_t))
+    (call search_dirs (d bin_t))
+    (call search_dirs (d var_t))
+    (call search_dirs (d var_lib_t))
+    (call search_dirs (d var_run_t))
+    (call search_dirs (d home_root_t))
+    (call search_dirs (d device_t))
+    (call search_dirs (d tmp_t))
+    (allow d bin_t (dir (read)))
+    (allow d fs_type (filesystem (getattr)))
+    (allow d fs_t (filesystem (getattr)))
+    (allow d device_t (dir (read)))
+    (allow d null_device_t chr_rw)
+    (allow d zero_device_t chr_rw)
+    (allow d random_device_t chr_r)
+    (allow d urandom_device_t chr_r)
+    ;; its own /proc entry, and the kernel's answers about itself
+    (allow d proc_t (dir (search getattr read)))
+    (allow d proc_t (lnk_file (read getattr)))
+    (allow d proc_t file_r)
+    (allow d sysfs_t (dir (search getattr read)))
+    (allow d sysfs_t (lnk_file (read getattr)))
+    (allow d sysfs_t file_r)
+    (allow d sysctl_kernel_t (dir (search)))
+    (allow d sysctl_kernel_t (file (read getattr open)))
+    (allow d sysctl_vm_t (file (read getattr open)))
+    ;; the C library's shared memory and the dynamic loader's work
+    (allow d tmpfs_t (filesystem (getattr)))
+    ;; a message to the system log
+    (allow d devlog_t sock_w)
+    (allow d syslogd_t (unix_dgram_socket (sendto)))
+    (allow d syslogd_t (unix_stream_socket (connectto))))
+
+;; a domain transition: src runs exe and becomes dst (also under no_new_privs)
+(macro domtrans ((type src) (type exe) (type dst))
+    (allow src exe (file (ioctl read getattr lock open map execute)))
+    (allow dst exe (file (ioctl read getattr lock open map execute entrypoint)))
+    (allow src dst (process (transition)))
+    (allow src dst (process2 (nnp_transition nosuid_transition)))
+    (allow dst src (process (sigchld)))
+    (allow dst src (fd (use)))
+    (allow dst src (fifo_file (read write getattr ioctl)))
+    (allow dst src (unix_stream_socket (read write getattr ioctl)))
+    (typetransition src exe process dst))
+
+;; a service: a domain init starts through exe; its data types follow in the caller
+(macro daemon_type ((type d) (type exe))
+    (call domain_type (d))
+    (typeattributeset daemon d)
+    (typeattributeset exec_type exe)
+    (typeattributeset file_type exe)
+    (roletype system_r d)
+    (call domtrans (init_domain exe d))
+    (call domtrans (initrc_t exe d))
+    ;; what init hands to a service: its log pipe, /dev/null, the console
+    (allow d init_domain (fd (use)))
+    (allow d initrc_t (fd (use)))
+    (allow d init_domain (fifo_file (read write getattr)))
+    (allow d initrc_t (fifo_file (read write getattr)))
+    (allow init_domain d (process (signal sigkill signull getsched setsched)))
+    (allow initrc_t d (process (signal sigkill signull)))
+    (allow d console_device_t (chr_file (read write getattr ioctl append)))
+    (allow d var_run_t (dir (read)))
+    (allow d cgroup_t (dir (search getattr))))
+
+;; a file type of the system (a label a file may carry)
+(macro file ((type t))
+    (typeattributeset file_type t)
+    (roletype object_r t))
+(macro secret ((type t))
+    (typeattributeset file_type t)
+    (typeattributeset secret_type t)
+    (roletype object_r t))
+(macro device ((type t))
+    (typeattributeset file_type t)
+    (typeattributeset device_node t)
+    (roletype object_r t))
+(macro executable ((type t))
+    (typeattributeset file_type t)
+    (typeattributeset exec_type t)
+    (roletype object_r t))
+(macro device_restricted ((type t))
+    (typeattributeset file_type t)
+    (roletype object_r t))
+(macro port ((type t))
+    (typeattributeset port_type t)
+    (roletype object_r t))
+
+;; the network: sockets of the given kinds and the named ports
+(macro net_client ((type d))
+    (typeattributeset netdomain d)
+    (allow d self inet_client)
+    (allow d self udp_all)
+    (allow d self (netlink_route_socket (ioctl read write create getattr setattr lock append bind connect getopt setopt shutdown recvfrom sendto nlmsg_read)))
+    (allow d node_t (tcp_socket (node_bind)))
+    (allow d node_t (udp_socket (node_bind)))
+    (allow d netif_t (netif (egress ingress)))
+    (allow d node_t (node (sendto recvfrom))))
+
+;; ---------------------------------------------------------------- the file types
+(type fs_t) (typeattributeset fs_type fs_t) (call file (fs_t))
+(type unlabeled_t) (call file (unlabeled_t))
+(type file_t) (call file (file_t))
+(type root_t) (call file (root_t))
+(type bin_t) (call file (bin_t))
+(type lib_t) (call file (lib_t))
+(type ld_so_t) (call file (ld_so_t))
+(type ld_so_cache_t) (call file (ld_so_cache_t))
+(type usr_t) (call file (usr_t))
+(type etc_t) (call file (etc_t))
+(type etc_runtime_t) (call file (etc_runtime_t))
+(type passwd_file_t) (call file (passwd_file_t))
+(type shadow_t) (call secret (shadow_t))
+(type doas_conf_t) (call file (doas_conf_t))
+(type locale_t) (call file (locale_t))
+(type zoneinfo_t) (call file (zoneinfo_t))
+(type fonts_t) (call file (fonts_t))
+(type var_t) (call file (var_t))
+(type var_lib_t) (call file (var_lib_t))
+(type var_log_t) (call file (var_log_t))
+(type wtmp_t) (call file (wtmp_t))
+(type var_run_t) (call file (var_run_t)) (typeattributeset tmpfs_type var_run_t)
+(type var_cache_t) (call file (var_cache_t))
+(type var_tmp_t) (call file (var_tmp_t)) (typeattributeset tmpfs_type var_tmp_t)
+(type tmp_t) (call file (tmp_t)) (typeattributeset tmpfs_type tmp_t)
+(type tmpfs_t) (call file (tmpfs_t)) (typeattributeset tmpfs_type tmpfs_t) (typeattributeset fs_type tmpfs_t)
+(type home_root_t) (call file (home_root_t))
+(type user_home_dir_t) (call file (user_home_dir_t)) (typeattributeset home_type user_home_dir_t)
+(type user_home_t) (call file (user_home_t)) (typeattributeset home_type user_home_t)
+(type admin_home_t) (call file (admin_home_t)) (typeattributeset home_type admin_home_t)
+(type xfer_t) (call file (xfer_t))                      ; /home/xfer: the person and the browser
+(type browser_home_t) (call file (browser_home_t))      ; /var/lib/vh-browser
+(type modules_object_t) (call file (modules_object_t))  ; /usr/lib/modules
+(type firmware_t) (call file (firmware_t))              ; /usr/lib/firmware
+(type boot_t) (call file (boot_t))
+(type efi_t) (call file (efi_t)) (typeattributeset fs_type efi_t)   ; the ESP (vfat)
+(type sbctl_keys_t) (call secret (sbctl_keys_t))        ; /var/lib/sbctl
+(type xbps_db_t) (call file (xbps_db_t))                ; /var/db/xbps
+(type xbps_cache_t) (call file (xbps_cache_t))          ; /var/cache/xbps
+(type vh_conf_t) (call file (vh_conf_t))                ; /etc/vh (plan, hw.zon, policy)
+(type vh_state_t) (call file (vh_state_t))              ; /var/lib/vh
+(type vh_log_t) (call file (vh_log_t))                  ; /var/log/vh
+(type vh_run_t) (call file (vh_run_t)) (typeattributeset tmpfs_type vh_run_t)             ; /run/vh
+(type vh_init_sock_t) (call file (vh_init_sock_t)) (typeattributeset tmpfs_type vh_init_sock_t)
+(type vh_sandbox_run_t) (call file (vh_sandbox_run_t)) (typeattributeset tmpfs_type vh_sandbox_run_t)   ; /run/vh-sandbox
+(type runit_var_run_t) (call file (runit_var_run_t)) (typeattributeset tmpfs_type runit_var_run_t)       ; /run/runit
+(type udev_var_run_t) (call file (udev_var_run_t)) (typeattributeset tmpfs_type udev_var_run_t)
+(type udev_rules_t) (call file (udev_rules_t))
+(type dbus_var_run_t) (call file (dbus_var_run_t)) (typeattributeset tmpfs_type dbus_var_run_t)
+(type seatd_var_run_t) (call file (seatd_var_run_t)) (typeattributeset tmpfs_type seatd_var_run_t)
+(type user_runtime_t) (call file (user_runtime_t)) (typeattributeset tmpfs_type user_runtime_t)         ; /run/user/UID
+(type faillock_t) (call file (faillock_t)) (typeattributeset tmpfs_type faillock_t)
+(type utmp_t) (call file (utmp_t)) (typeattributeset tmpfs_type utmp_t)
+(type devlog_t) (call file (devlog_t)) (typeattributeset tmpfs_type devlog_t)                            ; /dev/log
+(type seedrng_var_lib_t) (call secret (seedrng_var_lib_t))
+(type unbound_conf_t) (call file (unbound_conf_t))
+(type unbound_var_t) (call file (unbound_var_t))
+(type chrony_var_lib_t) (call file (chrony_var_lib_t))
+(type iwd_conf_t) (call file (iwd_conf_t))
+(type iwd_var_lib_t) (call secret (iwd_var_lib_t))      ; the network passphrases
+(type dhcpcd_var_lib_t) (call file (dhcpcd_var_lib_t))
+(type nft_conf_t) (call file (nft_conf_t))
+(type resolv_conf_t) (call file (resolv_conf_t))
+(type pam_var_run_t) (call file (pam_var_run_t)) (typeattributeset tmpfs_type pam_var_run_t)
+(type game_root_t) (call file (game_root_t))            ; /var/lib/vh/roots/game
+(type kbuild_root_t) (call file (kbuild_root_t))        ; /var/lib/vh/roots/kbuild
+(type sched_object_t) (call file (sched_object_t))      ; /usr/local/lib/vh/vh_sched.o
+
+;; pseudo file systems
+(type proc_t) (call file (proc_t)) (typeattributeset fs_type proc_t)
+(type proc_kmsg_t) (call file (proc_kmsg_t))
+(type proc_mem_t) (call file (proc_mem_t))
+(type sysctl_t) (call file (sysctl_t)) (typeattributeset sysctl_type sysctl_t)
+(type sysctl_kernel_t) (call file (sysctl_kernel_t)) (typeattributeset sysctl_type sysctl_kernel_t)
+(type sysctl_net_t) (call file (sysctl_net_t)) (typeattributeset sysctl_type sysctl_net_t)
+(type sysctl_vm_t) (call file (sysctl_vm_t)) (typeattributeset sysctl_type sysctl_vm_t)
+(type sysctl_fs_t) (call file (sysctl_fs_t)) (typeattributeset sysctl_type sysctl_fs_t)
+(type sysctl_modprobe_t) (call file (sysctl_modprobe_t)) (typeattributeset sysctl_type sysctl_modprobe_t)
+(type sysfs_t) (call file (sysfs_t)) (typeattributeset fs_type sysfs_t)
+(type securityfs_t) (call file (securityfs_t)) (typeattributeset fs_type securityfs_t)
+(type selinuxfs_t) (call file (selinuxfs_t)) (typeattributeset fs_type selinuxfs_t)
+(type efivarfs_t) (call file (efivarfs_t)) (typeattributeset fs_type efivarfs_t)
+(type cgroup_t) (call file (cgroup_t)) (typeattributeset fs_type cgroup_t)
+(type bpf_t) (call file (bpf_t)) (typeattributeset fs_type bpf_t)
+(type devpts_t) (call file (devpts_t)) (typeattributeset fs_type devpts_t)
+(type sockfs_t) (call file (sockfs_t)) (typeattributeset fs_type sockfs_t)
+(type pipefs_t) (call file (pipefs_t)) (typeattributeset fs_type pipefs_t)
+(type anon_inodefs_t) (call file (anon_inodefs_t)) (typeattributeset fs_type anon_inodefs_t)
+(type mqueue_t) (call file (mqueue_t)) (typeattributeset fs_type mqueue_t)
+(type hugetlbfs_t) (call file (hugetlbfs_t)) (typeattributeset fs_type hugetlbfs_t)
+(type fuse_t) (call file (fuse_t)) (typeattributeset fs_type fuse_t)      ; never mounted here (the kernel has no fuse): named so that a mount is a denial, not unlabeled
+
+;; devices
+(type device_t) (call device (device_t))
+(type null_device_t) (call device (null_device_t))
+(type zero_device_t) (call device (zero_device_t))
+(type random_device_t) (call device (random_device_t))
+(type urandom_device_t) (call device (urandom_device_t))
+(type console_device_t) (call device (console_device_t))
+(type tty_device_t) (call device (tty_device_t))
+(type ptmx_t) (call device (ptmx_t))
+(type kmsg_device_t) (call device (kmsg_device_t))
+(type dri_device_t) (call device (dri_device_t))
+(type input_device_t) (call device (input_device_t))
+(type sound_device_t) (call device (sound_device_t))
+(type usb_device_t) (call device (usb_device_t))
+(type video_device_t) (call device (video_device_t))
+(type rfkill_device_t) (call device (rfkill_device_t))
+(type tpm_device_t) (call device (tpm_device_t))
+(type watchdog_device_t) (call device (watchdog_device_t))
+(type kvm_device_t) (call device (kvm_device_t))
+(type fixed_disk_device_t) (call device (fixed_disk_device_t))
+(type removable_device_t) (call device (removable_device_t))
+(type zram_device_t) (call device (zram_device_t))
+(type mapper_device_t) (call device (mapper_device_t))
+(type memory_device_t) (call device_restricted (memory_device_t))   ; /dev/mem, /dev/port: not built; no blanket rule reaches them
+(type cpu_device_t) (call device_restricted (cpu_device_t))         ; /dev/cpu/*/msr: nobody
+(type mouse_device_t) (call device (mouse_device_t))
+(type fuse_device_t) (call device (fuse_device_t))
+(type autofs_device_t) (call device (autofs_device_t))
+(type loop_device_t) (call device (loop_device_t))
+(type net_device_t) (call device (net_device_t))              ; /dev/net/tun
+
+;; the network objects
+(type node_t) (roletype object_r node_t)
+(type netif_t) (roletype object_r netif_t)
+(type port_t) (typeattributeset port_type port_t)
+(type dns_port_t) (call port (dns_port_t))          ; 53
+(type dot_port_t) (call port (dot_port_t))          ; 853
+(type ntp_port_t) (call port (ntp_port_t))          ; 123/udp
+(type ntske_port_t) (call port (ntske_port_t))      ; 4460/tcp
+(type http_port_t) (call port (http_port_t))        ; 80, 443
+(type dhcp_port_t) (call port (dhcp_port_t))        ; 67, 68
+(type ssh_port_t) (call port (ssh_port_t))          ; 22 (git over ssh, the people)
+(type reserved_port_t) (call port (reserved_port_t)) ; 1-1023 otherwise
+(portcon tcp 53 (system_u object_r dns_port_t s0r))
+(portcon udp 53 (system_u object_r dns_port_t s0r))
+(portcon tcp 853 (system_u object_r dot_port_t s0r))
+(portcon udp 123 (system_u object_r ntp_port_t s0r))
+(portcon tcp 4460 (system_u object_r ntske_port_t s0r))
+(portcon tcp 80 (system_u object_r http_port_t s0r))
+(portcon tcp 443 (system_u object_r http_port_t s0r))
+(portcon udp 443 (system_u object_r http_port_t s0r))
+(portcon udp 67 (system_u object_r dhcp_port_t s0r))
+(portcon udp 68 (system_u object_r dhcp_port_t s0r))
+(portcon tcp 22 (system_u object_r ssh_port_t s0r))
+(portcon tcp (1 1023) (system_u object_r reserved_port_t s0r))
+(portcon udp (1 1023) (system_u object_r reserved_port_t s0r))
+(nodecon (0.0.0.0) (0.0.0.0) (system_u object_r node_t s0r))
+(nodecon (::) (::) (system_u object_r node_t s0r))
+(netifcon lo (system_u object_r netif_t s0r) (system_u object_r unlabeled_t s0r))
+(netifcon eth0 (system_u object_r netif_t s0r) (system_u object_r unlabeled_t s0r))
+(netifcon wlan0 (system_u object_r netif_t s0r) (system_u object_r unlabeled_t s0r))
+
+;; ---------------------------------------------------------------- the kernel's initial SIDs
+(type kernel_t)
+(type security_t) (call file (security_t))
+(type init_t)
+(sidcontext kernel (system_u system_r kernel_t s0r))
+(sidcontext security (system_u object_r security_t s0r))
+(sidcontext unlabeled (system_u object_r unlabeled_t s0r))
+(sidcontext fs (system_u object_r fs_t s0r))
+(sidcontext file (system_u object_r file_t s0r))
+(sidcontext file_labels (system_u object_r file_t s0r))
+(sidcontext init (system_u system_r init_t s0r))
+(sidcontext any_socket (system_u object_r unlabeled_t s0r))
+(sidcontext port (system_u object_r port_t s0r))
+(sidcontext netif (system_u object_r netif_t s0r))
+(sidcontext netmsg (system_u object_r unlabeled_t s0r))
+(sidcontext node (system_u object_r node_t s0r))
+(sidcontext igmp_packet (system_u object_r unlabeled_t s0r))
+(sidcontext icmp_socket (system_u object_r unlabeled_t s0r))
+(sidcontext tcp_socket (system_u object_r unlabeled_t s0r))
+(sidcontext sysctl_modprobe (system_u object_r sysctl_modprobe_t s0r))
+(sidcontext sysctl (system_u object_r sysctl_t s0r))
+(sidcontext sysctl_fs (system_u object_r sysctl_fs_t s0r))
+(sidcontext sysctl_kernel (system_u object_r sysctl_kernel_t s0r))
+(sidcontext sysctl_net (system_u object_r sysctl_net_t s0r))
+(sidcontext sysctl_net_unix (system_u object_r sysctl_net_t s0r))
+(sidcontext sysctl_vm (system_u object_r sysctl_vm_t s0r))
+(sidcontext sysctl_dev (system_u object_r sysctl_t s0r))
+(sidcontext kmod (system_u object_r unlabeled_t s0r))
+(sidcontext policy (system_u object_r unlabeled_t s0r))
+(sidcontext scmp_packet (system_u object_r unlabeled_t s0r))
+(sidcontext devnull (system_u object_r null_device_t s0r))
+
+;; ---------------------------------------------------------------- how file systems are labelled
+;; xattr: the root (XFS) and the ESP's host (vfat has no xattrs: genfscon below)
+(fsuse xattr xfs (system_u object_r fs_t s0r))
+(fsuse xattr ext4 (system_u object_r fs_t s0r))
+(fsuse xattr btrfs (system_u object_r fs_t s0r))
+(fsuse xattr f2fs (system_u object_r fs_t s0r))
+;; task: the creating process's label
+(fsuse task pipefs (system_u object_r pipefs_t s0r))
+(fsuse task sockfs (system_u object_r sockfs_t s0r))
+;; trans: tmpfs and devpts get their labels from the mount and type transitions
+(fsuse trans tmpfs (system_u object_r tmpfs_t s0r))
+(fsuse trans devpts (system_u object_r devpts_t s0r))
+(fsuse trans devtmpfs (system_u object_r device_t s0r))
+(fsuse trans mqueue (system_u object_r mqueue_t s0r))
+(fsuse trans hugetlbfs (system_u object_r hugetlbfs_t s0r))
+(fsuse trans ramfs (system_u object_r tmpfs_t s0r))
+;; genfs: everything else by path
+(genfscon proc "/" (system_u object_r proc_t s0r))
+(genfscon proc "/kmsg" (system_u object_r proc_kmsg_t s0r))
+(genfscon proc "/kcore" (system_u object_r proc_mem_t s0r))
+(genfscon proc "/sys" (system_u object_r sysctl_t s0r))
+(genfscon proc "/sys/kernel" (system_u object_r sysctl_kernel_t s0r))
+(genfscon proc "/sys/kernel/modprobe" (system_u object_r sysctl_modprobe_t s0r))
+(genfscon proc "/sys/net" (system_u object_r sysctl_net_t s0r))
+(genfscon proc "/sys/vm" (system_u object_r sysctl_vm_t s0r))
+(genfscon proc "/sys/fs" (system_u object_r sysctl_fs_t s0r))
+(genfscon sysfs "/" (system_u object_r sysfs_t s0r))
+(genfscon securityfs "/" (system_u object_r securityfs_t s0r))
+(genfscon selinuxfs "/" (system_u object_r security_t s0r))
+(genfscon efivarfs "/" (system_u object_r efivarfs_t s0r))
+(genfscon cgroup2 "/" (system_u object_r cgroup_t s0r))
+(genfscon bpf "/" (system_u object_r bpf_t s0r))
+(genfscon vfat "/" (system_u object_r efi_t s0r))
+(genfscon iso9660 "/" (system_u object_r removable_device_t s0r))
+(genfscon anon_inodefs "/" (system_u object_r anon_inodefs_t s0r))
+(genfscon binfmt_misc "/" (system_u object_r unlabeled_t s0r))
+(genfscon debugfs "/" (system_u object_r unlabeled_t s0r))
+(genfscon tracefs "/" (system_u object_r unlabeled_t s0r))
+(genfscon pstore "/" (system_u object_r unlabeled_t s0r))
+(genfscon fusectl "/" (system_u object_r unlabeled_t s0r))
+(genfscon fuse "/" (system_u object_r fuse_t s0r))
+
+;; ---------------------------------------------------------------- constraints
+;; a transition may change the role only through login (the person's shell) and doas
+(typeattribute can_change_role)
+(constrain (process (transition dyntransition))
+    (or (eq r1 r2) (eq t1 can_change_role)))
+;; the one SELinux user never changes
+(constrain (process (transition dyntransition)) (eq u1 u2))
+;; a file is created with its creator's user; a relabel keeps it
+(constrain (dir (create relabelto)) (eq u1 u2))
+(constrain (file (create relabelto)) (eq u1 u2))
+(constrain (lnk_file (create relabelto)) (eq u1 u2))
+(constrain (chr_file (create relabelto)) (eq u1 u2))
+(constrain (blk_file (create relabelto)) (eq u1 u2))
+(constrain (sock_file (create relabelto)) (eq u1 u2))
+(constrain (fifo_file (create relabelto)) (eq u1 u2))
