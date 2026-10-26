@@ -214,6 +214,42 @@ hardware enters: N shows the plan and the tier and runs the gate; G is GPU-vendo
 | **U6: live image** | x86_64 and aarch64 images | U1 |
 | **V (continuous)** | the VM matrix, the fixture corpus from real snapshots, runbooks per vendor | — |
 
+### State (2026-10-26, evening): the three pieces on the VM rig
+
+The first runs of track I, track S and track E on GitHub's KVM rig (`kvm-smoke`, EPYC-Milan ×4,
+the stock kernel 6.18.58_1 and the machine kernel of kernel-custom run 40321559300:
+`kernel/hw/qemu-q35.zon`, features `auto,selinux`, `CONFIG_SCHED_CLASS_EXT=y`,
+`CONFIG_SECURITY_SELINUX=y`). The rig grew the steps `vhinit`, `vhinit-rollback`, `sched` and
+`selinux` (`tests/vm/steps/`), a comma-separated `step` list, the input `mac` (the policy
+compiled on the runner by `selinux/build.sh` and installed through `VH_SELINUX_DIR`, which
+`10-install.sh` now honours) and an init-aware `base`; the scheduled run is unchanged.
+
+- **vh-init as PID 1: verified** (run 40343277197, `vhinit,base,vhinit-rollback`, 98 checks;
+  run 40340658992, `vhinit,sched`, 66 checks). The boot after `vh-init --install` and the UKI
+  rebuild runs vh-init: stage 1 in PID 1 in 970 to 1118 ms over four boots (udev-settle about
+  half of it), 15 services started in parallel (agetty-tty1 at +6 ms, dbus ready in 103 ms),
+  settled 5.1 s after the manager (vh-check's delay), `vh-ctl status` and the `sv` shim agree,
+  vh-audit ok 178 with the rig's one FAIL (Secure Boot off) against ok 171 under runit,
+  `check.py base` green under vh-init, runit-void's `poweroff` through stage 3 (67 to 76 ms)
+  and `reboot(2)`, `--rollback` back to runit with every service up. The rig found four
+  faults of the container-verified v0.2, all fixed here: the shim ran runit's `sv` under the
+  name `sv.runit` (an LSB init script to runit), the manager saw no service because runit's
+  stage 2 makes `/var/service` resolve, a service enabled again after `disable` stayed down,
+  and the audit took a done oneshot for a dead service. Open: PID 1 holds 4.2 MiB of RSS; the
+  rebuilt UKI replaces this kernel version's, so no runit UKI remains until the rollback (the
+  message claimed a fallback; an install through the boot assessment is the follow-up). `init=`
+  stays runit's by default.
+- **vh-sched under vh-init: verified** (run 40340658992). The installer puts the loader and
+  `vh_sched.o` in place (it never had: the service named a program that was not installed);
+  on the machine kernel's trial boot the service is ready 83 ms after its start, the loader
+  found 1 LLC of 4 CPUs, loaded the 10 programs in 41 ms, the kernel reports `state=enabled
+  switch_all=1 root/ops=vh_sched`; `vh-ctl stop` ends it through SIGTERM (`SCX_EXIT_UNREG`,
+  exit 0) and the kernel is back on EEVDF; `start` loads it again (`--ready-fd`); on the stock
+  kernel the loader says "no sched_ext in this kernel" and the manager waits with its backoff.
+  No speed claim: the bench method applies.
+- **SELinux permissive: [VERIFY]** the run is in progress; this entry is completed below when
+  it ends.
+
 ### State (2026-10-26): init, scheduler, SELinux, the desktop configuration
 
 Three tracks moved on the Mac (containers and the S1 QEMU rig), none on the VM rig or real
