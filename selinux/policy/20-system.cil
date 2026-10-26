@@ -59,6 +59,7 @@
 (typetransition dbusd_t var_run_t dir "dbus" dbus_var_run_t)
 (typetransition init_domain var_run_t dir "dbus" dbus_var_run_t)
 (typetransition initrc_t var_run_t dir "dbus" dbus_var_run_t)
+(call manage_files (initrc_t dbus_var_run_t))    ; /etc/sv/dbus/run: install -d /run/dbus
 (allow dbusd_t var_lib_t (dir (search getattr)))
 (allow dbusd_t domain (dir (search getattr)))
 (allow dbusd_t domain (file (read getattr open)))
@@ -101,6 +102,8 @@
 (allow getty_t console_device_t (chr_file (ioctl read write getattr setattr lock append open)))
 (call rw_files (getty_t utmp_t))
 (allow getty_t var_log_t (dir (search)))         ; /var/log/wtmp: the login record
+(allow getty_t var_run_t (dir (write add_name remove_name)))   ; /run/agetty.reload
+(allow getty_t var_run_t (file (create read write getattr open unlink)))
 (call rw_files (getty_t wtmp_t))
 (dontaudit getty_t self (capability2 (checkpoint_restore)))   ; asked for on the way, not needed
 (call read_files (getty_t etc_runtime_t))

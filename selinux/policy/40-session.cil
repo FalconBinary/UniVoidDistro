@@ -187,6 +187,12 @@
 (allow pipewire_t sound_device_t (chr_file (ioctl read write getattr lock append open map)))
 (allow pipewire_t sound_device_t (dir (search getattr read open)))      ; ALSA enumerates /dev/snd
 (allow pipewire_t root_t (dir (read open)))                             ; it lists / looking for its plugin directories
+(allow pipewire_t user_home_dir_t (dir (search getattr read open write add_name remove_name create)))   ; WirePlumber's state in ~/.local/state
+(call manage_files (pipewire_t user_home_t))
+(typetransition pipewire_t user_home_dir_t dir user_home_t)
+(typetransition pipewire_t user_home_dir_t file user_home_t)
+(call read_files (pipewire_t udev_rules_t))                              ; libudev reads /etc/udev/udev.conf
+(allow pipewire_t var_lib_t (file (read getattr open)))                  ; /var/lib/dbus/machine-id
 (allow pipewire_t video_device_t (chr_file (ioctl read write getattr lock append open map)))
 (call manage_files (pipewire_t user_runtime_t))
 (call manage_files (pipewire_t vh_sandbox_run_t))
