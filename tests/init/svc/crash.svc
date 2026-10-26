@@ -1,0 +1,5 @@
+# exits at once: the restarts back off from 200 ms to 800 ms
+exec = /bin/sh -c "date +%s%N >> /tmp/crash-runs; exit 1"
+restart_delay = 200ms
+restart_max = 800ms
+log = none

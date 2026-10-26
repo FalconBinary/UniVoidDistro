@@ -1,0 +1,10 @@
+# the sched_ext scheduler (sched/README.md): the loader holds the link; when the kernel ends
+# the scheduler (an error, sysrq-S) the loader exits and vh-init starts it again with a
+# backoff; between the two the kernel's own scheduler runs. Enabled by
+# doas vh-ctl enable vh-sched after the kernel of the machine has sched_ext.
+exec = /usr/local/sbin/vh-sched run
+restart = always
+restart_delay = 2s
+restart_max = 60s
+caps = bpf sys_admin perfmon sys_nice
+log = file

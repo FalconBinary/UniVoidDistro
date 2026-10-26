@@ -1,0 +1,3 @@
+# the test services of tests/init/init_test.sh: a longrun that says it is ready through fd 3
+exec = /bin/sh -c "trap 'date +%s%N > /tmp/stop-a; exit 0' TERM; date +%s%N > /tmp/ready-a; echo ready >&3; exec 3>&-; while :; do sleep 0.2; done"
+ready = fd 3

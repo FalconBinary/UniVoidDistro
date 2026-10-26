@@ -1,0 +1,1 @@
+exec = /bin/sh -c "cat /proc/self/cgroup > /tmp/cgroup; exec sleep 1000"

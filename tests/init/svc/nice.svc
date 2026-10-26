@@ -1,0 +1,3 @@
+nice = 10
+sched = batch
+exec = /bin/sh -c "cut -d' ' -f19 /proc/self/stat > /tmp/nice; exec sleep 1000"

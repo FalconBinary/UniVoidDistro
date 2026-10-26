@@ -1,0 +1,4 @@
+# the lid and the power button (rootfs/etc/sv/vh-acpid, docs/05, docs/12)
+exec = /usr/local/sbin/vh-acpid
+after = udevd
+log = file

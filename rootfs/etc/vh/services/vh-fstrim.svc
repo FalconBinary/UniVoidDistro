@@ -1,0 +1,10 @@
+# weekly TRIM (rootfs/etc/sv/vh-fstrim, docs/11): a periodic oneshot; vh-init keeps the time of
+# the last run in /var/lib/vh/init/vh-fstrim.last, so the week survives reboots. No shell loop
+# and no sleep process stay resident.
+kind = oneshot
+every = 1w
+delay = 5m
+exec = /usr/bin/ionice -c3 /usr/bin/fstrim -v /
+restart = no
+sched = idle
+log = file

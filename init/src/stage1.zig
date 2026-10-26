@@ -118,6 +118,12 @@ fn detectContainer() bool {
 
 const Timing = struct { name: []const u8, us: u64 };
 
+/// stage 1 for vh-init (PID 1): every step, the markers as vh-stage1 writes them; the number of errors
+pub fn runBoot() usize {
+    run(null, false);
+    return sys.failures;
+}
+
 /// the whole stage 1, or only the selected steps
 fn run(selected: ?[]const []const u8, force: bool) void {
     const t0 = sys.monoUs();

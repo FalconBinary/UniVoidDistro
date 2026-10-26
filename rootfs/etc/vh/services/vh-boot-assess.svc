@@ -1,0 +1,7 @@
+# the boot assessment of a machine kernel, once a boot (rootfs/etc/sv/vh-boot-assess,
+# docs/uni/kernel.md): after vh-check's verdict, which it reads
+kind = oneshot
+after = vh-check
+exec = /usr/local/sbin/vh-limine-update --booted
+restart = no
+log = file

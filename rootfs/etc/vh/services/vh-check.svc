@@ -1,0 +1,8 @@
+# is this still the machine the system was planned for: vh-kconf check once a boot
+# (rootfs/etc/sv/vh-check, docs/uni/runtime.md). A oneshot 5 s after the services start, so the
+# drivers have asked for their firmware; no `sleep 5; exec pause` processes stay behind.
+kind = oneshot
+delay = 5s
+exec = /usr/local/sbin/vh-kconf check
+restart = no
+log = file

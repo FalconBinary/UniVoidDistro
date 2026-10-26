@@ -1,0 +1,2 @@
+caps = none
+exec = /bin/sh -c "grep -E 'CapEff|CapBnd' /proc/self/status > /tmp/rootcaps; exec sleep 1000"

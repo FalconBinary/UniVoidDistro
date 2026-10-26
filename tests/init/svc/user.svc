@@ -1,0 +1,2 @@
+user = nobody
+exec = /bin/sh -c "id -u > /tmp/user-id; id -G > /tmp/user-groups; exec sleep 1000"
