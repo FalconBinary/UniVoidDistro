@@ -12,8 +12,11 @@
 //! what scx_bpf_error() does in C: the kernel then exits the scheduler with SCX_EXIT_ERROR_BPF.
 const std = @import("std");
 
-/// `struct task_struct`: only passed through to kfuncs here
+/// `struct task_struct`: passed through to kfuncs; its fields are read at the offsets the
+/// loader took from the kernel's BTF (`field`, `setField`)
 pub const TaskStruct = opaque {};
+/// `struct cpumask`
+pub const Cpumask = opaque {};
 
 /// The context of a struct_ops callback: the kernel passes the arguments as an array of
 /// 8-byte slots (one per argument, `u64 args[]`), not as the typed arguments; the verifier
@@ -42,6 +45,21 @@ pub const Ctx = extern struct {
     }
 };
 
+/// A field of a kernel struct behind a trusted pointer, at an offset the loader read from
+/// the kernel's BTF into the frozen `.rodata`: the verifier sees the offset as a constant and
+/// checks the access against the struct's type (no CO-RE needed).
+pub inline fn field(comptime T: type, p: anytype, off: u32) T {
+    const addr: *align(1) const T = @ptrFromInt(@intFromPtr(p) + off);
+    return addr.*;
+}
+
+/// a write to a task_struct field the verifier allows a sched_ext program to write:
+/// scx.slice, scx.dsq_vtime, scx.disallow
+pub inline fn setField(comptime T: type, p: anytype, off: u32, v: T) void {
+    const addr: *align(1) T = @ptrFromInt(@intFromPtr(p) + off);
+    addr.* = v;
+}
+
 /// the head of `struct scx_exit_info` (kernel/sched/ext_internal.h, 6.18): kind at 0,
 /// exit_code at 8, flags at 16; the strings behind it need bpf_probe_read_kernel, which
 /// lockdown=confidentiality forbids, so they are not read
@@ -62,6 +80,11 @@ pub extern fn scx_bpf_create_dsq(dsq_id: u64, node: i32) i32;
 pub extern fn scx_bpf_destroy_dsq(dsq_id: u64) void;
 pub extern fn scx_bpf_dsq_nr_queued(dsq_id: u64) i32;
 pub extern fn scx_bpf_select_cpu_dfl(p: *TaskStruct, prev_cpu: i32, wake_flags: u64, is_idle: *bool) i32;
+pub extern fn scx_bpf_test_and_clear_cpu_idle(cpu: i32) bool;
+pub extern fn scx_bpf_task_cpu(p: *const TaskStruct) i32;
+pub extern fn scx_bpf_reenqueue_local() u32;
+pub extern fn scx_bpf_kick_cpu(cpu: i32, flags: u64) void;
+pub extern fn bpf_cpumask_test_cpu(cpu: u32, mask: *const Cpumask) bool;
 pub extern fn scx_bpf_error_bstr(fmt: [*:0]const u8, data: [*]u64, data_sz: u32) void;
 pub extern fn scx_bpf_exit_bstr(exit_code: i64, fmt: [*:0]const u8, data: [*]u64, data_sz: u32) void;
 
@@ -82,11 +105,15 @@ pub inline fn err(comptime msg: [:0]const u8) void {
 pub const ringbuf_output: *align(1) const fn (map: *const anyopaque, data: *const anyopaque, size: u64, flags: u64) callconv(.c) i64 = @ptrFromInt(130);
 pub const ktime_get_ns: *align(1) const fn () callconv(.c) u64 = @ptrFromInt(5);
 pub const get_smp_processor_id: *align(1) const fn () callconv(.c) u32 = @ptrFromInt(8);
+/// the per-task storage: the value of `map` for the task, made when `flags` has GET_F_CREATE
+pub const task_storage_get: *align(1) const fn (map: *const anyopaque, task: *TaskStruct, value: ?*const anyopaque, flags: u64) callconv(.c) ?*anyopaque = @ptrFromInt(156);
+pub const LOCAL_STORAGE_GET_F_CREATE: u64 = 1;
 
 // ---------------------------------------------------------------- maps
 
 /// A map definition in the `.maps` section; the loader creates the map and relocates every
-/// `ld_imm64` that points at the definition to the map's fd.
+/// `ld_imm64` that points at the definition to the map's fd. `value_type` names the struct of
+/// the generated BTF the value has (0: none); a task storage map must have one.
 pub const MapDef = extern struct {
     type: u32,
     key_size: u32,
@@ -96,17 +123,25 @@ pub const MapDef = extern struct {
 
     pub const array = 2;
     pub const ringbuf = 27;
+    pub const task_storage = 29;
+    /// BPF_F_NO_PREALLOC: task storage maps must have it
+    pub const F_NO_PREALLOC: u32 = 1;
 };
 
 // ---------------------------------------------------------------- sched_ext constants (include/linux/sched/ext.h)
 
 pub const SCX_SLICE_DFL: u64 = 20 * 1000 * 1000;
 pub const SCX_DSQ_FLAG_BUILTIN: u64 = 1 << 63;
+pub const SCX_DSQ_FLAG_LOCAL_ON: u64 = 1 << 62;
 pub const SCX_DSQ_INVALID: u64 = SCX_DSQ_FLAG_BUILTIN | 0;
 pub const SCX_DSQ_GLOBAL: u64 = SCX_DSQ_FLAG_BUILTIN | 1;
 pub const SCX_DSQ_LOCAL: u64 = SCX_DSQ_FLAG_BUILTIN | 2;
+pub const SCX_DSQ_LOCAL_ON: u64 = SCX_DSQ_FLAG_BUILTIN | SCX_DSQ_FLAG_LOCAL_ON;
 pub const SCX_ENQ_WAKEUP: u64 = 1;
+pub const SCX_ENQ_HEAD: u64 = 1 << 4;
 pub const SCX_ENQ_PREEMPT: u64 = 1 << 32;
+pub const SCX_ENQ_REENQ: u64 = 1 << 40;
+pub const SCX_KICK_IDLE: u64 = 1;
 
 /// Every program root declares `pub const panic = bpf.panic`: the handlers are never
 /// referenced in ReleaseFast without an explicit @panic, so nothing of them is emitted.
@@ -125,4 +160,10 @@ pub const panic = std.debug.no_panic;
 /// read afterwards.
 pub inline fn count(p: *u64) void {
     _ = @atomicRmw(u64, p, .Add, 1, .monotonic);
+}
+
+/// a read of a .bss value another CPU may be writing (no @atomicLoad on BPF)
+pub inline fn load(p: *const u64) u64 {
+    const v: *const volatile u64 = @ptrCast(p);
+    return v.*;
 }

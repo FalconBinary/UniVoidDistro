@@ -1,12 +1,21 @@
 #!/bin/sh
-# vh-sched spike S1: boot the test kernel of ARCH under QEMU with an initramfs that holds
-# busybox, vh-sched and the BPF objects, run /test.sh, keep the serial log.
+# vh-sched: boot the test kernel of ARCH under QEMU with an initramfs that holds busybox,
+# vh-sched and the BPF objects, run /test.sh, keep the serial log.
 #   run-vm.sh arm64 | x86_64 [extra kernel arguments]
+#   VHL_SMP="sockets=2,cores=2,threads=1"   the topology QEMU gives the guest (default 4 CPUs):
+#                                            two "packages" make two LLCs for vh-sched
+#   VHL_TEST=path/to/test.sh                 another test script (default initrd/test.sh here)
+#   VHL_TCG_THREAD=single|multi             x86_64 only: TCG single-threaded (default) or one host
+#                                            thread per vCPU; multi crashed the 6.18 guest in its own
+#                                            text patching (sched/README.md, the x86_64 run)
 set -eu
 arch=$1
 shift
 cache=${VHL_S1:-$HOME/.cache/vhl-s1}
-mk=$(dirname "$0")/mkinitrd.py
+here=$(cd "$(dirname "$0")" && pwd)
+mk=$here/mkinitrd.py
+smp=${VHL_SMP:-4}
+test_sh=${VHL_TEST:-$here/initrd/test.sh}
 case $arch in
   arm64) bb=aarch64; out=$cache/out-arm64; img=$cache/Image-arm64-6.18.57 ;;
   x86_64) bb=x86_64; out=$cache/out-x86_64; img=$cache/bzImage-x86_64-6.18.57 ;;
@@ -16,8 +25,8 @@ rm -rf "$d"
 mkdir -p "$d/bin" "$d/bpf" "$d/proc" "$d/sys" "$d/dev"
 cp "$cache/busybox/$bb/bin/busybox.static" "$d/bin/busybox"
 ln -s busybox "$d/bin/sh"
-cp "$cache/initrd/init" "$d/init"
-cp "$cache/initrd/test.sh" "$d/test.sh"
+cp "$here/initrd/init" "$d/init"
+cp "$test_sh" "$d/test.sh"
 cp "$out/bin/vh-sched" "$d/vh-sched"
 cp "$out"/bpf/*.o "$d/bpf/"
 chmod +x "$d/init" "$d/test.sh" "$d/vh-sched" "$d/bin/busybox"
@@ -26,11 +35,11 @@ log=$cache/serial-$arch.log
 rm -f "$log"
 case $arch in
   arm64)
-    qemu-system-aarch64 -M virt -accel hvf -cpu host -smp 4 -m 1024 -display none -monitor none \
+    qemu-system-aarch64 -M virt -accel hvf -cpu host -smp "$smp" -m 1024 -display none -monitor none \
       -serial "file:$log" -kernel "$img" -initrd "$cache/initrd-$arch.gz" \
       -append "console=ttyAMA0 lockdown=confidentiality $*" -no-reboot ;;
   x86_64)
-    qemu-system-x86_64 -M q35 -accel tcg,thread=multi -cpu max -smp 4 -m 1024 -display none -monitor none \
+    qemu-system-x86_64 -M q35 -accel tcg,thread=${VHL_TCG_THREAD:-single} -cpu max -smp "$smp" -m 1024 -display none -monitor none \
       -serial "file:$log" -kernel "$img" -initrd "$cache/initrd-$arch.gz" \
       -append "console=ttyS0 lockdown=confidentiality $*" -no-reboot ;;
 esac
