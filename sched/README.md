@@ -52,7 +52,16 @@ out/bin/vh-sched run                                          # the service: /us
                                                               # SIGTERM (exit 0) or the kernel ends it (exit 1)
 doas vh-ctl enable vh-sched                                   # under vh-init: rootfs/etc/vh/services/vh-sched.svc
 VHL_SMP="sockets=2,cores=2,threads=1" sched/test/run-vm.sh arm64   # the QEMU rig (sched/test/README.md)
+python3 tests/vm/check.py vhinit,sched --repo                 # the VM rig: the service under vh-init on the machine
+                                                              # kernel of build/kernel-custom (kvm-smoke: step=vhinit,sched
+                                                              # with kernel_run)
 ```
+
+The installer puts the loader at `/usr/local/sbin/vh-sched` and the object at
+`/usr/local/lib/vh/vh_sched.o` with the other Zig tools (`install/build-tools.sh`; the live image
+brings them built, `live/prebuilt.sh`); nothing runs until `doas vh-ctl enable vh-sched` under
+vh-init on a kernel with `CONFIG_SCHED_CLASS_EXT` (every machine kernel of `kernel/profiles/mandatory`
+has it; the stock kernel does not, and there the loader exits and the manager waits with its backoff).
 
 **Verified** (2026-10-26, the S1 rig: the small 6.18.57 kernels of `sched/test`, QEMU): on arm64
 (hvf, 4 CPUs) every program of v1 passes the verifier (584 instructions, 10 programs, the task

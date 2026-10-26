@@ -72,10 +72,17 @@ tests/selinux/run.sh                    compiles, then tests/selinux/checks.py r
                                         the browser away from what is not theirs, every exec type entered
                                         by a transition, every domain in a role, the file contexts within
                                         vh-selabel's subset
+tests/vm/steps/selinux.py               the VM rig (kvm-smoke: mac=selinux, step=vhinit,selinux with
+                                        kernel_run): the policy built on the runner, an installation with
+                                        VH_MAC=selinux, the machine kernel's trial boot under vh-init,
+                                        the labels, the domains, a login on tty1 into the desktop, every
+                                        AVC denial listed with the CIL it asks for
 ```
 
 **At installation** (`VH_MAC=selinux`): the live image brings the policy built
-(`live/prebuilt.sh` runs `selinux/build.sh`); `10-install.sh` copies `policy.33`,
+(`live/prebuilt.sh` runs `selinux/build.sh`); from an image without it (Void's own, the VM
+rig) `VH_SELINUX_DIR=DIR` in `vh.conf` names a directory `sh selinux/build.sh DIR` made,
+checked against its `SHA256SUMS`; `10-install.sh` copies `policy.33`,
 `file_contexts`, `BUILD` and `SHA256SUMS` into `/etc/vh/selinux`; `chroot.sh` writes the
 mode and runs `vh-selabel /` with no policy active (a process with `CAP_SYS_ADMIN` may set
 `security.selinux`), then checks that nothing differs. The plan (`hwdb/platform.zon`,

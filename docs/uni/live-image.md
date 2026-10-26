@@ -43,7 +43,7 @@ The tree, beside Void's root file system:
 | Path | What |
 |---|---|
 | `/root/vh` | the repository at the commit (the installer reads it from there, as from the copy a user makes today) |
-| `/usr/local/lib/vh/prebuilt/bin` | `vh-kconf`, `vh-plan` and the Zig tools (`-Dcpu=baseline`, as the installer builds them) |
+| `/usr/local/lib/vh/prebuilt/bin` | `vh-kconf`, `vh-plan` and the Zig tools (`-Dcpu=baseline`, as the installer builds them), the gaming session's programs, `vh-stage1`, `vh-init`, `vh-ctl`, `vh-sched` and its BPF object `vh_sched.o` |
 | `/usr/local/lib/vh/prebuilt/thor` | the thor package and its repository index (`thor/package.sh`) |
 | `/usr/local/lib/vh/prebuilt/desktop/LEVEL-BT` | RefursWM and RefursLine for each x86-64 level and Bluetooth variant (see the first decision) |
 | `/usr/local/lib/vh/prebuilt/SHA256SUMS` | every file above; `BUILD` names the commit and the CI run |

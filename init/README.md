@@ -149,7 +149,8 @@ doas vh-init --install       # init= into the UKI's command line (/etc/default/d
 vh-init --status             # which init is PID 1, this boot's markers, the manager
 doas vh-init --rollback      # init= out again, runit's sv back; rebuild the UKI the same way
 sh tests/init/init_test.sh   # vh-init as PID 1 of a privileged container (below)
-python3 tests/vm/check.py vhinit --repo   # the rig: install, a boot under vh-init, the audit, the rollback
+python3 tests/vm/check.py vhinit,base,vhinit-rollback --repo   # the rig: install, the boot under vh-init, the base
+                                                                # checks on it, the rollback (kvm-smoke: step=...)
 ```
 
 **Verified** (2026-10-26, Apple Silicon, the aarch64 Void container of `tests/docker`):
