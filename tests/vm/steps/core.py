@@ -5,6 +5,9 @@ from vmlib import as_user, audit, boot, check, devname_unused, run, shutdown
 
 
 def step_base(a):
+    """The installed system: the command line, the LSMs, every service, DNS, NTS, vh-kconf check,
+    the audit, the desktop programs, the ruleset, the groups, the power button. Under runit (the
+    default) or under vh-init (after the vhinit step): the service checks take the init's form."""
     vm, ser = boot(a)
     try:
         rc, out = run(ser, "cat /proc/cmdline")
@@ -12,32 +15,53 @@ def step_base(a):
         rc, out = run(ser, "cat /sys/kernel/security/lsm; echo; cat /sys/kernel/security/lockdown")
         check("LSM: apparmor active, no bpf", "apparmor" in out and ",bpf" not in out)
         check("lockdown: confidentiality", "[confidentiality]" in out)
+        rc, out = run(ser, "readlink /proc/1/exe")
+        vhinit = "vh-init" in out
+        print(f"--- PID 1: {'vh-init' if vhinit else out.strip()[-40:]}")
         rc, out = run(ser, "doas sv status /var/service/*")
-        bad = [l for l in out.splitlines() if l.startswith(("down:", "fail:", "warning:"))]
-        check("all runit services running", not bad, "; ".join(bad))
-        # runit's state of each service in /run, as Void's packages keep it: no supervise/ on disk
-        # (rootfs/etc/sv/*/supervise -> /run/runit/supervise.NAME, put in by install_tree)
-        rc, out = run(ser, "find /etc/sv -maxdepth 3 -name supervise ! -type l; echo ===; "
-                           "ls -d /run/runit/supervise.vh-acpid /run/runit/supervise.vh-acpid-log")
-        ondisk = [l for l in out.split("===")[0].splitlines() if l.startswith("/etc/sv/")]
-        check("runit keeps every service's state in /run, none on disk",
-              not ondisk and "/run/runit/supervise.vh-acpid-log" in out, "; ".join(ondisk) or out[-200:].replace("\n", " | "))
-        # an installation from before 2026-10-21: vh-acpid's state on disk under a running runsv;
-        # vh-sv-runstate (doas vh-update runs it first) gives it the link and the service runs again
-        rc, out = run(ser, "rm /var/service/vh-acpid; for i in $(seq 1 30); do pgrep -f '^runsv vh-acpid$' >/dev/null || break; sleep 1; done; "
-                           "rm /etc/sv/vh-acpid/supervise /etc/sv/vh-acpid/log/supervise; "
-                           "mkdir /etc/sv/vh-acpid/supervise /etc/sv/vh-acpid/log/supervise; "
-                           "ln -s /etc/sv/vh-acpid /var/service/vh-acpid; "
-                           "for i in $(seq 1 30); do sv status vh-acpid 2>/dev/null | grep -q '^run:' && break; sleep 1; done; "
-                           "test -d /etc/sv/vh-acpid/supervise && ! test -L /etc/sv/vh-acpid/supervise && echo ONDISK=yes; "
-                           "/usr/local/libexec/vh/vh-sv-runstate; "
-                           "for i in $(seq 1 30); do sv status vh-acpid 2>/dev/null | grep -q '^run:' && break; sleep 1; done; "
-                           "echo LINKS=$(readlink /etc/sv/vh-acpid/supervise),$(readlink /etc/sv/vh-acpid/log/supervise); "
-                           "sv status vh-acpid")
-        check("vh-sv-runstate: an older installation's on-disk state moves to /run, the service runs again",
-              "ONDISK=yes" in out and "vh-acpid: supervise log/supervise -> /run/runit" in out
-              and "LINKS=/run/runit/supervise.vh-acpid,/run/runit/supervise.vh-acpid-log" in out
-              and "run: vh-acpid" in out.split("LINKS=")[-1], out[-500:].replace("\n", " | "))
+        if vhinit:
+            # the sv shim: a oneshot that ran to its end (vh-check, vh-boot-assess) is "down:" to sv
+            # and done to vh-ctl; the services' states are vh-ctl's (init/README.md)
+            rc, st = run(ser, "doas vh-ctl status")
+            bad = [l for l in st.splitlines() if len(l.split()) >= 8 and l.split()[5] in ("want-up", "want-down")
+                   and l.split()[1] not in ("up", "done", "delayed")]
+            check("all services up or done (vh-ctl status; PID 1 is vh-init)", not bad, "; ".join(bad)[-600:])
+            rc, out = run(ser, "find /etc/sv -maxdepth 3 -name supervise ! -type l; echo ===; ls -l /run/vh/init.sock")
+            ondisk = [l for l in out.split("===")[0].splitlines() if l.startswith("/etc/sv/")]
+            check("no runit state on disk; the manager's control socket", not ondisk and "/run/vh/init.sock" in out,
+                  "; ".join(ondisk) or out[-200:].replace("\n", " | "))
+            # a service taken out of /var/service and put back: the manager stops and starts it on reload
+            rc, out = run(ser, "vh-ctl disable vh-acpid; sleep 3; vh-ctl status vh-acpid; echo ===; vh-ctl enable vh-acpid; "
+                               "for i in $(seq 1 30); do vh-ctl status vh-acpid 2>/dev/null | grep -q ' up ' && break; sleep 1; done; vh-ctl status vh-acpid")
+            check("vh-ctl disable stops a runit service, enable starts it again",
+                  "disabled vh-acpid" in out and " up " not in out.split("===")[0] and re.search(r"vh-acpid up \d+", out.split("===")[-1]) is not None,
+                  out[-500:].replace("\n", " | "))
+        else:
+            bad = [l for l in out.splitlines() if l.startswith(("down:", "fail:", "warning:"))]
+            check("all runit services running", not bad, "; ".join(bad))
+            # runit's state of each service in /run, as Void's packages keep it: no supervise/ on disk
+            # (rootfs/etc/sv/*/supervise -> /run/runit/supervise.NAME, put in by install_tree)
+            rc, out = run(ser, "find /etc/sv -maxdepth 3 -name supervise ! -type l; echo ===; "
+                               "ls -d /run/runit/supervise.vh-acpid /run/runit/supervise.vh-acpid-log")
+            ondisk = [l for l in out.split("===")[0].splitlines() if l.startswith("/etc/sv/")]
+            check("runit keeps every service's state in /run, none on disk",
+                  not ondisk and "/run/runit/supervise.vh-acpid-log" in out, "; ".join(ondisk) or out[-200:].replace("\n", " | "))
+            # an installation from before 2026-10-21: vh-acpid's state on disk under a running runsv;
+            # vh-sv-runstate (doas vh-update runs it first) gives it the link and the service runs again
+            rc, out = run(ser, "rm /var/service/vh-acpid; for i in $(seq 1 30); do pgrep -f '^runsv vh-acpid$' >/dev/null || break; sleep 1; done; "
+                               "rm /etc/sv/vh-acpid/supervise /etc/sv/vh-acpid/log/supervise; "
+                               "mkdir /etc/sv/vh-acpid/supervise /etc/sv/vh-acpid/log/supervise; "
+                               "ln -s /etc/sv/vh-acpid /var/service/vh-acpid; "
+                               "for i in $(seq 1 30); do sv status vh-acpid 2>/dev/null | grep -q '^run:' && break; sleep 1; done; "
+                               "test -d /etc/sv/vh-acpid/supervise && ! test -L /etc/sv/vh-acpid/supervise && echo ONDISK=yes; "
+                               "/usr/local/libexec/vh/vh-sv-runstate; "
+                               "for i in $(seq 1 30); do sv status vh-acpid 2>/dev/null | grep -q '^run:' && break; sleep 1; done; "
+                               "echo LINKS=$(readlink /etc/sv/vh-acpid/supervise),$(readlink /etc/sv/vh-acpid/log/supervise); "
+                               "sv status vh-acpid")
+            check("vh-sv-runstate: an older installation's on-disk state moves to /run, the service runs again",
+                  "ONDISK=yes" in out and "vh-acpid: supervise log/supervise -> /run/runit" in out
+                  and "LINKS=/run/runit/supervise.vh-acpid,/run/runit/supervise.vh-acpid-log" in out
+                  and "run: vh-acpid" in out.split("LINKS=")[-1], out[-500:].replace("\n", " | "))
         rc, out = run(ser, "ok=1; for i in 1 2 3 4 5 6 7 8 9 10 11 12; do getent hosts voidlinux.org && { ok=0; break; }; sleep 5; done; test $ok = 0")
         check("DNS through unbound (DoT)", rc == 0)
         rc, out = run(ser, "ok=1; for i in $(seq 1 24); do doas chronyc -n -N authdata | awk 'NR>2 && $2==\"NTS\" && $4>0 {f=1} END {exit !f}' && { ok=0; break; }; sleep 5; done; doas chronyc -N authdata; test $ok = 0")
@@ -90,7 +114,8 @@ def step_base(a):
         check("tools/vh-bench works (dash)", "Report:" in out and "zstd" in out, out[-500:].replace("\n", " | "))
         # at boot vh-acpid may start before socklog-unix and lose its first lines (vlogger
         # without /dev/log): restart, as in the ctools step
-        rc, out = run(ser, "doas sh -c 'sv restart vh-acpid; sleep 3; grep -ah vh-acpid /var/log/socklog/*/current | tail -3; "
+        # under vh-init vh-acpid's output is the manager's log file, not socklog's (vh-acpid.svc: log = file)
+        rc, out = run(ser, "doas sh -c 'sv restart vh-acpid; sleep 3; { grep -ah vh-acpid /var/log/socklog/*/current; cat /var/log/vh/vh-acpid/current; } 2>/dev/null | tail -3; "
                            "grep -c \"Power Button\" /proc/bus/input/devices; ls /sys/bus/acpi/drivers/tiny-power-button 2>/dev/null'")
         if "LNXPWRBN" in out:
             # the fixed button alone (q35; hwdb rule acpi.power-button.fixed): kernel 6.18 drives it with

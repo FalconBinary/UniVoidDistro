@@ -285,9 +285,19 @@ fi
 # brings it (live/prebuilt.sh), the installer only copies it. The machine kernel of the plan
 # gets CONFIG_SECURITY_SELINUX from the feature the rule security.mac.selinux selects.
 if [ "$VH_MAC" = selinux ]; then
-	[ -n "$PREBUILT" ] && [ -s "$PREBUILT/selinux/file_contexts" ] || die "VH_MAC=selinux needs the policy built: install from UniVoidDistro's live image (live/prebuilt.sh builds selinux/ with secilc), or build it with sh selinux/build.sh and set VH_SELINUX_DIR"
+	SELINUX_SRC=
+	if [ -n "$PREBUILT" ] && [ -s "$PREBUILT/selinux/file_contexts" ]; then
+		SELINUX_SRC=$PREBUILT/selinux
+	elif [ -n "$VH_SELINUX_DIR" ]; then
+		# a policy built elsewhere (sh selinux/build.sh DIR, on a USB stick or the VM rig's repository copy)
+		( cd "$VH_SELINUX_DIR" && sha256sum -c --quiet SHA256SUMS ) || die "$VH_SELINUX_DIR: a file does not match its SHA256SUMS"
+		[ -s "$VH_SELINUX_DIR/file_contexts" ] || die "$VH_SELINUX_DIR: no file_contexts"
+		SELINUX_SRC=$VH_SELINUX_DIR
+	fi
+	[ -n "$SELINUX_SRC" ] || die "VH_MAC=selinux needs the policy built: install from UniVoidDistro's live image (live/prebuilt.sh builds selinux/ with secilc), or build it with sh selinux/build.sh DIR and set VH_SELINUX_DIR=DIR"
+	say "SELinux policy from $SELINUX_SRC ($(sed -n 's/^COMMIT=//p' "$SELINUX_SRC/BUILD"))"
 	run install -d -m 0755 "$MNT/etc/vh/selinux"
-	run install -m 0644 "$PREBUILT"/selinux/policy.* "$PREBUILT/selinux/file_contexts" "$PREBUILT/selinux/BUILD" "$PREBUILT/selinux/SHA256SUMS" "$MNT/etc/vh/selinux/"
+	run install -m 0644 "$SELINUX_SRC"/policy.* "$SELINUX_SRC/file_contexts" "$SELINUX_SRC/BUILD" "$SELINUX_SRC/SHA256SUMS" "$MNT/etc/vh/selinux/"
 fi
 [ -f "$CFG" ] && run install -m 0600 "$CFG" "$MNT/root/vh/vh.conf"
 if [ "$DRY_RUN" != 1 ]; then

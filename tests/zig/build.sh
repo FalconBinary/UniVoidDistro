@@ -20,12 +20,15 @@ cp "$b"/zx/bin/* "$b/"
 rm -rf "$b/kx"
 (cd "$repo/kernel" && zig build -Dtarget=x86_64-linux -Dcpu=baseline --prefix "$b/kx")
 cp "$b/kx/bin/vh-kconf" "$b/"
-# the gaming session (session/) and PID 1 (init/): build-tools.sh --prebuilt installs them with the tools
-rm -rf "$b/sx" "$b/ix"
+# the gaming session (session/), PID 1 (init/) and the scheduler (sched/: the loader and the
+# BPF object): build-tools.sh --prebuilt installs them with the tools
+rm -rf "$b/sx" "$b/ix" "$b/scx"
 (cd "$repo/session" && zig build -Dtarget=x86_64-linux -Dcpu=baseline --prefix "$b/sx")
 cp "$b"/sx/bin/* "$b/"
 (cd "$repo/init" && zig build -Dtarget=x86_64-linux -Dcpu=baseline --prefix "$b/ix")
 cp "$b"/ix/bin/* "$b/"
+(cd "$repo/sched" && zig build -Dtarget=x86_64-linux -Dcpu=baseline --prefix "$b/scx")
+cp "$b/scx/bin/vh-sched" "$b/scx/bpf/vh_sched.o" "$b/"
 
 # pin-fetch, vh-hashpw and thor are cross-compiled in a native container: Zig under amd64
 # emulation in docker on Apple Silicon crashes (SIGSEGV), while cross-building is its strength.

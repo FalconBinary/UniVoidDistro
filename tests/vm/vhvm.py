@@ -5,6 +5,7 @@ Works on Linux and macOS (qemu from Homebrew) and drives the VM over the serial 
 with no human involved. Scenarios:
 
   vhvm.py install  --iso void-live.iso   -- a clean installation with the installer of this repo
+                   [--conf 'VH_MAC="selinux"' --selinux DIR]   the SELinux policy built by selinux/build.sh
   vhvm.py boot                            -- boot the installed system: Limine -> UKI ->
                                             LUKS passphrase -> admin login -> commands from --run
   vhvm.py shell                           -- the same, then an interactive console
@@ -199,9 +200,12 @@ class VM:
         shutil.rmtree(self.sockdir, ignore_errors=True)
 
 
-def make_repo_iso(out):
-    """The repository as a tar archive on the VM's second CD drive: file modes are preserved."""
+def make_repo_iso(out, extra=None):
+    """The repository as a tar archive on the VM's second CD drive: file modes are preserved.
+    extra: {name: directory} copied next to the archive (the built SELinux policy)."""
     stage = tempfile.mkdtemp()
+    for name, d in (extra or {}).items():
+        shutil.copytree(d, os.path.join(stage, name))
     # the copy has no .git: .vh-commit tells the installer its commit, which our live image's
     # programs must be of (install/lib.sh vh_prebuilt, docs/uni/live-image.md)
     commit = subprocess.run(["git", "-C", REPO, "rev-parse", "HEAD"], capture_output=True, text=True)
@@ -248,7 +252,7 @@ def cmd_install(a):
     vm = VM(a.dir, a.mem, a.smp)
     vm.new_disk()
     repo_iso = os.path.join(vm.d, "repo.iso")
-    make_repo_iso(repo_iso)
+    make_repo_iso(repo_iso, {"selinux": a.selinux} if a.selinux else None)
     work = tempfile.mkdtemp(dir=vm.d)
     # bsdtar (libarchive) reads ISO 9660 images; GNU tar, the tar of Linux, does not
     subprocess.run(["bsdtar", "-xf", a.iso, "-C", work, "boot/vmlinuz", "boot/initrd"], check=True)
@@ -262,7 +266,9 @@ def cmd_install(a):
     try:
         login(ser, "root", "voidlinux")
         name = os.path.basename(REPO)
-        ser.sh("mkdir -p /tmp/r && mount -o ro /dev/sr1 /tmp/r && tar -xf /tmp/r/vh.tar -C /root && umount /tmp/r && "
+        ser.sh("mkdir -p /tmp/r && mount -o ro /dev/sr1 /tmp/r && tar -xf /tmp/r/vh.tar -C /root && "
+               # the built SELinux policy, when the image does not bring it (VH_SELINUX_DIR below)
+               "{ [ ! -d /tmp/r/selinux ] || cp -r /tmp/r/selinux /root/vh-selinux; } && umount /tmp/r && "
                # the directory in the VM is always /root/void-hardperf-light, whatever the checkout is called
                f"{{ [ {name} = {VM_REPO_NAME} ] || mv /root/{name} /root/{VM_REPO_NAME}; }}")
         conf = "\n".join([
@@ -271,7 +277,7 @@ def cmd_install(a):
             'VH_LUKS_ITER_MS="1000"',      # TCG is slow; on hardware 3000 (the default)
             'VH_LIMINE_TIMEOUT="1"',
             'VH_TEST_SERIAL="yes"',
-        ] + a.conf)
+        ] + (['VH_SELINUX_DIR="/root/vh-selinux"'] if a.selinux else []) + a.conf)
         ser.sh(f"cat > /root/{VM_REPO_NAME}/vh.conf <<'EOF'\n{conf}\nEOF")
         ser.sh(f"cd /root/{VM_REPO_NAME} && VH_YES=1 VH_TEST_PASSPHRASE='{LUKS_PASS}' "
                f"VH_TEST_PASSWORD='{USER_PASS}' bash install/10-install.sh 2>&1 | tee /root/install.log; "
@@ -338,6 +344,8 @@ def main():
     ap.add_argument("--smp", type=int, default=4)
     ap.add_argument("--timeout", type=int, default=4 * 3600)
     ap.add_argument("--conf", action="append", default=[], help="an extra vh.conf line")
+    ap.add_argument("--selinux", help="install: the built SELinux policy (sh selinux/build.sh DIR) for VH_MAC=selinux "
+                                      "from an image that does not bring it (Void's); vh.conf gets VH_SELINUX_DIR")
     ap.add_argument("--user", default="admin")
     ap.add_argument("--run", action="append", default=[])
     ap.add_argument("--repo", action="store_true", help="attach a fresh copy of the repository as a CD")

@@ -105,6 +105,36 @@ def final_cmdline(out):
     return m.group(1) if m else ""
 
 
+def need_run_files(a):
+    """the preconditions of a step that installs build/kernel-custom's kernel"""
+    if not os.path.isfile(os.path.join(ART, "SHA256SUMS")):
+        sys.exit(f"no run's files in {ART}: the artifact kernel-custom-qemu-q35-KVER of a kernel-custom run "
+                 "(kvm-smoke: the input kernel_run; by hand: gh run download RUN -n kernel-custom-qemu-q35-KVER -D build/kernel-custom)")
+    if not getattr(a, "repo", False):
+        sys.exit("the step needs --repo: the run's files and vh-kconf travel with the working copy")
+    if not os.path.isfile(os.path.join(vhvm.REPO, "build", "vh-kconf")):
+        sys.exit("no build/vh-kconf: sh tests/zig/build.sh")
+
+
+def install_trial(ser):
+    """vh-kconf install of build/kernel-custom's kernel with the working copy's vh-kconf: the machine
+    UKI on trial, set for the next boot. Returns (the Limine entry id, the UKI's name)."""
+    d = f"{VM_SRC}/build/kernel-custom"
+    rc, out = run(ser, f"install -m 0755 {VM_SRC}/build/vh-kconf /usr/local/sbin/vh-kconf && vh-kconf install --hw {d}/qemu-q35.zon {d}", timeout=1800)
+    m = re.search(r"vh-kconf install: linux-(\S+)\.efi installed", out)
+    ver = m.group(1) if m else "?"
+    check("vh-kconf install: the machine UKI is on the ESP and on trial, set for the next boot",
+          rc == 0 and m is not None and "on trial: the next boot tries it" in out, out[-400:].replace("\n", " | "))
+    return f"Void-Linux-{ver}--machine-kernel-", f"linux-{ver}.efi"
+
+
+def remove_trial(ser, name):
+    """the machine UKI removed from the ESP: the trial forgotten, the stock UKI alone"""
+    rc, out = run(ser, f"mount /boot/efi && rm -f /boot/efi/EFI/void/{name} && vh-limine-update; r=$?; umount /boot/efi; "
+                       "vh-limine-update --status; test $r = 0", timeout=600)
+    check("the machine UKI removed: the trial forgotten, the stock UKI alone", rc == 0 and "on trial: none" in out, out[-300:].replace("\n", " | "))
+
+
 def step_machine(a):
     """vh-kconf install of a real machine kernel: the qemu-q35 kernel of a kernel-custom run (its
     files in build/kernel-custom) becomes a machine UKI on trial; it boots, vh-kconf check finds

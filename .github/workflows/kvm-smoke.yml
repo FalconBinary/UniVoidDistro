@@ -6,14 +6,19 @@
 # against Void's signed sha256sum.txt (minisign key and ISO name pinned in tests/vm/void-live.pins).
 # With live_run, it is our own image of that live-image run instead (docs/uni/live-image.md):
 # its sha256, its build provenance attestation, and its commit must be this run's, so that the
-# installer takes the image's programs instead of building them.
+# installer takes the image's programs instead of building them. With mac=selinux the policy is
+# compiled here (selinux/build.sh, secilc in a Fedora container) and the installation takes it
+# through VH_SELINUX_DIR: Void's image has no policy; ours brings it (docs/uni/selinux.md).
 name: kvm-smoke
 on:
   workflow_dispatch:
     inputs:
       step:
-        description: "check.py step after the installation (base; assess: the boot assessment of a machine UKI; machine: vh-kconf install of kernel_run's kernel, docs/uni/kernel.md)"
+        description: "check.py steps after the installation, comma-separated, in order (base; assess: the boot assessment of a machine UKI; machine: vh-kconf install of kernel_run's kernel, docs/uni/kernel.md; vhinit: vh-init as PID 1, kept for the steps after it, vhinit-rollback: runit back, init/README.md; sched: vh-sched under vh-init on kernel_run's kernel, sched/README.md; selinux: the policy permissive on that kernel under vh-init, with mac=selinux)"
         default: base
+      mac:
+        description: "VH_MAC of the installation: apparmor, or selinux (the policy of selinux/ built here, permissive at boot; docs/uni/selinux.md)"
+        default: apparmor
       kernel_run:
         description: "the id of a kernel-custom run that built qemu-q35 (hw=all or hw=kernel/hw/qemu-q35.zon), for the step machine"
         default: ""
@@ -48,6 +53,7 @@ env:
   # below 2 GiB. 4096 while the live ISO rode along (run 39297735098)
   VH_MEM: ${{ github.event.inputs.mem || '3072' }}
   VH_SECURITY: ${{ github.event.inputs.security || 'strict' }}
+  VH_MAC: ${{ github.event.inputs.mac || 'apparmor' }}
 jobs:
   smoke:
     runs-on: ubuntu-latest
@@ -127,10 +133,19 @@ jobs:
         run: sh tests/zig/build.sh
       - name: vh-stage1 for the VM (tests/init/build.sh; the stage1 step installs it)
         run: sh tests/init/build.sh
+      - name: the SELinux policy (selinux/build.sh, secilc in a Fedora container), for VH_MAC=selinux
+        if: env.VH_MAC == 'selinux'
+        run: |
+          sh selinux/build.sh build/selinux
+          cat build/selinux/BUILD
       - name: install
         env:
           VH_ACCEL: kvm
-        run: python3 tests/vm/vhvm.py install --iso "$VH_ISO" --mem "$VH_MEM" --timeout 10800 --conf "VH_SECURITY=\"$VH_SECURITY\""
+        run: |
+          set --
+          [ "$VH_MAC" != selinux ] || set -- --selinux build/selinux
+          python3 tests/vm/vhvm.py install --iso "$VH_ISO" --mem "$VH_MEM" --timeout 10800 \
+            --conf "VH_SECURITY=\"$VH_SECURITY\"" --conf "VH_MAC=\"$VH_MAC\"" "$@"
       - name: check
         env:
           VH_ACCEL: kvm

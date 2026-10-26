@@ -39,6 +39,9 @@ MAP=(
 	"vh-stage1        /usr/local/sbin/vh-stage1"
 	"vh-init          /usr/local/sbin/vh-init"
 	"vh-ctl           /usr/local/sbin/vh-ctl"
+	# the scheduler's loader (sched/, track S); its BPF object goes next to the libraries below.
+	# The service vh-sched.svc runs nothing until doas vh-ctl enable vh-sched on a kernel with sched_ext
+	"vh-sched         /usr/local/sbin/vh-sched"
 )
 
 need_root
@@ -55,13 +58,14 @@ else
 	cp -R "$VH_ROOT/zig" "$BUILD/src"
 	( cd "$BUILD/src" && ZIG_GLOBAL_CACHE_DIR=$BUILD/gcache ZIG_LOCAL_CACHE_DIR=$BUILD/cache \
 		"$ZIG" build -Dtarget=native -Dcpu=baseline -Dlibc-tools=true --prefix "$BUILD/out" )
-	# session/ and init/ read ../zig/lib in place: the same layout
-	mkdir -p "$BUILD/s" && cp -R "$VH_ROOT/zig" "$VH_ROOT/session" "$VH_ROOT/init" "$BUILD/s/"
-	for c in session init; do
+	# session/, init/ and sched/ read ../zig/lib in place: the same layout; sched/ also builds
+	# the BPF programs (bpfel-freestanding) with the same Zig
+	mkdir -p "$BUILD/s" && cp -R "$VH_ROOT/zig" "$VH_ROOT/session" "$VH_ROOT/init" "$VH_ROOT/sched" "$BUILD/s/"
+	for c in session init sched; do
 		( cd "$BUILD/s/$c" && ZIG_GLOBAL_CACHE_DIR=$BUILD/gcache ZIG_LOCAL_CACHE_DIR=$BUILD/cache \
 			"$ZIG" build -Dtarget=native -Dcpu=baseline --prefix "$BUILD/out" )
 	done
-	mv "$BUILD/out/bin"/* "$BUILD/"
+	mv "$BUILD/out/bin"/* "$BUILD/out/bpf/vh_sched.o" "$BUILD/"
 	"$BUILD/vh-seccomp" --selftest >/dev/null || die "vh-seccomp --selftest failed"
 fi
 [ -d "$ROOT/usr/local" ] || die "$ROOT is not a system root"
@@ -80,3 +84,7 @@ for line in "${MAP[@]}"; do
 		ok "$name -> $dst"
 	fi
 done
+# the scheduler's BPF object (sched/bpf/vh_sched.zig): data, not a program; vh-sched run loads it
+[ -f "$BUILD/vh_sched.o" ] || die "no built vh_sched.o"
+install -D -m 0644 -o root -g root "$BUILD/vh_sched.o" "$ROOT/usr/local/lib/vh/vh_sched.o"
+ok "vh_sched.o -> /usr/local/lib/vh/vh_sched.o"

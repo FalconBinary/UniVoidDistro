@@ -129,7 +129,15 @@ def root_shell(ser):
 
 # from build/ the VM needs only the finished programs and build/thor-repo (tests/zig/build.sh)
 VM_SKIP_BUILD = ["docker-ctx", "zig-dl", "xbps-dl", "devimg", "zig-test", "zt", "zt2", "zx", "zig-bin",
-                 "thor-work", "thor-dest", "kx", "kd", "*.log"]
+                 "thor-work", "thor-dest", "kx", "kd", "sx", "ix", "scx", "*.log"]
+
+
+def keys(vm, text):
+    """type TEXT on the VM's keyboard (QEMU's sendkey): letters, digits, '-', ' ', '.', '/'"""
+    for ch in text:
+        name = {"-": "minus", " ": "spc", ".": "dot", "/": "slash"}.get(ch, ch)
+        vm.monitor(f"sendkey {name}")
+        time.sleep(0.2)
 
 
 def boot(a, extra=None, on_prompt=None):
