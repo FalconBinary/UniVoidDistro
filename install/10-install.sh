@@ -42,7 +42,9 @@ if [ "$DRY_RUN" = 0 ] && [ -r /proc/meminfo ]; then
 	export VH_SAY_MEM=1
 	: > "$VH_MEM_LOW"
 	mem_sampler &
-	trap 'kill '"$!"' 2>/dev/null' EXIT
+	# "|| true": under set -e a kill of a sampler that already ended would make the whole
+	# installation exit 1 after "done" (kvm-smoke run 40394832080)
+	trap 'kill '"$!"' 2>/dev/null || true' EXIT
 fi
 MNT=/mnt
 REPO=$VH_MIRROR/current
