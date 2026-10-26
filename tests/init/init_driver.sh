@@ -40,7 +40,7 @@ ra=$(cat /tmp/ready-a) sb=$(cat /tmp/start-b) cd_=$(cat /tmp/c-done)
 sleep 1.2
 if [ -e /tmp/delayed-done ]; then
 	dd=$(( ($(cat /tmp/delayed-done) - cd_) / 1000000 ))
-	[ "$dd" -ge 950 ] && ok "delayed (delay = 1s) ran ${dd} ms after the oneshot c" || bad "delayed ran ${dd} ms after c: too early"
+	[ "$dd" -ge 950 ] && ok "delayed (delay = 1s, after c) ran ${dd} ms after the oneshot c" || bad "delayed ran ${dd} ms after c: too early"
 else bad "delayed did not run after 2.7 s"; fi
 chk "delayed is done" "$(state delayed)" done
 
