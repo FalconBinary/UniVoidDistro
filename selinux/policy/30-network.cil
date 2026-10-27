@@ -7,6 +7,7 @@
 (call daemon_type (unbound_t unbound_exec_t))
 (call net_client (unbound_t))
 (allow unbound_t self (capability (setuid setgid sys_chroot net_bind_service sys_resource dac_override dac_read_search)))
+(dontaudit unbound_t self (capability (net_admin)))     ; asked for a socket buffer above the sysctl's limit; refused, it takes the limit
 (allow unbound_t self inet_server)
 (allow unbound_t dns_port_t (tcp_socket (name_bind)))
 (allow unbound_t dns_port_t (udp_socket (name_bind)))
@@ -24,6 +25,7 @@
 (call daemon_type (chronyd_t chronyd_exec_t))
 (call net_client (chronyd_t))
 (allow chronyd_t self (capability (setuid setgid sys_time net_bind_service sys_resource dac_override chown fowner)))
+(dontaudit chronyd_t self (capability (dac_read_search)))   ; a probe of its files before it drops to its user
 (allow chronyd_t ntp_port_t (udp_socket (name_bind)))
 (allow chronyd_t ntske_port_t (tcp_socket (name_connect)))
 (allow chronyd_t self (process (setcap)))
@@ -78,6 +80,7 @@
 (call manage_files (dhcpcd_t dhcpcd_var_run_t))
 (call manage_files (dhcpcd_t var_run_t))
 (typetransition dhcpcd_t var_run_t dir "dhcpcd" dhcpcd_var_run_t)
+(allow dhcpcd_t self (rawip_socket (create bind read write getopt setopt ioctl getattr)))   ; DHCP before the address exists
 (allow dhcpcd_t self (netlink_generic_socket (create bind getattr read write)))   ; its nl80211 lookup (docs/uni/runtime.md: cfg80211 stays blacklisted)
 (allow dhcpcd_t unlabeled_t (file (getattr)))                                    ; /proc/self/ns/net: nsfs carries no label
 (call exec_files (dhcpcd_t shell_exec_t))               ; /usr/libexec/dhcpcd-run-hooks

@@ -246,3 +246,5 @@
 (typetransition init_domain var_run_t dir "vh-sandbox" vh_sandbox_run_t)
 (typetransition init_domain var_run_t file "utmp" utmp_t)
 (typetransition init_domain vh_run_t sock_file "init.sock" vh_init_sock_t)
+;; a run script that talks to the system bus (dbus-send; the tenth boot of the rig, kvm-smoke run 40468812437)
+(call dbus_client (initrc_t))

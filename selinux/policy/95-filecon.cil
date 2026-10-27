@@ -151,6 +151,7 @@
 (filecon "/var/lib/chrony(/.*)?" any (system_u object_r chrony_var_lib_t s0r))
 (filecon "/var/lib/iwd(/.*)?" any (system_u object_r iwd_var_lib_t s0r))
 (filecon "/var/lib/dhcpcd(/.*)?" any (system_u object_r dhcpcd_var_lib_t s0r))
+(filecon "/var/db/dhcpcd(/.*)?" any (system_u object_r dhcpcd_var_lib_t s0r))     ; the leases of dhcpcd 10 (Void)
 (filecon "/var/lib/bluetooth(/.*)?" any (system_u object_r bluetooth_var_lib_t s0r))
 (filecon "/var/lib/thor(/.*)?" any (system_u object_r xbps_db_t s0r))
 (filecon "/var/db/xbps(/.*)?" any (system_u object_r xbps_db_t s0r))
