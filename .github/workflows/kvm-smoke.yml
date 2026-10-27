@@ -9,10 +9,20 @@
 # installer takes the image's programs instead of building them. With mac=selinux the policy is
 # compiled here (selinux/build.sh, secilc in a Fedora container) and the installation takes it
 # through VH_SELINUX_DIR: Void's image has no policy; ours brings it (docs/uni/selinux.md).
+# With arch=aarch64 (U5) the rig is QEMU's virt machine with AAVMF on GitHub's arm64 runner
+# (ubuntu-24.04-arm), from our aarch64 image (live_run is required: Void has no aarch64 live
+# ISO); the runner's /dev/kvm decides the accelerator, and without it the run stops before
+# the installation unless accel=tcg asks for the slow path (docs/uni/hardware.md, "ARM64").
 name: kvm-smoke
 on:
   workflow_dispatch:
     inputs:
+      arch:
+        description: "the rig's architecture: x86_64 (q35, OVMF, ubuntu-latest) or aarch64 (virt, AAVMF, ubuntu-24.04-arm; needs live_run)"
+        default: x86_64
+      accel:
+        description: "auto: KVM where the runner has /dev/kvm, else stop; tcg: emulate (hours; for aarch64 without KVM)"
+        default: auto
       step:
         description: "check.py steps after the installation, comma-separated, in order (base; assess: the boot assessment of a machine UKI; machine: vh-kconf install of kernel_run's kernel, docs/uni/kernel.md; vhinit: vh-init as PID 1, kept for the steps after it, vhinit-rollback: runit back, init/README.md; sched: vh-sched under vh-init on kernel_run's kernel, sched/README.md; selinux: the policy permissive on that kernel under vh-init, with mac=selinux)"
         default: base
@@ -58,12 +68,25 @@ env:
   VH_SECURITY: ${{ github.event.inputs.security || 'strict' }}
   VH_MAC: ${{ github.event.inputs.mac || 'apparmor' }}
   VH_MIRROR: ${{ github.event.inputs.mirror || 'https://repo-default.voidlinux.org' }}
+  VH_ARCH: ${{ github.event.inputs.arch || 'x86_64' }}
 jobs:
   smoke:
-    runs-on: ubuntu-latest
+    runs-on: ${{ (github.event.inputs.arch || 'x86_64') == 'aarch64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     timeout-minutes: 300
     steps:
       - uses: actions/checkout@v4
+      - name: the architecture and what it needs
+        run: |
+          set -euo pipefail
+          echo "rig: $VH_ARCH on $(uname -m), $(nproc) CPUs"
+          case $VH_ARCH in
+            x86_64) [ "$(uname -m)" = x86_64 ] ;;
+            aarch64)
+              [ "$(uname -m)" = aarch64 ]
+              [ -n "${{ github.event.inputs.live_run }}" ] || { echo "arch=aarch64 needs live_run: Void publishes no aarch64 live ISO, ours comes from a live-image run"; exit 1; }
+              [ -z "${{ github.event.inputs.kernel_run }}${{ github.event.inputs.game_kernel_run }}" ] || { echo "kernel_run and game_kernel_run are x86_64 (qemu-q35) only"; exit 1; } ;;
+            *) echo "arch: x86_64 or aarch64"; exit 1 ;;
+          esac
       - name: the qemu-q35 machine kernel of kernel-custom run ${{ github.event.inputs.kernel_run }}
         if: github.event.inputs.kernel_run != ''
         uses: actions/download-artifact@v4
@@ -80,7 +103,9 @@ jobs:
           run-id: ${{ github.event.inputs.game_kernel_run }}
           github-token: ${{ github.token }}
           path: build/game-kernel
-      - name: /dev/kvm for the runner user
+      - name: "/dev/kvm for the runner user (the accelerator: KVM, or none on a runner without it)"
+        env:
+          ACCEL: ${{ github.event.inputs.accel || 'auto' }}
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
@@ -88,19 +113,30 @@ jobs:
           # trigger only queues the event: wait until udev has applied the mode (run 39314915946
           # tested too early); ls shows whether the runner has /dev/kvm at all
           sudo udevadm settle
-          ls -l /dev/kvm
-          test -r /dev/kvm && test -w /dev/kvm
-      - name: qemu, OVMF, swtpm, xorriso, minisign, bsdtar
+          if [ -e /dev/kvm ]; then ls -l /dev/kvm; else echo "no /dev/kvm on this $(uname -m) runner"; fi
+          case $ACCEL in
+            tcg) echo "VH_ACCEL=tcg" >> "$GITHUB_ENV" ;;
+            auto) test -r /dev/kvm && test -w /dev/kvm || { echo "no usable /dev/kvm: the installation under TCG takes hours; accel=tcg asks for it, or run the rig under hvf on a Mac (docs/uni/hardware.md)"; exit 1; }
+                  echo "VH_ACCEL=kvm" >> "$GITHUB_ENV" ;;
+            *) echo "accel: auto or tcg"; exit 1 ;;
+          esac
+      - name: qemu, the UEFI firmware, swtpm, xorriso, minisign, bsdtar
         run: |
           sudo apt-get update -q
           # libarchive-tools: bsdtar, which unpacks the live ISO's kernel (tests/vm/vhvm.py)
-          sudo apt-get install -y -q qemu-system-x86 ovmf swtpm xorriso minisign libarchive-tools
+          case $VH_ARCH in
+            x86_64) pk="qemu-system-x86 ovmf" ;;
+            # qemu-efi-aarch64: AAVMF with its Secure Boot build (tests/vm/vhvm.py find_firmware)
+            aarch64) pk="qemu-system-arm qemu-efi-aarch64" ;;
+          esac
+          # shellcheck disable=SC2086 # a list of packages
+          sudo apt-get install -y -q $pk swtpm xorriso minisign libarchive-tools
       - uses: ./.github/actions/setup-zig
       - name: our live ISO of live-image run ${{ github.event.inputs.live_run }}
         if: github.event.inputs.live_run != ''
         uses: actions/download-artifact@v4
         with:
-          name: univoiddistro-live-x86_64
+          name: univoiddistro-live-${{ github.event.inputs.arch || 'x86_64' }}
           run-id: ${{ github.event.inputs.live_run }}
           github-token: ${{ github.token }}
           path: iso-live
@@ -150,20 +186,14 @@ jobs:
           sh selinux/build.sh build/selinux
           cat build/selinux/BUILD
       - name: install
-        env:
-          VH_ACCEL: kvm
         run: |
           set --
           [ "$VH_MAC" != selinux ] || set -- --selinux build/selinux
           python3 tests/vm/vhvm.py install --iso "$VH_ISO" --mem "$VH_MEM" --timeout 10800 \
             --conf "VH_SECURITY=\"$VH_SECURITY\"" --conf "VH_MAC=\"$VH_MAC\"" --conf "VH_MIRROR=\"$VH_MIRROR\"" "$@"
       - name: check
-        env:
-          VH_ACCEL: kvm
         run: python3 tests/vm/check.py "${{ github.event.inputs.step || 'base' }}" --repo --mem "$VH_MEM"
-      - name: the rig's hw.zon at installation (kernel/hw/qemu-q35.zon), its probe now, the plan, vh-kconf check
-        env:
-          VH_ACCEL: kvm
+      - name: "the rig's hw.zon at installation (kernel/hw/qemu-q35.zon; on aarch64 the virt fixture to be), its probe now, the plan, vh-kconf check"
         run: |
           python3 tests/vm/vhvm.py boot --mem "$VH_MEM" --timeout 1800 \
             --run "doas cat /etc/vh/hw.zon" \

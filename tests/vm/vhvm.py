@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-"""Test rig [VM-TEST]: qemu x86_64 + OVMF (Secure Boot) + swtpm (TPM 2.0, CRB) + VT-d + NVMe.
+"""Test rig [VM-TEST]: qemu x86_64 + OVMF (Secure Boot) + swtpm (TPM 2.0, CRB) + VT-d + NVMe,
+or (VH_ARCH=aarch64, U5) qemu aarch64 + the virt machine + AAVMF + swtpm (TPM 2.0, TIS) + an
+SMMUv3 + NVMe.
 
 Works on Linux and macOS (qemu from Homebrew) and drives the VM over the serial console,
 with no human involved. Scenarios:
@@ -29,19 +31,60 @@ USER_PASS = "vh-test-pass"
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 # the repository directory inside the VM, whatever the checkout is called on the host
 VM_REPO_NAME = "void-hardperf-light"
+# the VM's architecture: x86_64 (q35, OVMF, ttyS0) or aarch64 (virt, AAVMF, ttyAMA0); every
+# script of the rig reads it from the environment, so that check.py's steps need no change
+ARCH = os.environ.get("VH_ARCH", "x86_64")
+if ARCH not in ("x86_64", "aarch64"):
+    sys.exit(f"VH_ARCH={ARCH}: x86_64 or aarch64")
+# the serial console the VM logs in on, and the kernel's name for it
+SERIAL_TTY = "ttyAMA0" if ARCH == "aarch64" else "ttyS0"
+# the live ISO's kernel as mklive names it (live/build-image.sh): vmlinuz, or the arm64 Image as vmlinux
+LIVE_KERNEL = "boot/vmlinux" if ARCH == "aarch64" else "boot/vmlinuz"
 
 
 def find_firmware():
-    cands = [
-        ("/opt/homebrew/share/qemu/edk2-x86_64-secure-code.fd", "/opt/homebrew/share/qemu/edk2-i386-vars.fd"),
-        ("/usr/share/edk2/x64/OVMF_CODE.secboot.4m.fd", "/usr/share/edk2/x64/OVMF_VARS.4m.fd"),
-        ("/usr/share/OVMF/OVMF_CODE_4M.secboot.fd", "/usr/share/OVMF/OVMF_VARS_4M.fd"),
-        ("/usr/share/qemu/edk2-x86_64-secure-code.fd", "/usr/share/qemu/edk2-i386-vars.fd"),
-    ]
+    """The UEFI firmware's code and variable images: VH_FW_CODE and VH_FW_VARS, else the first
+    known pair. On aarch64 Debian's and Ubuntu's qemu-efi-aarch64 ships a Secure Boot build
+    (AAVMF_CODE.secboot.fd, with TPM 2.0 support); QEMU's own edk2-aarch64-code.fd (Homebrew)
+    is built without SECURE_BOOT_ENABLE (roms/edk2-build.config), so with it the rig installs
+    in tiered mode only."""
+    if os.environ.get("VH_FW_CODE") and os.environ.get("VH_FW_VARS"):
+        return os.environ["VH_FW_CODE"], os.environ["VH_FW_VARS"]
+    if ARCH == "aarch64":
+        cands = [
+            ("/usr/share/AAVMF/AAVMF_CODE.secboot.fd", "/usr/share/AAVMF/AAVMF_VARS.fd"),
+            ("/usr/share/AAVMF/AAVMF_CODE.fd", "/usr/share/AAVMF/AAVMF_VARS.fd"),
+            ("/usr/share/edk2/aarch64/QEMU_CODE.fd", "/usr/share/edk2/aarch64/QEMU_VARS.fd"),
+            ("/opt/homebrew/share/qemu/edk2-aarch64-code.fd", "/opt/homebrew/share/qemu/edk2-arm-vars.fd"),
+            ("/usr/share/qemu/edk2-aarch64-code.fd", "/usr/share/qemu/edk2-arm-vars.fd"),
+        ]
+    else:
+        cands = [
+            ("/opt/homebrew/share/qemu/edk2-x86_64-secure-code.fd", "/opt/homebrew/share/qemu/edk2-i386-vars.fd"),
+            ("/usr/share/edk2/x64/OVMF_CODE.secboot.4m.fd", "/usr/share/edk2/x64/OVMF_VARS.4m.fd"),
+            ("/usr/share/OVMF/OVMF_CODE_4M.secboot.fd", "/usr/share/OVMF/OVMF_VARS_4M.fd"),
+            ("/usr/share/qemu/edk2-x86_64-secure-code.fd", "/usr/share/qemu/edk2-i386-vars.fd"),
+        ]
     for code, vars_ in cands:
         if os.path.exists(code) and os.path.exists(vars_):
             return code, vars_
-    sys.exit("no OVMF firmware with Secure Boot found")
+    sys.exit(f"no UEFI firmware for {ARCH} found (VH_FW_CODE and VH_FW_VARS name one)")
+
+
+def cd_devices(drives):
+    """CD drives for the VM, [(id, path)]: on q35 the IDE ones of the x86 rig; the virt
+    machine has no IDE, so there they sit on one virtio-scsi controller in the order given
+    (sr0, sr1 ... in the guest)."""
+    out = []
+    if ARCH == "aarch64":
+        out += ["-device", "virtio-scsi-pci,id=scsi0"]
+    for i, (name, path) in enumerate(drives):
+        out += ["-drive", f"file={path},if=none,id={name},media=cdrom,readonly=on"]
+        if ARCH == "aarch64":
+            out += ["-device", f"scsi-cd,drive={name},bus=scsi0.0,channel=0,scsi-id={i},lun=0"]
+        else:
+            out += ["-device", f"ide-cd,drive={name}"]
+    return out
 
 
 class Serial:
@@ -158,28 +201,48 @@ class VM:
             if os.path.exists(tpmsock):
                 break
             time.sleep(0.1)
-        cmd = [
-            "qemu-system-x86_64", "-machine", "q35,smm=on", "-accel", os.environ.get("VH_ACCEL", "tcg"),
-            # a named CPU, not max: under KVM max is the runner's own CPU (an AMD EPYC with
-            # AVX-512 one day, another the next), under TCG QEMU's synthetic one; the rig's hw.zon,
-            # its plan and the machine kernel of kernel/hw/qemu-q35.zon belong to one CPU. Zen 3,
-            # x86-64-v3 without AVX-512, a subset of every AMD runner of GitHub's; VH_CPU overrides it
-            "-cpu", os.environ.get("VH_CPU", "EPYC-Milan"), "-smp", str(self.smp), "-m", str(self.mem),
-            # an emulated VT-d (a DMAR table) before any PCI device: the rig has the full
-            # protection of the security gate (VH_SECURITY=strict); no interrupt remapping, so
-            # no split irqchip is needed [VERIFY under TCG and KVM]
-            "-device", "intel-iommu,intremap=off",
-            "-global", "driver=cfi.pflash01,property=secure,value=on",
+        accel = os.environ.get("VH_ACCEL", "tcg")
+        if ARCH == "aarch64":
+            # the virt machine (U5): GICv3, an SMMUv3 described by the IORT table (the IOMMU of
+            # the security gate), the TPM on the MMIO TIS interface (virt has no CRB), a USB
+            # keyboard for the monitor's sendkey (q35 has the i8042 one), virtio for the network
+            # and the display. The CPU is the host's under hvf and KVM (hvf takes nothing else);
+            # under TCG a named core
+            machine = ["qemu-system-aarch64", "-machine", "virt,gic-version=3,iommu=smmuv3", "-accel", accel,
+                       "-cpu", os.environ.get("VH_CPU", "host" if accel in ("hvf", "kvm") else "cortex-a76"),
+                       "-smp", str(self.smp), "-m", str(self.mem)]
+            # ppi=off: the physical presence interface is a 1 KiB RAM region, which Apple's hvf
+            # cannot map (HV_BAD_ARGUMENT: its pages are 16 KiB); the TPM itself does not need it
+            devices = ["-device", "tpm-tis-device,tpmdev=tpm0,ppi=off",
+                       "-device", "qemu-xhci,id=xhci", "-device", "usb-kbd,bus=xhci.0",
+                       "-nic", "user,model=virtio-net-pci",
+                       "-device", "virtio-gpu-pci"]
+        else:
+            machine = ["qemu-system-x86_64", "-machine", "q35,smm=on", "-accel", accel,
+                       # a named CPU, not max: under KVM max is the runner's own CPU (an AMD EPYC with
+                       # AVX-512 one day, another the next), under TCG QEMU's synthetic one; the rig's hw.zon,
+                       # its plan and the machine kernel of kernel/hw/qemu-q35.zon belong to one CPU. Zen 3,
+                       # x86-64-v3 without AVX-512, a subset of every AMD runner of GitHub's; VH_CPU overrides it
+                       "-cpu", os.environ.get("VH_CPU", "EPYC-Milan"), "-smp", str(self.smp), "-m", str(self.mem),
+                       # an emulated VT-d (a DMAR table) before any PCI device: the rig has the full
+                       # protection of the security gate (VH_SECURITY=strict); no interrupt remapping, so
+                       # no split irqchip is needed [VERIFY under TCG and KVM]
+                       "-device", "intel-iommu,intremap=off",
+                       "-global", "driver=cfi.pflash01,property=secure,value=on"]
+            devices = ["-device", "tpm-crb,tpmdev=tpm0",
+                       "-nic", "user,model=e1000",
+                       "-device", "virtio-vga"]
+        cmd = machine + [
             "-drive", f"if=pflash,format=raw,unit=0,readonly=on,file={self.code}",
             "-drive", f"if=pflash,format=raw,unit=1,file={self.vars}",
             "-drive", f"file={self.disk},if=none,id=nvm,discard=unmap,cache=unsafe",
             "-device", "nvme,serial=VHTEST01,drive=nvm",
             "-chardev", f"socket,id=chrtpm,path={tpmsock}",
-            "-tpmdev", "emulator,id=tpm0,chardev=chrtpm", "-device", "tpm-crb,tpmdev=tpm0",
-            "-nic", "user,model=e1000",
+            "-tpmdev", "emulator,id=tpm0,chardev=chrtpm",
+        ] + devices + [
             "-serial", f"unix:{sersock},server=on,wait=off",
             "-monitor", f"unix:{monsock},server=on,wait=off",
-            "-device", "virtio-vga", "-display", "none",
+            "-display", "none",
         ] + extra
         self.procs.append(subprocess.Popen(cmd))
         return Serial(sersock, os.path.join(self.d, "serial.log"))
@@ -255,13 +318,12 @@ def cmd_install(a):
     make_repo_iso(repo_iso, {"selinux": a.selinux} if a.selinux else None)
     work = tempfile.mkdtemp(dir=vm.d)
     # bsdtar (libarchive) reads ISO 9660 images; GNU tar, the tar of Linux, does not
-    subprocess.run(["bsdtar", "-xf", a.iso, "-C", work, "boot/vmlinuz", "boot/initrd"], check=True)
+    subprocess.run(["bsdtar", "-xf", a.iso, "-C", work, LIVE_KERNEL, "boot/initrd"], check=True)
     append = ("root=live:CDLABEL=VOID_LIVE ro init=/sbin/init rd.luks=0 rd.md=0 rd.dm=0 "
-              "loglevel=4 console=ttyS0,115200 rd.live.overlay.overlayfs=1")
-    ser = vm.start(["-cdrom", a.iso,
-                    "-drive", f"file={repo_iso},if=none,id=repo,media=cdrom,readonly=on",
-                    "-device", "ide-cd,drive=repo",
-                    "-kernel", f"{work}/boot/vmlinuz", "-initrd", f"{work}/boot/initrd",
+              f"loglevel=4 console={SERIAL_TTY},115200 rd.live.overlay.overlayfs=1")
+    # the live ISO first (sr0, found by its label), the repository's second (sr1)
+    ser = vm.start(cd_devices([("live", a.iso), ("repo", repo_iso)]) +
+                   ["-kernel", f"{work}/{LIVE_KERNEL}", "-initrd", f"{work}/boot/initrd",
                     "-append", append])
     try:
         login(ser, "root", "voidlinux")
@@ -273,7 +335,7 @@ def cmd_install(a):
                f"{{ [ {name} = {VM_REPO_NAME} ] || mv /root/{name} /root/{VM_REPO_NAME}; }}")
         conf = "\n".join([
             'VH_DISK="/dev/nvme0n1"',
-            'VH_EXTRA_CMDLINE="console=tty0 console=ttyS0,115200"',
+            f'VH_EXTRA_CMDLINE="console=tty0 console={SERIAL_TTY},115200"',
             'VH_LUKS_ITER_MS="1000"',      # TCG is slow; on hardware 3000 (the default)
             'VH_LIMINE_TIMEOUT="1"',
             'VH_TEST_SERIAL="yes"',
@@ -295,15 +357,14 @@ def boot_and_login(a, vm):
         # a fresh copy of the repository on a CD: in the VM, mount /dev/sr0 and tar -xf vh.tar
         repo_iso = os.path.join(vm.d, "repo.iso")
         make_repo_iso(repo_iso)
-        extra = ["-drive", f"file={repo_iso},if=none,id=repo,media=cdrom,readonly=on",
-                 "-device", "ide-cd,drive=repo"]
+        extra = cd_devices([("repo", repo_iso)])
     ser = vm.start(extra)
     # the initramfs (dracut crypt) asks for the LUKS passphrase on the last console: ttyS0
     ser.expect(r"[Pp]assword|[Pp]assphrase", 1800)
     time.sleep(2)
     ser.send(LUKS_PASS)
-    # login: tty1 is the everyday user (graphics), tty2 the admin; ttyS0 has no getty by
-    # default, the test configuration enables agetty-ttyS0
+    # login: tty1 is the everyday user (graphics), tty2 the admin; the serial console has no
+    # getty by default, the test configuration enables agetty-ttyS0 (agetty-ttyAMA0 on aarch64)
     login(ser, a.user, USER_PASS)
     return ser
 
