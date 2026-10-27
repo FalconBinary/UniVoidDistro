@@ -83,6 +83,8 @@ def main():
     # dracut's configuration, as the installer renders it (VH_INITRD_COMPRESS=zstd, the GF63's keyboard)
     conf = open(os.path.join(SRC, "rootfs/etc/dracut.conf.d/10-vh.conf.in")).read()
     conf = conf.replace("@VH_INITRD_COMPRESS@", "zstd").replace("@VH_DRACUT_DRIVERS@", "xhci_pci usbhid hid_generic atkbd i8042")
+    # the EFI stub of the host's architecture, as install/lib.sh names it (aa64 on Apple Silicon)
+    conf = conf.replace("@VH_EFI_ARCH@", {"aarch64": "aa64", "arm64": "aa64"}.get(os.uname().machine, "x64"))
     put("/etc/dracut.conf.d/10-vh.conf", conf)
     put(f"{ROOT}/etc/dracut.conf.d/10-vh.conf", conf)
     hw = open(os.path.join(SRC, "kernel/hw/gf63.zon"), "rb").read()

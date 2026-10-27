@@ -58,10 +58,14 @@ fi
 r=$(VH_MEMINFO=/nonexistent bash -c '. "$1/install/lib.sh"; need_build_ram' _ "$repo" 2>&1) && ok "no meminfo: not refused" || bad "no meminfo" "$r"
 
 echo "== vh_desktop_variant"
-dv() { ( . "$repo/install/lib.sh"; VH_PLAN_TAGS=$1 VH_BLUETOOTH=$2 vh_desktop_variant ); }
+# the plan's architecture decides, not the host's: the test runs on aarch64 hosts too
+dv() { ( . "$repo/install/lib.sh"; VH_PLAN_ARCH=${3:-x86_64} VH_PLAN_TAGS=$1 VH_BLUETOOTH=$2 vh_desktop_variant ); }
 [ "$(dv 'efi x86-64-v2 x86-64-v3 vm' optional)" = x86-64-v3-btmenu ] && ok "v3, optional: x86-64-v3-btmenu" || bad "v3, optional" "$(dv 'efi x86-64-v2 x86-64-v3 vm' optional)"
 [ "$(dv 'efi x86-64-v2' off)" = x86-64-v1-plain ] && ok "v2 CPU, off: x86-64-v1-plain" || bad "v2, off" "$(dv 'efi x86-64-v2' off)"
 [ "$(dv 'x86-64-v3 x86-64-v4' on)" = x86-64-v3-plain ] && ok "v4 CPU, on: x86-64-v3-plain" || bad "v4, on" "$(dv 'x86-64-v3 x86-64-v4' on)"
+# aarch64 (U5): one build for every core, the Bluetooth menu as asked
+[ "$(dv 'efi vm' optional aarch64)" = aarch64-btmenu ] && ok "aarch64, optional: aarch64-btmenu" || bad "aarch64, optional" "$(dv 'efi vm' optional aarch64)"
+[ "$(dv 'efi' on aarch64)" = aarch64-plain ] && ok "aarch64, on: aarch64-plain" || bad "aarch64, on" "$(dv 'efi' on aarch64)"
 
 echo "== build-thor.sh --prebuilt"
 root=/tmp/root && rm -rf "$root" /tmp/vh-thor /var/lib/thor && mkdir -p "$root"

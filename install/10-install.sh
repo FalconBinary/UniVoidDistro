@@ -1,5 +1,5 @@
 #!/bin/bash
-# Stage 1: installation from the Void live USB (glibc, x86_64), as root.
+# Stage 1: installation from the live USB (glibc; x86_64, or aarch64 with UEFI since U5), as root.
 #
 #   cp vh.conf.example vh.conf && vi vh.conf      -- at minimum: VH_DISK
 #   ./install/10-install.sh --dry-run             -- show the plan without changing anything
@@ -57,7 +57,9 @@ NONFREE=$VH_MIRROR/current/nonfree
 # ---------------------------------------------------------------- checks
 say "checks"
 [ -d /sys/firmware/efi/efivars ] || die "not booted in UEFI mode"
-[ "$(uname -m)" = x86_64 ] || die "x86_64 required: the ARM64 installation path is milestone U5 (docs/uni/ROADMAP.md); vh-plan already plans ARM64 machines"
+# x86_64 or aarch64, both through UEFI (checked above); the boot files by architecture (lib.sh)
+VH_ARCH=$(vh_arch)
+VH_EFI_BOOT=$(vh_efi_boot)
 [ -n "$VH_DISK" ] || die "VH_DISK is not set in vh.conf"
 [ -b "$VH_DISK" ] || die "$VH_DISK is not a block device"
 case $(lsblk -dno TYPE "$VH_DISK") in disk) ;; *) die "$VH_DISK is not a whole disk" ;; esac
@@ -242,7 +244,7 @@ if [ "$DRY_RUN" = 1 ]; then echo "   + /etc/thor/policy.conf: mode=learn"
 else printf '# thor (docs/18): enforce -- the policy applies; learn -- only while the system is being installed\nmode=learn\n' > "$MNT/etc/thor/policy.conf"; fi
 thor_install() {
 	# the programs take libxbps with the policy from their own tree (rpath $ORIGIN/../lib)
-	run env XBPS_ARCH=x86_64 "$THOR" install -y -r "$MNT" -R "$REPO" -R "$NONFREE" "$@"
+	run env XBPS_ARCH="$VH_ARCH" "$THOR" install -y -r "$MNT" -R "$REPO" -R "$NONFREE" "$@"
 }
 
 say "installing packages ($(vh_packages | wc -l) + dependencies), without the kernel: thor, in parallel"
@@ -336,7 +338,7 @@ say "kernel $VH_KERNEL: dracut-uefi -> UKI -> signature -> limine.conf -> Limine
 thor_install "$VH_KERNEL"
 if [ "$DRY_RUN" != 1 ]; then
 	ls "$MNT"/boot/efi/EFI/void/linux-*.efi >/dev/null 2>&1 || die "no UKI was created (see the dracut output above)"
-	[ -s "$MNT/boot/efi/EFI/BOOT/BOOTX64.EFI" ] && [ -s "$MNT/boot/efi/EFI/BOOT/limine.conf" ] \
+	[ -s "$MNT/boot/efi/EFI/BOOT/$VH_EFI_BOOT" ] && [ -s "$MNT/boot/efi/EFI/BOOT/limine.conf" ] \
 		|| die "Limine is not installed on the ESP (vh-limine-update)"
 	ok "$(ls "$MNT"/boot/efi/EFI/void/)"
 fi
@@ -347,7 +349,7 @@ if [ "$DRY_RUN" != 1 ]; then
 	chroot "$MNT" efibootmgr | sed -n 's/^Boot\([0-9A-F]\{4\}\)\*\? Void Linux (Limine).*/\1/p' \
 		| while read -r n; do chroot "$MNT" efibootmgr -q -b "$n" -B; done
 fi
-run chroot "$MNT" efibootmgr -q -c -d "$VH_DISK" -p 1 -L "Void Linux (Limine)" -l '\EFI\BOOT\BOOTX64.EFI'
+run chroot "$MNT" efibootmgr -q -c -d "$VH_DISK" -p 1 -L "Void Linux (Limine)" -l "\\EFI\\BOOT\\$VH_EFI_BOOT"
 
 # The package cache (~1.5 GB) is not needed on the target system.
 run rm -rf "$MNT/var/cache/xbps"

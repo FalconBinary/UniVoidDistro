@@ -68,6 +68,20 @@ run() {
 
 need_root() { [ "$(id -u)" = 0 ] || die "run as root"; }
 
+# The architecture of the machine being installed, as the boot files name it (UEFI 3.5.1.1,
+# the removable-media loader): x64 on x86_64, aa64 on aarch64 (U5). The EFI stub of the UKI is
+# linuxARCH.efi.stub, Limine's loader on the ESP is EFI/BOOT/BOOTARCH.EFI, and xbps's
+# architecture is uname's. The serial console the VM rig logs in on is ttyS0 on x86 and the
+# PL011 ttyAMA0 on ARM.
+vh_arch() {
+	local m
+	m=$(uname -m)
+	case $m in x86_64|aarch64) echo "$m" ;; *) die "no installation path for $m: x86_64 or aarch64 (docs/uni/ROADMAP.md, U5)" ;; esac
+}
+vh_efi_arch() { case $(vh_arch) in x86_64) echo x64 ;; aarch64) echo aa64 ;; esac; }
+vh_efi_boot() { echo "BOOT$(vh_efi_arch | tr '[:lower:]' '[:upper:]').EFI"; }
+vh_serial_tty() { case $(vh_arch) in x86_64) echo ttyS0 ;; aarch64) echo ttyAMA0 ;; esac; }
+
 # Confirmation: the user must type the exact string.
 confirm_exact() {
 	local want=$1 prompt=$2 got
@@ -95,6 +109,9 @@ load_config() {
 		warn "no $cfg: using the defaults"
 	fi
 	set +a
+	# the EFI stub's name in the dracut template (rootfs/etc/dracut.conf.d/10-vh.conf.in)
+	VH_EFI_ARCH=$(vh_efi_arch)
+	export VH_EFI_ARCH
 	yesno VH_TRIM "$VH_TRIM"
 	yesno VH_CAMERA "$VH_CAMERA"
 	yesno VH_CARDREADER "$VH_CARDREADER"
@@ -173,11 +190,12 @@ vh_prebuilt() {
 
 # Which of the live image's builds of RefursWM and RefursLine fits this machine: the plan's
 # x86-64 level (v3 when its CPU has it, v1 otherwise) and VH_BLUETOOTH (optional compiles the
-# bar's Bluetooth menu in)
+# bar's Bluetooth menu in); on aarch64 the one build for every ARMv8 core (live/prebuilt.sh)
 vh_desktop_variant() {
 	local lvl=v1 bt=plain
-	case " ${VH_PLAN_TAGS:-} " in *" x86-64-v3 "*) lvl=v3 ;; esac
 	[ "${VH_BLUETOOTH:-}" = optional ] && bt=btmenu
+	case ${VH_PLAN_ARCH:-$(uname -m)} in aarch64) echo "aarch64-$bt"; return ;; esac
+	case " ${VH_PLAN_TAGS:-} " in *" x86-64-v3 "*) lvl=v3 ;; esac
 	echo "x86-64-$lvl-$bt"
 }
 
