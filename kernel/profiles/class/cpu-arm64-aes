@@ -4,4 +4,10 @@
 # (vh-plan, hwdb/); a symbol of it that does not survive olddefconfig is an error, as for
 # mandatory.
 
-# Milestone U5: CRYPTO_AES_ARM64_CE_BLK and its neighbours, with the arm64 pins.
+# The disk is AES-XTS (base: DM_CRYPT, CRYPTO_XTS): the AES of the Crypto Extensions, the
+# single-block cipher and the block modes (xts-aes-ce), built in and never loaded on demand,
+# as class/cpu-x86-aes does with AES-NI. SHA-256 of the Crypto Extensions is in the kernel's
+# crypto library since 6.18 (lib/crypto/arm64), with no symbol of its own; GHASH for GCM (TLS
+# in the kernel is not used here) stays as the probe's module list has it.
+CONFIG_CRYPTO_AES_ARM64_CE=y
+CONFIG_CRYPTO_AES_ARM64_CE_BLK=y

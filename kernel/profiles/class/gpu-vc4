@@ -4,7 +4,10 @@
 # (vh-plan, hwdb/); a symbol of it that does not survive olddefconfig is an error, as for
 # mandatory.
 
-# Milestone U5: DRM_VC4 and DRM_V3D, with the arm64 pins.
+# vc4 drives the displays (HDMI), v3d renders (the GLES2 renderer of RefursWM); both are
+# modules in Void's arm64 kernel [VERIFY on a Raspberry Pi 4 or 5: no board is at hand, U5].
+CONFIG_DRM_VC4=y
+CONFIG_DRM_V3D=y
 
 # The DRM core under the driver, and its fbdev console (tty1-tty3) after the EFI framebuffer of
 # base: named here because a machine's module list need not name drm itself (kernel-custom

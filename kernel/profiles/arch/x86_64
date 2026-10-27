@@ -1,0 +1,31 @@
+# kernel/profiles/arch/x86_64: what only x86_64 has, the lines base, mandatory, hardening and
+# perf cannot name without naming one architecture. vh-kconf resolve applies the fragment of the
+# machine's architecture (hw.zon .arch) after perf and before the plan's classes; arch/aarch64
+# holds the counterparts. A symbol here that does not survive olddefconfig is reported by
+# vh-kconf diff like one of base or hardening (not an error, unlike mandatory and the classes).
+
+# The hardware clock (mandatory: RTC_CLASS, hctosys): the CMOS RTC of every PC.
+CONFIG_RTC_DRV_CMOS=y
+
+# hardening: the physical memory layout randomised as well as the kernel's base.
+CONFIG_RANDOMIZE_MEMORY=y
+# X32 and ia32: no 32-bit ABI; features/game re-enables ia32 for Steam, guarded by the cmdline.
+# CONFIG_X86_X32_ABI is not set
+# CONFIG_IA32_EMULATION is not set
+# modify_ldt: 16-bit segments; features/game turns it on [VERIFY for Wine].
+# CONFIG_MODIFY_LDT_SYSCALL is not set
+# iopl/ioperm: user-space port I/O.
+# CONFIG_X86_IOPL_IOPERM is not set
+# The PC speaker.
+# CONFIG_INPUT_PCSPKR is not set
+
+# perf: CONFIG_X86_NATIVE_CPU only when building on the machine itself (clang's -march=native);
+# in CI the workflow passes the plan's -march as KCFLAGS (resolve writes it to kcflags).
+# CONFIG_X86_NATIVE_CPU is not set
+# The core priorities of Intel's Turbo Boost Max 3.0 (ITMT) in the scheduler; the x2APIC.
+CONFIG_SCHED_MC_PRIO=y
+CONFIG_X86_X2APIC=y
+# The kernel image compressed with zstd instead of gzip: faster decompression at boot
+# [VERIFY by measurement: bench/ boot time, firmware to login].
+CONFIG_KERNEL_ZSTD=y
+# CONFIG_KERNEL_GZIP is not set

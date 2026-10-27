@@ -1,6 +1,6 @@
 vh-plan report
 machine: rpi5 ( ; ), arch aarch64, 8051 MiB, 4 CPUs
-module tables: none for this architecture: only the drivers the running system bound
+module tables: the pinned stock kernel's
 security: tiered; tier: reduced
 tags: bluetooth devicetree disk disk-discard disk-mmc disk-on-mmc_block disk-on-sdhci_brcmstb display keyboard keyboard-usb sbc sound wifi wired
 
@@ -103,6 +103,6 @@ scalars (4):
 
 LUKS: aes-xts-plain64, 512-bit key, Argon2id 1048576 KiB, 4 threads
 kernel: NR_CPUS 4, -march cortex-a76
-modules of the devices (16): bcm2835_wdt brcmfmac dwc3 hci_uart hid_generic macb mmc_block pcie_brcmstb rp1 rtc_rpi sdhci_brcmstb usbcore usbhid v3d vc4 xhci_plat_hcd
+modules of the devices (23): aes_ce_blk aes_ce_cipher bcm2835_wdt brcmfmac dwc3 ghash_ce hci_uart hid_generic macb mmc_block pcie_brcmstb polyval_ce rp1 rtc_rpi sdhci_brcmstb sha3_ce shpchp sm4_ce_gcm usbcore usbhid v3d vc4 xhci_plat_hcd
 
 Devices no driver, table or rule knows (0):

@@ -105,24 +105,24 @@ fn cmdPlan(argv: []const [:0]const u8) u8 {
     const h = hw.load(hw_path);
     const db = rules.load(hwdb);
 
-    // the stock kernel's tables: those of kernel/pins for its architecture only
+    // the stock kernel's tables: those of kernel/pins for its architecture (x86_64 under the
+    // plain names, aarch64 under names that say so: kernel/pins/README.md); none for another
     var table: alias.Table = .{};
     var have_table = false;
     var fwt: plan.FirmwareTable = .{};
     var have_fw = false;
-    if (pins.len > 0 and vh.eql(h.archName(), "x86_64")) {
-        const at = vh.fmt("{s}/modules.alias", .{pins});
-        if (vh.readFile(at)) |t| {
+    if (pins.len > 0) if (alias.pinNames(h.archName())) |names| {
+        if (vh.readFile(vh.fmt("{s}/{s}", .{ pins, names.alias }))) |t| {
             table.loadAliases(t);
             have_table = true;
         } else |_| {}
-        if (vh.readFile(vh.fmt("{s}/modules.builtin.modinfo", .{pins}))) |t| table.loadBuiltinModinfo(t) else |_| {}
-        if (vh.readFile(vh.fmt("{s}/modules.builtin", .{pins}))) |t| table.loadBuiltinList(t) else |_| {}
-        if (vh.readFile(vh.fmt("{s}/modules.firmware", .{pins}))) |t| {
+        if (vh.readFile(vh.fmt("{s}/{s}", .{ pins, names.builtin_modinfo }))) |t| table.loadBuiltinModinfo(t) else |_| {}
+        if (vh.readFile(vh.fmt("{s}/{s}", .{ pins, names.builtin }))) |t| table.loadBuiltinList(t) else |_| {}
+        if (vh.readFile(vh.fmt("{s}/{s}", .{ pins, names.firmware }))) |t| {
             fwt.load(t);
             have_fw = true;
         } else |_| {}
-    }
+    };
     const r = plan.compute(.{
         .hw = h,
         .db = db,

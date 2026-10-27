@@ -3,14 +3,15 @@
 # localyesconfig keeps the drivers of the hardware it sees; these symbols are either
 # requested by nothing in sysfs (the RTC clock, the firewall expressions, cgroup controllers)
 # or must be =y for reasons of our own (BTF for vh-sched). vh-kconf diff treats a symbol
-# from this file that did not survive olddefconfig as an error (exit code 2).
+# from this file that did not survive olddefconfig as an error (exit code 2). What only one
+# architecture has (its RTC driver) is in arch/.
 
-# The hardware clock: the system time is set from the CMOS RTC before chrony runs (NTS needs
-# a roughly correct clock to validate certificates).
+# The hardware clock: the system time is set from the RTC before chrony runs (NTS needs a
+# roughly correct clock to validate certificates); the RTC's driver is the architecture's (arch/).
 CONFIG_RTC_CLASS=y
-CONFIG_RTC_DRV_CMOS=y
 CONFIG_RTC_HCTOSYS=y
 CONFIG_RTC_HCTOSYS_DEVICE="rtc0"
+
 
 # POSIX ACLs on the XFS root: setfacl is used for the browser and session directories.
 CONFIG_XFS_FS=y

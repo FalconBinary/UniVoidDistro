@@ -238,3 +238,25 @@ test "alias tables" {
     try std.testing.expect(t.isBuiltin("i8042"));
     try std.testing.expect(!t.isBuiltin("iwlwifi"));
 }
+
+/// The pinned files of an architecture, by name under kernel/pins (README.md there): the x86_64
+/// ones under their plain names, the others under names that say the architecture. Null for an
+/// architecture without pins.
+pub const Pins = struct { dotconfig: []const u8, alias: []const u8, builtin: []const u8, builtin_modinfo: []const u8, firmware: []const u8 };
+pub fn pinNames(arch: []const u8) ?Pins {
+    if (vh.eql(arch, "x86_64")) return .{
+        .dotconfig = "x86_64-dotconfig",
+        .alias = "modules.alias",
+        .builtin = "modules.builtin",
+        .builtin_modinfo = "modules.builtin.modinfo",
+        .firmware = "modules.firmware",
+    };
+    if (vh.eql(arch, "aarch64")) return .{
+        .dotconfig = "aarch64-dotconfig",
+        .alias = "aarch64-modules.alias",
+        .builtin = "aarch64-modules.builtin",
+        .builtin_modinfo = "aarch64-modules.builtin.modinfo",
+        .firmware = "aarch64-modules.firmware",
+    };
+    return null;
+}
