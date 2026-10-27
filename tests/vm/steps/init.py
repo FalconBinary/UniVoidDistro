@@ -124,6 +124,11 @@ def sv_status(ser):
 INIT_ID_RX = re.compile(r"^Void-Linux-(\S+)--vh-init-$")
 
 
+def sha256s(out):
+    """sha256sum's lines of a command's output as {path: hash} (the first line may carry the prompt)"""
+    return {m.group(2): m.group(1) for l in lines(out) for m in [re.match(r"([0-9a-f]{64})  (/boot/efi/EFI/void/\S+)$", l)] if m}
+
+
 def step_vhinit(a):
     """vh-init as PID 1 (init/README.md, v0.2) through the boot assessment (docs/uni/kernel.md):
     vh-init --install writes /etc/vh/init-boot and runs vh-limine-update, which gives the newest
@@ -150,11 +155,11 @@ def step_vhinit(a):
         rc, out = run(ser, "vh-init --version; vh-init --check; echo chk=$?")
         check("vh-init --check: the definitions parse, no problem", "chk=0" in out and "problem:" not in out, out[-600:].replace("\n", " | "))
         rc, out = run(ser, "mount -o ro /boot/efi; sha256sum /boot/efi/EFI/void/linux-*.efi; umount /boot/efi; vh-limine-update --status")
-        sums_before = dict(re.findall(r"^([0-9a-f]{64})  (/boot/efi/EFI/void/\S+)", out.replace("\r", ""), re.M))
+        sums_before = sha256s(out)
         stock = started(out)
         check("before: this boot started the stock entry; no UKI with vh-init on the ESP, Limine takes one-shot entries",
               stock.startswith("Void-Linux-") and "vh-init" not in stock and sums_before and not any(p.endswith("-vh-init.efi") for p in sums_before) and "one-shot entries: yes" in out,
-              f"{stock}; {sorted(sums_before.values())}")
+              f"{stock}; {sorted(sums_before)}")
         rc, out = run(ser, "vh-init --install; echo in=$?; readlink /usr/bin/sv; cat /etc/xbps.d/31-vh-init.conf; grep init= /etc/default/dracut-uefi-hook || echo HOOK-CLEAN; cat /etc/vh/init-boot | head -1", timeout=900)
         m = re.search(r"the UKI with vh-init (linux-(\S+)-vh-init\.efi): the stock UKI (linux-\S+\.efi)", out)
         name, ver, stock_name = (m.group(1), m.group(2), m.group(3)) if m else ("?", "?", "?")
@@ -170,12 +175,12 @@ def step_vhinit(a):
               and "the default: the newest stock UKI" in out and "vh-init (init/README.md): wanted" in out, out[-900:].replace("\n", " | "))
         check("vh-init --status: runit is PID 1 (exit 1), the marker present, the trial", "st=1" in out and "present (vh-init is wanted" in out and f"on trial: {name}, 0 of 3 good boots, set for the next boot" in out,
               out[-700:].replace("\n", " | "))
-        sums_after = dict(re.findall(r"^([0-9a-f]{64})  (/boot/efi/EFI/void/\S+)", out.replace("\r", ""), re.M))
-        counts = dict(re.findall(r"^/boot/efi/EFI/void/(\S+):(\d+)", out.replace("\r", ""), re.M))
+        sums_after = sha256s(out)
+        counts = dict(m.groups() for l in lines(out) for m in [re.match(r"/boot/efi/EFI/void/(\S+):(\d+)$", l)] if m)
         check("the stock UKIs are untouched (the same bytes), the twin beside them carries init=, no stock UKI does",
-              sums_before and all(sums_after.get(p) == h for h, p in sums_before.items()) and f"/boot/efi/EFI/void/{name}" in sums_after.values()
+              sums_before and all(sums_after.get(p) == h for p, h in sums_before.items()) and f"/boot/efi/EFI/void/{name}" in sums_after
               and counts.get(name) == "1" and all(c == "0" for n, c in counts.items() if n != name),
-              f"before {sorted(sums_before.values())}; after {sorted(sums_after.values())}; init= counts {counts}")
+              f"before {sorted(sums_before)}; after {sorted(sums_after)}; init= counts {counts}")
         rc, out = run(ser, "sv status /var/service/*; echo ===; sv status /var/service/* | grep -c '^run:'; sv status /var/service/* | grep -vc '^run:'")
         nums = [l.strip() for l in lines(out.split("===")[-1]) if l.strip().isdigit()]
         check("the sv shim runs runit's sv while runit is PID 1 (every service run:)", len(nums) == 2 and nums[1] == "0" and int(nums[0]) > 5, out[-300:].replace("\n", " | "))
