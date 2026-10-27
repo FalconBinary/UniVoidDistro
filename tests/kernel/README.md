@@ -70,8 +70,9 @@ a damaged file, a run without `modules.builtin`, an initrd the kernel cannot unp
 `dracut_test.sh` runs the same install with Void's dracut (dracut, dracut-uefi,
 systemd-boot-efistub, binutils, cryptsetup from the mirror) and lists the UKI's initrd with
 lsinitrd: the firmware at `usr/lib/firmware`, `lib` a link to `usr/lib`, no module, the crypt
-module, `.linux` the bzImage byte for byte. On Apple Silicon the UKI is an aarch64 one (dracut
-takes `linuxaa64.efi.stub` when the configured x64 stub is missing, and there is no microcode).
+module, `.linux` the bzImage byte for byte. On Apple Silicon the UKI is an aarch64 one (the
+test renders the template's `@VH_EFI_ARCH@` as `aa64`, as the installer does there, and there
+is no microcode).
 
 `oracle.sh` holds the GF63 to void-hardperf-light: `tests/kernel/golden/gf63` is the LSMOD list,
 the fragment's symbols and the sorted `.config` that upstream's resolve and profiles give for

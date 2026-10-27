@@ -188,6 +188,11 @@ state with its numbers):
   host has it, under Apple's hvf on a Mac. GitHub's arm64 runner (`ubuntu-24.04-arm`): see
   the ROADMAP's U5 state for whether it exposes `/dev/kvm`; `kvm-smoke` takes `arch=aarch64`
   and stops before the installation without it unless `accel=tcg`.
+- **Not done**: the seccomp filters of the browser and viewer sandboxes (`zig/lib/seccomp.zig`,
+  `vh-seccomp`) are written with x86_64's system call numbers and architecture check: on an
+  ARM64 system the sandbox would kill its program at the first call. Firefox and `vh-open` do
+  not run there until the filters are built per architecture (the gaming session is x86_64's by
+  design). The base system, the installer, the desktop compositor and bar are not affected.
 - **Not verified on any real ARM64 machine**: the installation, Secure Boot key enrolment on a
   vendor's firmware, the TPM event log, the SMMU with `iommu.strict=1` on real devices, the
   Raspberry Pi altogether ([rpi.md](rpi.md)).

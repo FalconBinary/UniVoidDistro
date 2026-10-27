@@ -1,8 +1,8 @@
 # Track A: the plan of any machine. The hardware-constant lint (tests/adapt/lint.sh), vh-plan's
 # unit tests and the golden plans of every machine in kernel/hw (tests/adapt/run.sh), vh-kconf's
 # tests with the probe of every fixture and resolve on the GF63's plan (tests/kernel/run.sh),
-# the GF63 oracle (tests/kernel/oracle.sh), the cheap half of the kernel matrix: every x86_64
-# machine planned in tiered mode and resolved, with the checks that need no kernel tree
+# the GF63 oracle (tests/kernel/oracle.sh), the cheap half of the kernel matrix: every machine,
+# x86_64 and aarch64, planned in tiered mode and resolved, with the checks that need no kernel tree
 # (tests/kernel/matrix.sh; the build is kernel-custom with hw=all, docs/uni/kernel.md), and the
 # installer's lists per plan, the GF63's against upstream's (tests/install/run.sh).
 name: adapt
@@ -35,7 +35,7 @@ jobs:
         run: sh tests/kernel/run.sh
       - name: the GF63 oracle (the kernel configuration of upstream)
         run: sh tests/kernel/oracle.sh
-      - name: the machine kernel of every x86_64 machine without a kernel tree (plan, resolve, the checks)
+      - name: the machine kernel of every machine, x86_64 and aarch64, without a kernel tree (plan, resolve, the checks)
         run: |
           set -eu
           # the -march check asks the compiler kernel-custom builds with
