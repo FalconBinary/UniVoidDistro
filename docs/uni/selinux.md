@@ -172,7 +172,7 @@ has 4 unit tests over the policy's own patterns); the stage-1 steps parse and co
 **Verified on the VM rig, permissive** (2026-10-26, kvm-smoke `mac=selinux`, `step=vhinit,selinux`
 with the machine kernel of kernel-custom run 40321559300, features `auto,selinux`; the runs
 40349043789, 40373457582, 40383056402, 40388319429, 40401275073, 40407123621, 40411465314,
-40416570814 and 40468812437, each a boot after the previous one's rules): the installation with `VH_MAC=selinux` labels every file (the installer
+40416570814, 40468812437 and 40473233569, each a boot after the previous one's rules): the installation with `VH_MAC=selinux` labels every file (the installer
 relabels once more after the kernel package, whose modules came after the chroot's pass); on
 the machine kernel SELinux is the active LSM (`lockdown,capability,landlock,yama,selinux`),
 stage 1 loads `policy.33` (114 KB) in its first step, sets `secure_mode_policyload`, labels
@@ -185,11 +185,12 @@ dhcpcd, vh-acpid, vh-sched as `sched_t` with the scheduler loaded); the admin's 
 the desktop on the virtio GPU as `user_t` with RefursWM `wm_t`, RefursLine `bar_t`,
 `vh-wlfilter` `wlfilter_t`, PipeWire and WirePlumber `pipewire_t`; `vh-audit` has no FAIL in
 its SELinux area. The first boot logged 195 AVC lines, the sixth, seventh and eighth 18 each,
-the ninth 9, every boot a new layer once the previous one's accesses were allowed (the ninth's:
-dhcpcd's generic netlink socket and the inode of its network namespace, agetty's inotify on
-`/run/agetty.reload`, `/dev/log` on devtmpfs, dbus's `dac_override`, WirePlumber's watch on
-`/dev/snd`; their rules are the last commit, **[VERIFY]** the tenth boot, run 40468812437,
-shows what they leave): what the rig taught the policy is in the git
+the ninth 9, the tenth 8, every boot a new layer once the previous one's accesses were allowed;
+on the tenth the login and the desktop left no line at all, and the 8 are the daemons' (dhcpcd's
+leases in `/var/db/dhcpcd` and its raw IP socket, a run script's `dbus-send`, a capability ask
+each of unbound and chronyd that the refusal answers; their rules are the last commit,
+**[VERIFY]** the eleventh boot, run 40473233569, shows what they leave): what the rig taught
+the policy is in the git
 history of `selinux/policy` (no `filesystem associate` rule at all, the role change at login,
 every domain's own `/proc` entry, the type transitions of what stage 1 and the run scripts
 make in `/run`, the device directories and symlinks of udev and its inotify watches, libudev's

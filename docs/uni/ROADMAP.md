@@ -252,14 +252,15 @@ scheduled run is unchanged.
   No speed claim: the bench method applies.
 - **SELinux permissive: verified as far as the rig goes** ([selinux.md](selinux.md), runs
   40349043789, 40373457582, 40383056402, 40388319429, 40401275073, 40407123621, 40411465314,
-  40416570814, 40468812437). With `VH_MAC=selinux` the
+  40416570814, 40468812437, 40473233569). With `VH_MAC=selinux` the
   installation is labelled, the machine kernel (features `auto,selinux`) runs SELinux as its
   LSM, stage 1 loads the policy and locks it, every label is as `file_contexts` says
   (`vh-selabel --check /` clean), every daemon runs in its domain, the admin reaches `sysadm_t`
   through doas, a login on tty1 starts the desktop as `user_t` and `wm_t`, `vh-audit`'s SELinux
   area has no FAIL. Each boot taught the policy its missing rules (195 AVC lines on the first,
-  18 on the sixth, seventh and eighth, 9 on the ninth, a new layer each time; the ninth's rules
-  are the last commit, [VERIFY] run 40468812437) and two faults beyond it: the manager's channel to PID 1 was inherited by
+  18 on the sixth, seventh and eighth, 9 on the ninth, 8 on the tenth with none from the login
+  and the desktop any more, a new layer each time; the tenth's rules are the last commit,
+  [VERIFY] run 40473233569) and two faults beyond it: the manager's channel to PID 1 was inherited by
   every service (closed on exec now) and the admin's home carried the user's type
   (`file_contexts.local`). The dual-kernel cost: the stock kernel labels nothing, so stage 1
   relabels `/etc`, `/usr`, `/var`, `/root`, `/home` and `/boot` once after a boot on it (stage 1
