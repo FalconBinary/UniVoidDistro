@@ -79,6 +79,9 @@ vh_arch() {
 	case $m in x86_64|aarch64) echo "$m" ;; *) die "no installation path for $m: x86_64 or aarch64 (docs/uni/ROADMAP.md, U5)" ;; esac
 }
 vh_efi_arch() { case $(vh_arch) in x86_64) echo x64 ;; aarch64) echo aa64 ;; esac; }
+# Void's repository of the architecture below MIRROR/current: x86_64 at the root, aarch64 in
+# /aarch64 (thor/package.sh writes the same into the installed xbps)
+vh_repo_sub() { case $(vh_arch) in x86_64) echo "" ;; aarch64) echo /aarch64 ;; esac; }
 vh_efi_boot() { echo "BOOT$(vh_efi_arch | tr '[:lower:]' '[:upper:]').EFI"; }
 vh_serial_tty() { case $(vh_arch) in x86_64) echo ttyS0 ;; aarch64) echo ttyAMA0 ;; esac; }
 
@@ -109,9 +112,11 @@ load_config() {
 		warn "no $cfg: using the defaults"
 	fi
 	set +a
-	# the EFI stub's name in the dracut template (rootfs/etc/dracut.conf.d/10-vh.conf.in)
+	# the EFI stub's name in the dracut template (rootfs/etc/dracut.conf.d/10-vh.conf.in) and the
+	# repository's path in the xbps.d templates (rootfs/etc/xbps.d/*.in)
 	VH_EFI_ARCH=$(vh_efi_arch)
-	export VH_EFI_ARCH
+	VH_REPO_SUB=$(vh_repo_sub)
+	export VH_EFI_ARCH VH_REPO_SUB
 	yesno VH_TRIM "$VH_TRIM"
 	yesno VH_CAMERA "$VH_CAMERA"
 	yesno VH_CARDREADER "$VH_CARDREADER"

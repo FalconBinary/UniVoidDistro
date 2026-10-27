@@ -1,2 +1,2 @@
 # Main repository. The same-named file in /usr/share/xbps.d is overridden by this one.
-repository=@VH_MIRROR@/current
+repository=@VH_MIRROR@/current@VH_REPO_SUB@

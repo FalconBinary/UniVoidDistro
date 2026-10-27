@@ -19,7 +19,7 @@ cp -a /var/db/xbps/keys/. "$R/var/db/xbps/keys/"
 for f in rootfs/etc/xbps.d/*; do
 	b=$(basename "$f")
 	case $b in
-		*.in) sed "s|@VH_MIRROR@/current|$M|" "$f" > "$R/etc/xbps.d/${b%.in}" ;;
+		*.in) sed "s|@VH_MIRROR@/current@VH_REPO_SUB@|$M|" "$f" > "$R/etc/xbps.d/${b%.in}" ;;
 		*) install -m 0644 "$f" "$R/etc/xbps.d/$b" ;;
 	esac
 done

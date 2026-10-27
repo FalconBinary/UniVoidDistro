@@ -47,8 +47,9 @@ if [ "$DRY_RUN" = 0 ] && [ -r /proc/meminfo ]; then
 	trap 'kill '"$!"' 2>/dev/null || true' EXIT
 fi
 MNT=/mnt
-REPO=$VH_MIRROR/current
-NONFREE=$VH_MIRROR/current/nonfree
+# the repository of this architecture: MIRROR/current on x86_64, MIRROR/current/aarch64 on aarch64
+REPO=$VH_MIRROR/current$(vh_repo_sub)
+NONFREE=$REPO/nonfree
 # the live environment's own xbps (the headers, Zig's dependencies, xbps itself) takes the same
 # mirror: /etc/xbps.d overrides the image's /usr/share/xbps.d file of this name (the default
 # mirror was unreachable for hours on 2026-10-26; the rig passes another through VH_MIRROR)
