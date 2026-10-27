@@ -1,9 +1,9 @@
 //! vh-init: PID 1 and the service manager in one binary (init/README.md, v0.2).
 //!   vh-init                       as PID 1 (init=/usr/local/sbin/vh-init): stage 1, the manager, stage 3
 //!   vh-init --manager [-v]        the manager (PID 1 starts it; by hand for a container test)
-//!   vh-init --install             init= on the kernel command line of the next UKI and the sv shim
-//!   vh-init --rollback            the command line without init=, runit's sv back
-//!   vh-init --status              which init is PID 1, the markers of this boot
+//!   vh-init --install             the UKI with init= on trial (the boot assessment, docs/uni/kernel.md), the sv shim
+//!   vh-init --rollback            that UKI demoted and removed, runit's sv back
+//!   vh-init --status              which init is PID 1, where vh-init's UKI stands, the markers of this boot
 //!   vh-init --check               the service definitions: parse, the graph, what would start
 //!   vh-init --test-pid1 [--dir D] [--no-stage1] [-v]   tests: PID 1 of a container's namespace
 const std = @import("std");

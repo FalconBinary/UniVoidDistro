@@ -22,6 +22,15 @@
 //! linux-A.B.C-vh-game_N.efi there, the newest KEEP_GAME) come before it, the newest first.
 //! --game-once makes the newest gaming entry the next boot's one-shot entry (vh-game play).
 //!
+//! UniVoidDistro, track I: vh-init as PID 1 (vh-init --install, init/README.md). While
+//! /etc/vh/init-boot exists, the newest stock UKI has an init twin beside it in EFI/void,
+//! linux-A.B.C_D-vh-init.efi: the same image with init=/usr/local/sbin/vh-init appended to its
+//! command line (lib/twin.zig), signed, "Void Linux A.B.C_D (vh-init)" in the menu after the
+//! machine entries, and assessed exactly as a machine UKI: on trial through the one-shot entry,
+//! Limine's default after MACHINE_BOOTS good boots; the stock UKI, which boots runit, stays as
+//! it is and heads the menu as the fallback. A stock kernel update makes the new kernel's twin
+//! and puts it on trial. Without the marker every init twin goes (vh-init --rollback).
+//!
 //!   vh-limine-update [--new VERSION] [--dry-run]
 //!   vh-limine-update --booted | --status | --retry [NAME] | --demote | --game-once
 const std = @import("std");
@@ -52,8 +61,10 @@ const VERDICT_WAIT_S = 120;
 /// its own on the ESP, under the stock UKI's file name
 const GAME_MARK = "/etc/vh/game-boot";
 const GAME_DIR = ESP ++ "/EFI/vh-game";
+/// vh-init --install (init/README.md): this file asks for the init twin of the newest stock UKI
+const INIT_MARK = "/etc/vh/init-boot";
 
-const Series = enum { stock, machine, game };
+const Series = enum { stock, machine, game, init };
 
 const Uki = struct {
     name: []const u8,
@@ -63,8 +74,9 @@ const Uki = struct {
     series: Series = .stock,
 };
 
-/// linux-A.B.C_D.efi (stock), linux-A.B.C-vh_N.efi (a machine kernel, uname -r A.B.C-vh) or
-/// linux-A.B.C-vh-game_N.efi (the gaming kernel) -> the version numbers; null means not a UKI
+/// linux-A.B.C_D.efi (stock), linux-A.B.C-vh_N.efi (a machine kernel, uname -r A.B.C-vh),
+/// linux-A.B.C-vh-game_N.efi (the gaming kernel) or linux-A.B.C_D-vh-init.efi (the init twin of
+/// the stock UKI A.B.C_D) -> the version numbers; null means not a UKI
 pub fn parseUki(name: []const u8) ?Uki {
     if (!vh.startsWith(name, "linux-") or !vh.endsWith(name, ".efi")) return null;
     const end = name.len - 4;
@@ -87,7 +99,11 @@ pub fn parseUki(name: []const u8) ?Uki {
             continue;
         }
         if (i < 3 and (q >= end or name[q] != seps[i])) return null;
-        if (i == 3 and q != end) return null;
+        if (i == 3 and q != end) {
+            // a stock UKI's init twin: its name with -vh-init before .efi (lib/assess.zig)
+            if (u.series != .stock or !vh.eql(name[q..end], assess.init_suffix)) return null;
+            u.series = .init;
+        }
         p = q + 1;
     }
     return u;
@@ -95,6 +111,11 @@ pub fn parseUki(name: []const u8) ?Uki {
 
 fn findVer(list: []const Uki, ver: []const u8) ?Uki {
     for (list) |u| if (vh.eql(u.ver, ver)) return u;
+    return null;
+}
+
+fn findName(list: []const Uki, name: []const u8) ?Uki {
+    for (list) |u| if (vh.eql(u.name, name)) return u;
     return null;
 }
 
@@ -230,13 +251,15 @@ pub fn main(init: std.process.Init.Minimal) void {
     const offline = cf.offline;
 
     var ukis: std.ArrayList(Uki) = .empty;
-    // UniVoidDistro: the machine series, rotated on its own (KEEP_MACHINE)
+    // UniVoidDistro: the machine series, rotated on its own (KEEP_MACHINE), and the init twins
     var machine: std.ArrayList(Uki) = .empty;
+    var inits: std.ArrayList(Uki) = .empty;
     const names = vh.listDir(UKI_DIR) catch &.{};
     for (names) |n| {
         if (parseUki(n)) |u| {
             switch (u.series) {
                 .machine => machine.append(vh.gpa, u) catch vh.oom(),
+                .init => inits.append(vh.gpa, u) catch vh.oom(),
                 .stock => ukis.append(vh.gpa, u) catch vh.oom(),
                 // the gaming kernel's UKIs live in EFI/vh-game
                 .game => vh.out("  warning: a gaming kernel's UKI in " ++ UKI_DIR ++ "/{s}: leaving it alone (its place is " ++ GAME_DIR ++ ")\n", .{n}),
@@ -245,15 +268,24 @@ pub fn main(init: std.process.Init.Minimal) void {
             vh.out("  warning: unknown file " ++ UKI_DIR ++ "/{s}: leaving it alone\n", .{n});
         }
     }
-    if (ukis.items.len == 0 and machine.items.len > 0)
-        vh.die("no stock UKI in " ++ UKI_DIR ++ ": the stock signed UKI is the fallback of every machine kernel; reinstall the kernel package (xbps-reconfigure -f)", .{});
+    if (ukis.items.len == 0 and (machine.items.len > 0 or inits.items.len > 0))
+        vh.die("no stock UKI in " ++ UKI_DIR ++ ": the stock signed UKI is the fallback of every machine kernel and of vh-init; reinstall the kernel package (xbps-reconfigure -f)", .{});
     if (ukis.items.len == 0) vh.die("no UKIs in " ++ UKI_DIR, .{});
     mem.sort(Uki, ukis.items, {}, ukiDesc);
     mem.sort(Uki, machine.items, {}, ukiDesc);
+    mem.sort(Uki, inits.items, {}, ukiDesc);
     if (newver) |nv| {
         if (findVer(ukis.items, nv) == null and findVer(machine.items, nv) == null)
             vh.die("no UKI was created for {s}: see the dracut output above", .{nv});
     }
+    // UniVoidDistro, track I: the init twin of the newest stock UKI while vh-init --install's
+    // marker exists (made or refreshed now, signed with the others below); without the marker
+    // every init twin goes
+    const init_tw: ?Twin = if (vh.pathExists(INIT_MARK)) initTwin(ukis.items[0].name, dry) else null;
+    if (init_tw) |tw| if (findName(inits.items, tw.name) == null) {
+        inits.append(vh.gpa, parseUki(tw.name).?) catch vh.oom();
+        mem.sort(Uki, inits.items, {}, ukiDesc);
+    };
 
     // keep: indices into ukis
     var keep: std.ArrayList(usize) = .empty;
@@ -266,24 +298,23 @@ pub fn main(init: std.process.Init.Minimal) void {
             keep.append(vh.gpa, k) catch vh.oom(); // the kernel we are running on is never deleted
     }
 
-    // the machine series: the newest KEEP_MACHINE, the default, the trial and the one running
-    // (by the entry this boot started; without the Boot Loader Interface, by its release)
-    const with_machine = machine.items.len > 0 or vh.pathExists(ASSESS);
+    // the assessed series: the machine kernels, the newest KEEP_MACHINE, and the init twins, the
+    // newest stock UKI's; plus the default, the trial and the one running in either
+    const with_assess = machine.items.len > 0 or inits.items.len > 0 or vh.pathExists(ASSESS);
     var st: assess.State = .{};
     var facts: assess.Facts = .{};
     var keep_m: std.ArrayList(usize) = .empty;
-    if (with_machine) {
+    var keep_i: std.ArrayList(usize) = .empty;
+    if (with_assess) {
         if (!dry) lock();
         st = loadState();
         facts = assess.readFacts(.{}, BOOT_ID);
         for (0..@min(machine.items.len, @as(usize, @intCast(cf.keep_machine)))) |k| keep_m.append(vh.gpa, k) catch vh.oom();
-        for (machine.items, 0..) |u, k| {
-            const running = if (facts.selected != null) facts.started(u.name) else vh.eql(assess.releaseOf(u.ver), release);
-            if ((running or vh.eql(u.name, st.default) or vh.eql(u.name, st.trial)) and mem.indexOfScalar(usize, keep_m.items, k) == null)
-                keep_m.append(vh.gpa, k) catch vh.oom();
+        keepRoles(&keep_m, machine.items, st, facts, release);
+        if (init_tw) |tw| {
+            for (inits.items, 0..) |u, k| if (vh.eql(u.name, tw.name)) keep_i.append(vh.gpa, k) catch vh.oom();
+            keepRoles(&keep_i, inits.items, st, facts, release);
         }
-        // newest first in the menu, after the stock entries
-        mem.sort(usize, keep_m.items, {}, std.sort.asc(usize));
     }
 
     // Check and sign first, delete afterwards: a signing failure leaves the ESP as it was
@@ -295,6 +326,7 @@ pub fn main(init: std.process.Init.Minimal) void {
     }
     for (keep.items) |k| sign(vh.fmt(UKI_DIR ++ "/{s}", .{ukis.items[k].name}), dry, offline);
     for (keep_m.items) |k| sign(vh.fmt(UKI_DIR ++ "/{s}", .{machine.items[k].name}), dry, offline);
+    for (keep_i.items) |k| sign(vh.fmt(UKI_DIR ++ "/{s}", .{inits.items[k].name}), dry, offline);
     // UniVoidDistro, track G: the gaming kernels and the gaming boot's twin of the newest stock
     // UKI, made and signed before anything is deleted
     const game: ?Games = if (vh.pathExists(GAME_MARK)) gameSeries(ukis.items[0].name, cf.keep_game, dry, offline) else null;
@@ -307,6 +339,12 @@ pub fn main(init: std.process.Init.Minimal) void {
     for (machine.items, 0..) |u, k| {
         if (mem.indexOfScalar(usize, keep_m.items, k) != null) continue;
         vh.out("  deleting the outdated machine UKI {s}\n", .{u.name});
+        const path = vh.fmt(UKI_DIR ++ "/{s}", .{u.name});
+        if (!dry) vh.unlink(path) catch vh.die("{s}: {s}", .{ path, vh.serr() });
+    }
+    for (inits.items, 0..) |u, k| {
+        if (mem.indexOfScalar(usize, keep_i.items, k) != null) continue;
+        vh.out("  deleting the UKI with vh-init {s}{s}\n", .{ u.name, if (init_tw == null) " (vh-init is not wanted: no " ++ INIT_MARK ++ ")" else "" });
         const path = vh.fmt(UKI_DIR ++ "/{s}", .{u.name});
         if (!dry) vh.unlink(path) catch vh.die("{s}: {s}", .{ path, vh.serr() });
     }
@@ -333,6 +371,15 @@ pub fn main(init: std.process.Init.Minimal) void {
         c.print(vh.gpa, "\n/{s}\n    protocol: efi\n    path: boot():/EFI/void/{s}#{s}\n", .{ assess.entryName(u.ver), u.name, h }) catch vh.oom();
         on_esp.append(vh.gpa, .{ .name = u.name, .hash = h }) catch vh.oom();
     }
+    // the init twins after them: "Void Linux VER (vh-init)", the newest first
+    for (keep_i.items) |k| {
+        const u = inits.items[k];
+        const path = vh.fmt(UKI_DIR ++ "/{s}", .{u.name});
+        const ready = init_tw == null or !vh.eql(u.name, init_tw.?.name) or init_tw.?.ready;
+        const h = if (ready) hash.blake2bFile(path) catch vh.die("{s}: {s}", .{ path, vh.serr() }) else "(the twin a real run makes)";
+        c.print(vh.gpa, "\n/{s}\n    protocol: efi\n    path: boot():/EFI/void/{s}#{s}\n", .{ assess.entryName(u.ver), u.name, h }) catch vh.oom();
+        if (ready) on_esp.append(vh.gpa, .{ .name = u.name, .hash = h }) catch vh.oom();
+    }
     // the gaming entries last: the gaming kernels, the newest first, then the twin; never the
     // default, booted by vh-game play (the one-shot entry) or from the menu
     if (game) |g| {
@@ -352,14 +399,26 @@ pub fn main(init: std.process.Init.Minimal) void {
     // the assessment against this menu: a default or a trial gone or rebuilt, a new trial
     var act: assess.Action = .{ .state = st };
     var trial_new = false;
-    if (with_machine) {
+    // the init twin made this run while a machine kernel is the default: in the menu, not on trial
+    var twin_waits: ?[]const u8 = null;
+    if (with_assess) {
         act = assess.reconcile(st, on_esp.items);
+        // the UKI to assess: the init twin made this run, or a new machine UKI (--new); the newest
+        // installed UKI is the trial, as ever. A machine kernel that is the default keeps its place
+        // through a stock kernel update: its twin waits in the menu (a machine UKI built while the
+        // marker exists carries init= itself: vh-kconf install), --retry NAME assesses it instead
+        var candidate: ?[]const u8 = null;
+        if (init_tw) |tw| if (tw.made) {
+            if (act.state.default.len == 0 or assess.isInit(act.state.default)) candidate = tw.name else twin_waits = tw.name;
+        };
         if (newver) |nv| if (findVer(machine.items, nv)) |u| {
-            for (on_esp.items) |e| if (vh.eql(e.name, u.name)) {
-                act.state = assess.install(act.state, u.name, e.hash);
-            };
-            // a trial at its start (the same trial installed again keeps its count)
-            trial_new = vh.eql(act.state.trial, u.name) and act.state.good == 0 and act.state.armed.len == 0;
+            candidate = u.name;
+        };
+        if (candidate) |name| for (on_esp.items) |e| if (vh.eql(e.name, name)) {
+            act.state = assess.install(act.state, name, e.hash);
+            // a trial at its start (the same trial installed again keeps its count; one that
+            // reconcile() started again said so already)
+            trial_new = vh.eql(act.state.trial, name) and act.state.good == 0 and act.state.armed.len == 0 and !vh.eql(st.trial, name);
         };
     }
 
@@ -374,11 +433,12 @@ pub fn main(init: std.process.Init.Minimal) void {
     if (dry) {
         vh.out("{s}\n", .{c.items});
         vh.out("  + limine enroll-config BOOTX64.EFI {s}\n", .{conf_hash});
-        if (with_machine) {
+        if (with_assess) {
             for (act.events) |e| vh.out("  + {s}\n", .{e});
             const s2 = act.state;
             if (s2.trial.len > 0 and s2.status == .trying and s2.armed.len == 0)
                 vh.out("  + LoaderEntryOneShot {s} ({s})\n", .{ assess.ukiId(s2.trial), if (facts.oneshotWorks()) "this boot's Limine takes it" else "not now: this boot's loader takes no one-shot entry" });
+            if (twin_waits) |w| vh.out("  + {s} in the menu, not on trial: {s} is Limine's default\n", .{ assess.describe(w), assess.describe(s2.default) });
         }
         vh.exit(0);
     }
@@ -411,24 +471,76 @@ pub fn main(init: std.process.Init.Minimal) void {
     vh.unlink(efi_tmp) catch {};
     _ = linux.rmdir(vh.z(td).ptr);
     linux.sync();
-    vh.out("  limine.conf: {d} entries, config hash {s}... enrolled into Limine\n", .{ keep.items.len + keep_m.items.len + (if (game) |g| g.count() else 0), conf_hash[0..16] });
+    vh.out("  limine.conf: {d} entries, config hash {s}... enrolled into Limine\n", .{ keep.items.len + keep_m.items.len + keep_i.items.len + (if (game) |g| g.count() else 0), conf_hash[0..16] });
     gameOneShot(if (game) |g| g.preferred() else null);
-    if (with_machine) {
+    if (with_assess) {
         const v: assess.Vars = .{};
         var s2 = apply(act, v);
         // a trial not set yet: the next boot tries it, when this boot's Limine takes one-shot entries
         if (s2.trial.len > 0 and s2.status == .trying and s2.armed.len == 0) s2 = arm(s2, facts, v);
         if (trial_new) {
-            const fallback = if (s2.default.len > 0) vh.fmt("the machine kernel {s}", .{assess.verOf(s2.default)}) else vh.fmt("the stock UKI {s}", .{ukis.items[0].ver});
+            const fallback = if (s2.default.len > 0) assess.describe(s2.default) else vh.fmt("the stock UKI {s}", .{ukis.items[0].ver});
             if (s2.armed.len > 0) {
-                vh.out("  the machine kernel {s} is on trial: the next boot tries it once (Limine's one-shot entry); a boot that does not reach its end leaves the one after to {s}; after {d} good boots it becomes Limine's default (docs/uni/kernel.md)\n", .{ assess.verOf(s2.trial), fallback, cf.boots });
+                vh.out("  {s} is on trial: the next boot tries it once (Limine's one-shot entry); a boot that does not reach its end leaves the one after to {s}; after {d} good boots it becomes Limine's default (docs/uni/kernel.md)\n", .{ assess.describe(s2.trial), fallback, cf.boots });
             } else {
-                vh.out("  the machine kernel {s} is on trial, not set for the next boot: {s}\n", .{ assess.verOf(s2.trial), s2.reason });
+                vh.out("  {s} is on trial, not set for the next boot: {s}\n", .{ assess.describe(s2.trial), s2.reason });
             }
         }
+        if (twin_waits) |w| vh.out("  {s} is in the menu, not on trial: {s} is Limine's default, and a machine UKI built now carries init= itself (vh-kconf install); to assess the twin instead: doas vh-limine-update --retry {s}\n", .{ assess.describe(w), assess.describe(s2.default), w });
         saveState(s2);
     }
     vh.exit(0);
+}
+
+/// The UKIs of an assessed series that stay whatever the rotation says: the default, the trial
+/// and the one running (by the entry this boot started; without the Boot Loader Interface, by
+/// its release). The indices end up sorted: the newest first in the menu.
+fn keepRoles(keep: *std.ArrayList(usize), list: []const Uki, st: assess.State, facts: assess.Facts, release: []const u8) void {
+    for (list, 0..) |u, k| {
+        const running = if (facts.selected != null) facts.started(u.name) else vh.eql(assess.releaseOf(u.ver), release);
+        if ((running or vh.eql(u.name, st.default) or vh.eql(u.name, st.trial)) and mem.indexOfScalar(usize, keep.items, k) == null)
+            keep.append(vh.gpa, k) catch vh.oom();
+    }
+    mem.sort(usize, keep.items, {}, std.sort.asc(usize));
+}
+
+// ---------------------------------------------------------------- the init twin
+
+/// the init twin of a run: its name, whether it is on the ESP (false only for a --dry-run that
+/// would make it), and whether this run wrote it (a new file, or the stock UKI changed)
+const Twin = struct { name: []const u8, ready: bool, made: bool };
+
+/// The init twin of the stock UKI NAME (vh-init --install, init/README.md): NAME's image with
+/// init=/usr/local/sbin/vh-init appended to its command line, linux-VER-vh-init.efi beside it;
+/// kept when the one there is its twin already, else made (a temporary file, then renamed over
+/// it). Signed with the other UKIs afterwards.
+fn initTwin(name: []const u8, dry: bool) Twin {
+    const src = vh.fmt(UKI_DIR ++ "/{s}", .{name});
+    const tname = assess.initTwinName(name);
+    const dst = vh.fmt(UKI_DIR ++ "/{s}", .{tname});
+    const p = twin.plan(src, .vh_init) catch |e| switch (e) {
+        error.Sys => vh.die("{s}: {s}", .{ src, vh.serr() }),
+        else => |te| vh.die("no UKI with vh-init from the stock UKI {s}: {s}; limine.conf is unchanged (doas vh-init --rollback takes " ++ INIT_MARK ++ " away)", .{ name, twin.describe(te) }),
+    };
+    if (twin.same(src, dst, p)) return .{ .name = tname, .ready = true, .made = false };
+    if (dry) {
+        vh.out("  + the UKI with vh-init " ++ UKI_DIR ++ "/{s}: the stock UKI {s} with " ++ twin.init_param ++ "\n", .{ tname, name });
+        return .{ .name = tname, .ready = false, .made = true };
+    }
+    const tmp = vh.fmt(UKI_DIR ++ "/.{s}.tmp", .{tname});
+    vh.unlink(tmp) catch {};
+    twin.write(src, tmp, p) catch {
+        const why = vh.serr();
+        vh.unlink(tmp) catch {};
+        vh.die("the UKI with vh-init {s}: {s} (room on the ESP: df -h " ++ ESP ++ "); limine.conf is unchanged", .{ dst, why });
+    };
+    _ = vh.sys(linux.rename(vh.z(tmp).ptr, vh.z(dst).ptr)) catch {
+        const why = vh.serr();
+        vh.unlink(tmp) catch {};
+        vh.die("{s}: {s}", .{ dst, why });
+    };
+    vh.out("  the UKI with vh-init {s}: the stock UKI {s} with " ++ twin.init_param ++ " (its command line {d} bytes, the kernel and the initrd as they are)\n", .{ tname, name, p.cmd.len - 1 });
+    return .{ .name = tname, .ready = true, .made = true };
 }
 
 // ---------------------------------------------------------------- the boot assessment
@@ -542,11 +654,11 @@ fn writeMessage(st: assess.State, events: []const []const u8, boots: u32) void {
     for (events) |e| t.print(vh.gpa, "  {s}\n", .{e}) catch vh.oom();
     // where the trial stands, unless this boot's events said it already
     if (st.trial.len > 0) switch (st.status) {
-        .trying => if (events.len == 0) t.print(vh.gpa, "  on trial: the machine kernel {s}, {d} of {d} good boots{s}\n", .{
-            assess.verOf(st.trial), st.good, boots, if (st.armed.len > 0) "; the next boot tries it" else vh.fmt("; {s}", .{st.reason}),
+        .trying => if (events.len == 0) t.print(vh.gpa, "  on trial: {s}, {d} of {d} good boots{s}\n", .{
+            assess.describe(st.trial), st.good, boots, if (st.armed.len > 0) "; the next boot tries it" else vh.fmt("; {s}", .{st.reason}),
         }) catch vh.oom(),
         .failed => {
-            if (events.len == 0) t.print(vh.gpa, "  the machine kernel {s} failed its trial and is not the default: {s}\n", .{ assess.verOf(st.trial), st.reason }) catch vh.oom();
+            if (events.len == 0) t.print(vh.gpa, "  {s} failed its trial and is not the default: {s}\n", .{ assess.describe(st.trial), st.reason }) catch vh.oom();
             t.appendSlice(vh.gpa, "  to try it again: doas vh-limine-update --retry\n") catch vh.oom();
         },
     };
@@ -555,7 +667,7 @@ fn writeMessage(st: assess.State, events: []const []const u8, boots: u32) void {
         return;
     }
     vh.mkdirs("/run/vh", 0o755);
-    vh.writeAtomic(ASSESS_MSG, vh.fmt("vh-limine-update: the boot assessment of the machine kernel (docs/uni/kernel.md)\n{s}", .{t.items}), 0o644);
+    vh.writeAtomic(ASSESS_MSG, vh.fmt("vh-limine-update: the boot assessment (docs/uni/kernel.md)\n{s}", .{t.items}), 0o644);
 }
 
 /// --booted: the vh-boot-assess service, once a boot
@@ -578,19 +690,21 @@ fn cmdBooted(cf: Conf) void {
 fn cmdStatus(cf: Conf) void {
     const st = loadState();
     const f = assess.readFacts(.{}, BOOT_ID);
-    vh.outs("the boot assessment of the machine kernel (docs/uni/kernel.md)\n");
+    vh.outs("the boot assessment (docs/uni/kernel.md)\n");
     if (st.default.len > 0)
-        vh.out("  the default: the machine kernel {s} ({s}); the stock UKI heads the menu\n", .{ assess.verOf(st.default), st.default })
+        vh.out("  the default: {s} ({s}); the stock UKI heads the menu\n", .{ assess.describe(st.default), st.default })
     else
         vh.outs("  the default: the newest stock UKI\n");
     if (st.trial.len == 0) {
         vh.outs("  on trial: none\n");
     } else switch (st.status) {
-        .trying => vh.out("  on trial: the machine kernel {s} ({s}), {d} of {d} good boots, {s}\n", .{
-            assess.verOf(st.trial), st.trial, st.good, cf.boots, if (st.armed.len > 0) "set for the next boot" else if (st.reason.len > 0) st.reason else "not set yet",
+        .trying => vh.out("  on trial: {s} ({s}), {d} of {d} good boots, {s}\n", .{
+            assess.describe(st.trial), st.trial, st.good, cf.boots, if (st.armed.len > 0) "set for the next boot" else if (st.reason.len > 0) st.reason else "not set yet",
         }),
-        .failed => vh.out("  failed its trial: the machine kernel {s} ({s}): {s}\n", .{ assess.verOf(st.trial), st.trial, st.reason }),
+        .failed => vh.out("  failed its trial: {s} ({s}): {s}\n", .{ assess.describe(st.trial), st.trial, st.reason }),
     }
+    if (vh.pathExists(INIT_MARK))
+        vh.outs("  vh-init (init/README.md): wanted (" ++ INIT_MARK ++ "): the newest stock UKI has its twin with " ++ twin.init_param ++ ", assessed as above\n");
     vh.out("  this boot: {s}; one-shot entries: {s}; started: {s}; LoaderEntryOneShot: {s}; LoaderEntryDefault: {s}\n", .{
         if (f.loader.len > 0) f.loader else "no Boot Loader Interface",
         if (f.oneshotWorks()) "yes" else "no",
@@ -654,7 +768,7 @@ fn gameSeries(stock: []const u8, keep: usize, dry: bool, offline: bool) Games {
 fn gameTwin(name: []const u8, dry: bool, offline: bool) Game {
     const src = vh.fmt(UKI_DIR ++ "/{s}", .{name});
     const dst = vh.fmt(GAME_DIR ++ "/{s}", .{name});
-    const p = twin.plan(src) catch |e| switch (e) {
+    const p = twin.plan(src, .ia32_on) catch |e| switch (e) {
         error.Sys => vh.die("{s}: {s}", .{ src, vh.serr() }),
         else => |te| vh.die("no gaming UKI from the stock UKI {s}: {s}; limine.conf is unchanged (doas vh-game boot off turns the gaming boot off)", .{ name, twin.describe(te) }),
     };
@@ -727,7 +841,7 @@ fn cmdGameOnce() void {
         lock();
         const st = loadState();
         if (st.trial.len > 0 and st.status == .trying and st.armed.len > 0)
-            vh.die("the next boot is the trial of the machine kernel {s} (Limine's one-shot entry): play after it, or choose \"(games)\" in Limine's menu", .{assess.verOf(st.trial)});
+            vh.die("the next boot is the trial of {s} (Limine's one-shot entry): play after it, or choose \"(games)\" in Limine's menu", .{assess.describe(st.trial)});
     }
     const f = assess.readFacts(.{}, BOOT_ID);
     if (!f.oneshotWorks()) vh.die("{s}: choose \"(games)\" in Limine's menu at the next boot", .{
@@ -742,7 +856,7 @@ fn cmdGameOnce() void {
             best = u;
         },
         .stock => twin_name = n,
-        .machine => {},
+        .machine, .init => {},
     };
     if (mounted) umountEsp();
     const name: ?[]const u8 = if (best) |b| b.name else twin_name;
@@ -759,8 +873,8 @@ fn cmdRetry(cf: Conf, name: ?[]const u8) void {
     const st0 = loadState();
     var st: assess.State = undefined;
     if (name) |n| {
-        const u = parseUki(n) orelse vh.die("{s}: not the name of a UKI (linux-A.B.C-vh_N.efi)", .{n});
-        if (u.series != .machine) vh.die("{s}: a stock UKI needs no assessment", .{n});
+        const u = parseUki(n) orelse vh.die("{s}: not the name of a UKI (linux-A.B.C-vh_N.efi, linux-A.B.C_D-vh-init.efi)", .{n});
+        if (u.series != .machine and u.series != .init) vh.die("{s}: a stock UKI needs no assessment", .{n});
         if (vh.eql(st0.default, n)) vh.die("{s} is the default already", .{n});
         const mounted = mountEsp();
         const path = vh.fmt(UKI_DIR ++ "/{s}", .{n});
@@ -776,9 +890,9 @@ fn cmdRetry(cf: Conf, name: ?[]const u8) void {
     st = arm(st, assess.readFacts(.{}, BOOT_ID), .{});
     saveState(st);
     if (st.armed.len > 0)
-        vh.out("  the machine kernel {s} is on trial again: the next boot tries it (0 of {d} good boots)\n", .{ assess.verOf(st.trial), cf.boots })
+        vh.out("  {s} is on trial again: the next boot tries it (0 of {d} good boots)\n", .{ assess.describe(st.trial), cf.boots })
     else
-        vh.out("  the machine kernel {s} is on trial again, not set for the next boot: {s}\n", .{ assess.verOf(st.trial), st.reason });
+        vh.out("  {s} is on trial again, not set for the next boot: {s}\n", .{ assess.describe(st.trial), st.reason });
     writeMessage(st, &.{}, cf.boots);
 }
 
@@ -786,11 +900,11 @@ fn cmdRetry(cf: Conf, name: ?[]const u8) void {
 fn cmdDemote(cf: Conf) void {
     lock();
     const st0 = loadState();
-    const st = assess.demote(st0) orelse vh.die("no machine kernel is the default: the stock UKI is", .{});
+    const st = assess.demote(st0) orelse vh.die("no machine kernel and no vh-init UKI is the default: the stock UKI is", .{});
     const v: assess.Vars = .{};
     v.delete("LoaderEntryDefault") catch vh.die("LoaderEntryDefault: {s}", .{vh.serr()});
     saveState(st);
-    vh.out("  the machine kernel {s} is no longer the default: the newest stock UKI is (to assess it again: doas vh-limine-update --retry {s})\n", .{ assess.verOf(st0.default), st0.default });
+    vh.out("  {s} is no longer the default: the newest stock UKI is (to assess it again: doas vh-limine-update --retry {s})\n", .{ assess.describe(st0.default), st0.default });
     askReseal("the default boot path is the stock UKI's now");
     writeMessage(st, &.{}, cf.boots);
 }
@@ -834,6 +948,26 @@ test "parseUki: the gaming kernel's series" {
     try std.testing.expect(g.keeps("linux-6.18.58_1.efi") and !g.keeps("linux-6.18.57-vh-game_1.efi") and g.count() == 3);
     const only: Games = .{ .twin = .{ .name = "linux-6.18.58_1.efi", .ready = true } };
     try std.testing.expectEqualStrings("linux-6.18.58_1.efi", only.preferred().?);
+}
+
+test "parseUki: the init twin of a stock UKI" {
+    const u = parseUki("linux-6.18.58_1-vh-init.efi").?;
+    try std.testing.expectEqual(Series.init, u.series);
+    try std.testing.expectEqualStrings("6.18.58_1-vh-init", u.ver);
+    try std.testing.expectEqual(@as(u64, 58), u.v[2]);
+    try std.testing.expectEqual(@as(u64, 1), u.v[3]);
+    try std.testing.expectEqualStrings("linux-6.18.58_1-vh-init.efi", assess.initTwinName("linux-6.18.58_1.efi"));
+    try std.testing.expect(parseUki("linux-6.18.58_1-vh-init2.efi") == null);
+    try std.testing.expect(parseUki("linux-6.18.58_1-vh-ini.efi") == null);
+    try std.testing.expect(parseUki("linux-6.18.58_1-vh-init_1.efi") == null);
+    // no twin of a machine or gaming kernel's UKI
+    try std.testing.expect(parseUki("linux-6.18.57-vh_1-vh-init.efi") == null);
+    try std.testing.expect(parseUki("linux-6.18.57-vh-game_1-vh-init.efi") == null);
+    // the newest stock UKI's twin first
+    var l = [_]Uki{ parseUki("linux-6.18.58_1-vh-init.efi").?, parseUki("linux-6.18.59_1-vh-init.efi").?, parseUki("linux-6.18.58_2-vh-init.efi").? };
+    mem.sort(Uki, &l, {}, ukiDesc);
+    try std.testing.expectEqualStrings("6.18.59_1-vh-init", l[0].ver);
+    try std.testing.expectEqualStrings("6.18.58_2-vh-init", l[1].ver);
 }
 
 test "parseUki: the machine series" {

@@ -95,12 +95,23 @@ would be wrong: `native` would be the runner's CPU, not the machine's.
 
 ## The boot assessment
 
-`vh-limine-update` knows two series of UKIs on the ESP: the stock one, `linux-A.B.C_D.efi`
-(Void's signed kernel package through dracut-uefi), and the machine one, `linux-A.B.C-vh_N.efi`
-([`vh-kconf install`](#the-machine-uki-vh-kconf-install); `uname -r` is `A.B.C-vh`). A new machine UKI becomes Limine's default only after it has booted successfully
+`vh-limine-update` knows three series of UKIs on the ESP: the stock one, `linux-A.B.C_D.efi`
+(Void's signed kernel package through dracut-uefi), the machine one, `linux-A.B.C-vh_N.efi`
+([`vh-kconf install`](#the-machine-uki-vh-kconf-install); `uname -r` is `A.B.C-vh`), and the
+init twin of a stock UKI, `linux-A.B.C_D-vh-init.efi`: the stock UKI with
+`init=/usr/local/sbin/vh-init` appended to its command line, made and kept by vh-limine-update
+while `/etc/vh/init-boot` exists ([`vh-init --install`](../../init/README.md#the-uki-with-vh-init-the-install-through-the-boot-assessment)).
+A new machine UKI or init twin becomes Limine's default only after it has booted successfully
 `MACHINE_BOOTS` times (3 by default, `/etc/vh/boot.conf`). Until then the default stays what it
-was: the newest stock UKI, or a machine UKI that has passed. A trial that hangs or fails never
+was: the newest stock UKI, or a UKI that has passed. A trial that hangs or fails never
 becomes the only way to boot: the boot after it reaches that default with no choice in the menu.
+What follows says "machine UKI"; the init twin is assessed the same way, named "Void Linux
+A.B.C_D (vh-init)" in the menu after the machine entries, and `--status`, `--retry NAME` and
+`--demote` take it alike. The twin series keeps the newest stock UKI's twin plus the default,
+the trial and the running one; a stock kernel update makes the new kernel's twin and puts it on
+trial, unless a machine kernel is the default, which then keeps its place (the twin waits in the
+menu for `--retry NAME`; a machine UKI built while the marker exists carries `init=` itself).
+Without the marker every twin goes.
 
 ### What Limine 12.9.3 offers
 
@@ -203,7 +214,7 @@ machine UKI an ordinary entry, which the rotation removes in time.
 vh-limine-update --new 6.18.57-vh_1   # (the hook of vh-kconf install) the menu, then the trial
 vh-limine-update --booted             # the vh-boot-assess service, once a boot
 vh-limine-update --status             # the default, the trial, and this boot as Limine reports it
-vh-limine-update --retry [NAME]       # assess the failed trial again, or the machine UKI NAME
+vh-limine-update --retry [NAME]       # assess the failed trial again, or the machine UKI or init twin NAME
 vh-limine-update --demote             # the stock UKI is the default again (no key needed)
 ```
 
@@ -250,7 +261,8 @@ a panic reboots by itself; a failure in the initramfs powers the machine off.
 of a `kernel-custom` run into `linux-A.B.C-vh_N.efi` on trial: its files checked against the
 run's SHA256SUMS and the machine's `/etc/vh/hw.zon`, the final `.config` against what a UKI
 needs, dracut `--no-kernel` with the plan's firmware in the initrd and the stock UKI's command
-line without the parameters of modules the kernel does not have, then `vh-limine-update --new`
+line without the parameters of modules the kernel does not have (and with `init=` appended
+while vh-init is wanted, `/etc/vh/init-boot`), then `vh-limine-update --new`
 and the boot assessment above. The procedure on the laptop is
 [docs/runbook-gf63.md](../runbook-gf63.md), 1.6.
 

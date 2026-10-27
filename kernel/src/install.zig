@@ -467,6 +467,37 @@ pub const Cmdline = struct {
     stayed: []const Change = &.{},
 };
 
+/// vh-init as PID 1 (vh-init --install, init/README.md): while its marker exists, the machine
+/// UKI's command line ends in init= as the stock UKI's twin does (vh-limine-update), so the
+/// machine kernel boots vh-init too; the stock UKI itself never carries it. Not the gaming
+/// kernel's: the gaming boot is runit's stage 2 (docs/uni/game.md).
+pub const init_mark = "/etc/vh/init-boot";
+pub const init_param = "init=/usr/local/sbin/vh-init";
+
+/// the command line with init= appended (before a "--" tail, init's arguments; an init= of the
+/// stock line, which an older vh-init --install put into the hook, gives way)
+pub fn withInit(cl: Cmdline) Cmdline {
+    var out = cl;
+    var words: vh.Strv = .{};
+    var tail: vh.Strv = .{};
+    for (splitArgs(cl.text)) |w| {
+        if (tail.len() > 0 or vh.eql(w, "--")) {
+            tail.add(w);
+            continue;
+        }
+        if (vh.startsWith(w, "init=")) continue;
+        words.add(w);
+    }
+    words.add(init_param);
+    for (tail.slice()) |w| words.add(w);
+    out.text = words.join(" ");
+    var added: std.ArrayList(Change) = .empty;
+    added.appendSlice(vh.gpa, cl.added) catch vh.oom();
+    added.append(vh.gpa, .{ .word = init_param, .why = "vh-init is wanted as PID 1 (" ++ init_mark ++ ", vh-init --install)" }) catch vh.oom();
+    out.added = added.items;
+    return out;
+}
+
 /// The machine kernel's command line from the stock UKI's: the same parameters, so that the
 /// sysctl loader, vh-kconf check and vh-audit see one system, but
 ///   - without module_blacklist= and module.* when the kernel has no loadable modules (an
@@ -1059,6 +1090,7 @@ fn install(o: Opts, d: *Diag) Refused!u8 {
     const stock_mods = try stockModules(vh.fmt("{s}/usr/lib/modules", .{root}), pkg, d);
     var cl = machineCmdline(stock_cmdline, modules, &img.builtin, &stock_mods, modprobeOptions(root));
     if (img.game) cl.text = gameCmdline(cl.text);
+    if (!img.game and vh.pathExists(vh.fmt("{s}{s}", .{ root, init_mark }))) cl = withInit(cl);
     if (cmdlineProblem(cl.text)) |why| problems.add(vh.fmt("the command line: {s}", .{why}));
     const hook_cmdline = hook.get("KERNEL_CMDLINE", "");
     if (hook_cmdline.len > 0 and !vh.eql(mem.join(vh.gpa, " ", splitArgs(hook_cmdline)) catch vh.oom(), mem.join(vh.gpa, " ", splitArgs(stock_cmdline)) catch vh.oom()))
@@ -1412,12 +1444,32 @@ test "install: a run's machine kernel becomes a machine UKI on trial" {
     // the second install of the same release is _2
     try testing.expectEqual(@as(u8, 0), try install(.{ .dir = f.run, .root = f.root, .repo = repo }, &d));
     try testing.expect(vh.pathExists(vh.fmt("{s}/linux-6.18.57-vh_2.efi", .{esp})));
+    // vh-init wanted as PID 1 (its marker): the machine UKI's command line ends in init= (the
+    // fake dracut writes the UKI it would build: one with that line)
+    Fixture.put(vh.fmt("{s}{s}", .{ f.root, init_mark }), "# vh-init --install\n");
+    Fixture.put(vh.fmt("{s}/expected.efi", .{dir}), uki.testPe(&.{
+        .{ ".cmdline", vh.fmt(" {s} {s} \x00", .{ f.want_cmdline, init_param }) },
+        .{ ".linux", f.bz },
+        .{ ".initrd", vh.fmt("{s}\x28\xb5\x2f\xfdmain", .{uki.testCpio(&.{ "kernel", "kernel/x86", "kernel/x86/microcode", "kernel/x86/microcode/CPU.bin" })}) },
+    }));
+    try testing.expectEqual(@as(u8, 0), try install(.{ .dir = f.run, .root = f.root, .repo = repo }, &d));
+    const args3 = try vh.readFile(vh.fmt("{s}/dracut.args", .{dir}));
+    try testing.expect(mem.indexOf(u8, args3, vh.fmt("--kernel-cmdline={s} {s}\n", .{ f.want_cmdline, init_param })) != null);
+    try testing.expect(mem.indexOf(u8, try vh.readFile(vh.fmt("{s}/var/lib/vh/kernels/6.18.57-vh_3/report.txt", .{f.root})), "+ init=/usr/local/sbin/vh-init: vh-init is wanted") != null);
+    vh.unlink(vh.fmt("{s}{s}", .{ f.root, init_mark })) catch {};
+    Fixture.put(vh.fmt("{s}/expected.efi", .{dir}), uki.testPe(&.{
+        .{ ".cmdline", vh.fmt(" {s} \x00", .{f.want_cmdline}) },
+        .{ ".linux", f.bz },
+        .{ ".initrd", vh.fmt("{s}\x28\xb5\x2f\xfdmain", .{uki.testCpio(&.{ "kernel", "kernel/x86", "kernel/x86/microcode", "kernel/x86/microcode/CPU.bin" })}) },
+    }));
+    try testing.expectEqualStrings("a b init=/usr/local/sbin/vh-init -- c", withInit(.{ .text = "a init=/old b -- c" }).text);
+    try testing.expectEqualStrings("root=x ro init=/usr/local/sbin/vh-init", withInit(.{ .text = "root=x ro" }).text);
     // vh-limine-update fails before writing limine.conf: the UKI is removed again
     vh.setenv("VH_TEST_LIMINE_RC", "1");
     try testing.expectError(error.Refused, install(.{ .dir = f.run, .root = f.root, .repo = repo }, &d));
     vh.setenv("VH_TEST_LIMINE_RC", "0");
     try testing.expect(mem.indexOf(u8, d.msg, "the UKI was removed") != null);
-    try testing.expect(!vh.pathExists(vh.fmt("{s}/linux-6.18.57-vh_3.efi", .{esp})));
+    try testing.expect(!vh.pathExists(vh.fmt("{s}/linux-6.18.57-vh_4.efi", .{esp})));
 }
 
 test "install: the gaming kernel becomes the gaming entry, with ia32 on" {

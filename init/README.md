@@ -146,15 +146,43 @@ vh-ctl / sv                      the client over /run/vh/init.sock (root only)
 ```sh
 cd init && zig build -Dtarget=x86_64-linux -Dcpu=baseline --prefix DIR   # DIR/bin/{vh-stage1,vh-init,vh-ctl}
 doas vh-init --check         # the definitions as the manager reads them: the graph, the start order
-doas vh-init --install       # init= into the UKI's command line (/etc/default/dracut-uefi-hook), the sv shim;
-                             # then: doas xbps-reconfigure -f linux6.18, which replaces this kernel
-                             # version's UKI (no runit UKI is left to fall back to: see below)
-vh-init --status             # which init is PID 1, this boot's markers, the manager
-doas vh-init --rollback      # init= out again, runit's sv back; rebuild the UKI the same way
+doas vh-init --install       # /etc/vh/init-boot, then vh-limine-update: the newest stock UKI's twin with init=
+                             # appended, signed, "Void Linux VER (vh-init)" in Limine's menu and on trial through
+                             # the one-shot entry; the stock UKI (runit) untouched; the sv shim. Then reboot
+vh-init --status             # which init is PID 1, where vh-init's UKI stands (on trial, the default), the manager
+doas vh-init --rollback      # the twin demoted and removed, runit's sv back: the next boot is runit's again
 sh tests/init/init_test.sh   # vh-init as PID 1 of a privileged container (below)
-python3 tests/vm/check.py vhinit,base,vhinit-rollback --repo   # the rig: install, the boot under vh-init, the base
-                                                                # checks on it, the rollback (kvm-smoke: step=...)
+python3 tests/vm/check.py vhinit,base,vhinit-rollback --repo   # the rig: the install, a reset trial, the trial boots
+                                                                # to the default, the base checks under vh-init, the
+                                                                # rollback (kvm-smoke: step=...)
 ```
+
+### The UKI with vh-init: the install through the boot assessment
+
+The kernel command line lives inside the signed UKI and, under Secure Boot, nothing can be typed
+at Limine's prompt: vh-init needs a UKI of its own. `vh-init --install` writes the marker
+`/etc/vh/init-boot` and runs `vh-limine-update`, which from then on gives the newest stock UKI a
+twin, `linux-A.B.C_D-vh-init.efi` beside it in `EFI/void`: the same PE image, the same kernel and
+initrd byte for byte, with `init=/usr/local/sbin/vh-init` appended to its `.cmdline` section
+(`zig/lib/twin.zig`, as the gaming boot's twin is made; a longer command line takes the padding
+of its section or one more block of the file, and the sections after it move by that block). It
+is signed with the db key as every UKI, enters Limine's menu as "Void Linux A.B.C_D (vh-init)"
+after the machine entries, and goes through the
+[boot assessment](../docs/uni/kernel.md#the-boot-assessment) exactly as a machine UKI: the next
+boot tries it once through Limine's one-shot entry, a trial boot that does not reach its end (a
+hang, a panic, a reset at the passphrase prompt) leaves the boot after it to the stock UKI,
+runit, by itself, and after `MACHINE_BOOTS` good boots (3) it is Limine's default. The stock UKI
+is not touched, `/etc/default/dracut-uefi-hook` is not edited, and a stock kernel update makes
+the new kernel's twin and puts it on trial by itself (the hook runs vh-limine-update): the old
+twin stays the default until the new one has passed. `vh-init --status` says where the twin
+stands; `vh-limine-update --status`, `--retry NAME` and `--demote` take it like a machine UKI.
+`--rollback` demotes the twin, removes the marker and runs vh-limine-update, which deletes the
+twin and forgets its trial; runit's `sv` comes back. A machine kernel: while the marker exists
+`vh-kconf install` appends `init=` to the machine UKI's command line too, so a machine kernel
+installed then boots vh-init and its trial covers both; a machine kernel that is Limine's default
+keeps its place through a stock kernel update (the new twin waits in the menu). The gaming
+kernel's UKI and the gaming twin keep runit: the gaming boot is runit's stage 2
+([game.md](../docs/uni/game.md#g3a-the-gaming-boot)). A new installation keeps runit as `init=`.
 
 **Verified** (2026-10-26, Apple Silicon, the aarch64 Void container of `tests/docker`):
 `tests/init/init_test.sh` runs vh-init as PID 1 of a privileged container with the services of
@@ -169,9 +197,9 @@ every service kept (adopted from its cgroup, same pid); the poweroff: b stopped 
 3, `reboot(2)`. 37 unit tests.
 
 **Verified on the VM rig** (2026-10-26, kvm-smoke runs 40343277197 `vhinit,base,vhinit-rollback`
-and 40340658992 `vhinit,sched`; EPYC-Milan ×4 under KVM, the stock kernel 6.18.58_1, x86_64):
-`vh-init --install` puts `init=` into the command line and the shim in place, the rebuilt UKI is
-signed and enrolled; the boot after it runs vh-init as PID 1: stage 1 in-process in 970 to
+and 40340658992 `vhinit,sched`; EPYC-Milan ×4 under KVM, the stock kernel 6.18.58_1, x86_64; with
+the install of that day, which put `init=` into the hook's command line and rebuilt the stock
+UKI in place): the boot after `vh-init --install` runs vh-init as PID 1: stage 1 in-process in 970 to
 1118 ms over four boots with 0 errors (of it udev-settle 466 to 496, static-devnodes 176 to 219,
 vh-nftables 141 to 165, pseudofs 84 to 119 ms), the manager starts the 15 services of
 `/var/service` in parallel (agetty-tty1 at +6 ms, dbus ready in 103 ms, nanoklogd started at
@@ -190,9 +218,31 @@ must start; the audit judges a done oneshot by vh-ctl, not by `sv`.
 **Not verified:** real hardware (the GF63), `vh-deadman final` at a vh-init shutdown, a runit
 runlevel from the command line and `/etc/rc.local` (not taken over), the boot time against
 runit by the bench method (below). **Open:** PID 1 keeps 4.2 MiB of RSS (stage 1 runs in it and
-its allocations stay; the audit's line is `[ ?? ]` above 4 MiB); the rebuilt UKI replaces this
-kernel version's, so no runit UKI remains until the rollback: an install through the boot
-assessment (a trial UKI with `init=`) is the follow-up.
+its allocations stay; the audit's line is `[ ?? ]` above 4 MiB).
+
+**The install through the boot assessment, verified on the VM rig** (2026-10-27, kvm-smoke run
+40472898818 `vhinit,base,vhinit-rollback`, 64 checks, 0 FAIL; run 40468673377 before it passed the
+same flow with two failures of the step's own parsing; Limine 12.9.4, the stock kernel 6.18.59_1):
+`vh-init --install` makes the twin `linux-6.18.59_1-vh-init.efi` in a second (the stock command
+line is 1078 bytes, so the parameter fits the section's padding; the one-more-block layout ran in
+the unit tests and `assess_test.py` only), signed and enrolled, on trial and set for the next boot
+through the one-shot entry; the stock UKI's bytes are unchanged, the twin carries `init=` once and
+the stock UKI never, the hook is untouched. The first trial boot reset at its passphrase prompt:
+the boot after it runs runit by itself, the trial is "failed: the trial boot did not reach the end
+of the boot", `vh-init --status` names `--retry`. After `--retry` the trial boot runs vh-init as
+PID 1 (stage 1 in 1013 ms, 0 errors; udev-settle 478, static-devnodes 204, vh-nftables 148 ms;
+the 15 services settled 5.1 s after the manager; PID 1 RSS 4300 kB; `vh-ctl status` and the shim
+agree; vh-audit ok 179 with the rig's Secure Boot FAIL, the init area clean, the boot area counts
+the twin and the trial), the service counts it (1 of 3) and sets the entry again; runit-void's
+`poweroff` ends in stage 3 (110 ms). `check.py base` under vh-init is the second good boot; the
+third makes the twin `LoaderEntryDefault` with limine.conf unchanged, the default boots it with no
+one-shot entry and the service has no news; `vh-init --rollback` demotes it, deletes the twin and
+its entry, restores runit's `sv` and the noextract file goes; the boot after it runs runit with
+every service up, nothing on trial, no UKI with vh-init on the ESP. **Not verified:** real
+hardware with Secure Boot on (the twin is signed as every UKI; the rig has no Secure Boot), a
+stock kernel update with the marker (the e2e test covers it), a machine kernel with `init=`
+(`vhinit,sched` / `vhinit,selinux` on this branch).
+
 **Not done:** `vh-logd` (/dev/log stays with socklog; the manager
 writes the services' own logs), the Landlock and mount-namespace sandbox of a service, the
 `SCX` link held by the manager (vh-sched is a service that holds its own link).
