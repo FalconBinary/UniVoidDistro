@@ -22,7 +22,12 @@ case $exe in
 	[ -d /var/log/vh ] && [ "$(stat -c %a /var/log/vh)" = 700 ] && ok "/var/log/vh is root's (0700)" || bad "/var/log/vh is missing or not 0700"
 	;;
 *runit*)
-	unk "PID 1 is runit ($exe); vh-init is not installed as init= (doas vh-init --install)"
+	if [ -e /etc/vh/init-boot ]; then
+		# vh-init --install ran: its UKI is on trial, failed it, or was demoted (init/README.md)
+		unk "PID 1 is runit ($exe); vh-init is wanted (/etc/vh/init-boot): $(/usr/local/sbin/vh-init --status 2>/dev/null | sed -n 's/^boot assessment: //p')"
+	else
+		unk "PID 1 is runit ($exe); vh-init is not installed (doas vh-init --install)"
+	fi
 	;;
 *)
 	bad "PID 1 is $exe: neither runit nor vh-init"

@@ -473,7 +473,11 @@ pub const Kv = struct {
     vals: std.ArrayList([]const u8) = .empty,
 
     pub fn read(self: *Kv, path: []const u8, inline_comments: bool) void {
-        const text = readFile(path) catch return;
+        self.parse(readFile(path) catch return, inline_comments);
+    }
+
+    /// the lines of a file's text
+    pub fn parse(self: *Kv, text: []const u8, inline_comments: bool) void {
         var lines = mem.tokenizeScalar(u8, text, '\n');
         while (lines.next()) |raw| {
             var line = raw;

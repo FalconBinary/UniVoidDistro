@@ -6,7 +6,9 @@
 //! not change for either. Here: the variables through efivarfs, the identifiers Limine gives
 //! its menu entries, the verdict of vh-kconf check, the state file and the decisions, which
 //! are pure functions of the state and of what one boot looked like (the unit tests run them
-//! without firmware). vh-limine-update is the only user.
+//! without firmware). The same assessment takes the init twin of a stock UKI (vh-init
+//! --install, init/README.md): the stock kernel with init=/usr/local/sbin/vh-init, which becomes
+//! the default the same way. vh-limine-update is the only user.
 const std = @import("std");
 const vh = @import("vh");
 const linux = std.os.linux;
@@ -24,10 +26,42 @@ pub const default_boots = 3;
 
 // ---------------------------------------------------------------- menu entries
 
-/// The menu name of a machine UKI, the same in every role (on trial, the default, an older
-/// one), so that its identifier never changes: "Void Linux 6.18.57-vh_2 (machine kernel)".
+/// The assessed UKIs are of two kinds: a machine kernel, linux-A.B.C-vh_N.efi (vh-kconf
+/// install), and the init twin of a stock UKI, linux-A.B.C_D-vh-init.efi (vh-init --install,
+/// init/README.md): the stock UKI linux-A.B.C_D.efi with init=/usr/local/sbin/vh-init appended
+/// to its command line, made by vh-limine-update (lib/twin.zig). Its version is the stock
+/// one's with this suffix.
+pub const init_suffix = "-vh-init";
+
+/// a version or a UKI name of the init twin
+pub fn isInit(ver_or_uki: []const u8) bool {
+    return vh.endsWith(verOf(ver_or_uki), init_suffix);
+}
+
+/// the init twin's file name of the stock UKI NAME: "linux-6.18.58_1.efi" -> "linux-6.18.58_1-vh-init.efi"
+pub fn initTwinName(stock: []const u8) []const u8 {
+    return vh.fmt("linux-{s}{s}.efi", .{ verOf(stock), init_suffix });
+}
+
+/// "6.18.58_1-vh-init" -> "6.18.58_1": the stock UKI's version
+fn stockOf(ver: []const u8) []const u8 {
+    return ver[0 .. ver.len - init_suffix.len];
+}
+
+/// The menu name of an assessed UKI, the same in every role (on trial, the default, an older
+/// one), so that its identifier never changes: "Void Linux 6.18.57-vh_2 (machine kernel)",
+/// "Void Linux 6.18.58_1 (vh-init)".
 pub fn entryName(ver: []const u8) []const u8 {
+    if (isInit(ver)) return vh.fmt("Void Linux {s} (vh-init)", .{stockOf(ver)});
     return vh.fmt("Void Linux {s} (machine kernel)", .{ver});
+}
+
+/// what a UKI is, for the messages: "the machine kernel 6.18.57-vh_2", "the stock kernel
+/// 6.18.58_1 with vh-init"
+pub fn describe(uki: []const u8) []const u8 {
+    const ver = verOf(uki);
+    if (isInit(ver)) return vh.fmt("the stock kernel {s} with vh-init", .{stockOf(ver)});
+    return vh.fmt("the machine kernel {s}", .{ver});
 }
 
 /// "linux-6.18.57-vh_2.efi" -> "6.18.57-vh_2"; the name itself when it is not a UKI's
@@ -36,8 +70,10 @@ pub fn verOf(uki: []const u8) []const u8 {
     return uki;
 }
 
-/// "6.18.57-vh_2" -> "6.18.57-vh", the release the kernel reports (uname -r)
+/// "6.18.57-vh_2" -> "6.18.57-vh", the release the kernel reports (uname -r); the init twin
+/// runs the stock kernel: "6.18.58_1-vh-init" -> "6.18.58_1"
 pub fn releaseOf(ver: []const u8) []const u8 {
+    if (isInit(ver)) return stockOf(ver);
     return ver[0 .. mem.lastIndexOfScalar(u8, ver, '_') orelse ver.len];
 }
 
@@ -384,7 +420,7 @@ const Out = struct {
         o.a.state.status = .failed;
         o.a.state.reason = why;
         o.a.state.armed = "";
-        o.ev.add(vh.fmt("the machine kernel {s} failed its trial: {s}", .{ verOf(o.a.state.trial), why }));
+        o.ev.add(vh.fmt("{s} failed its trial: {s}", .{ describe(o.a.state.trial), why }));
     }
 
     fn done(o: *Out) Action {
@@ -408,23 +444,23 @@ pub fn booted(st0: State, f: Facts, boots: u32) Action {
         const id = ukiId(st.default);
         if (!promoted and f.loader.len > 0 and f.entries != null and (f.default == null or !vh.eql(f.default.?, id))) {
             o.a.set_default = id;
-            o.ev.add(vh.fmt("LoaderEntryDefault named {s} instead of the default machine kernel {s}: set back", .{ f.default orelse "nothing", verOf(st.default) }));
+            o.ev.add(vh.fmt("LoaderEntryDefault named {s} instead of the default, {s}: set back", .{ f.default orelse "nothing", describe(st.default) }));
         }
         if (f.started(st.default)) {
             switch (f.verdict) {
-                .bad => |why| o.ev.add(vh.fmt("the default machine kernel {s} booted, but {s}: doas vh-limine-update --demote makes the stock UKI the default again", .{ verOf(st.default), why })),
+                .bad => |why| o.ev.add(vh.fmt("the default, {s}, booted, but {s}: doas vh-limine-update --demote makes the stock UKI the default again", .{ describe(st.default), why })),
                 else => {},
             }
         } else if (!promoted and f.loader.len > 0 and !(st.trial.len > 0 and f.started(st.trial)) and
             !(f.selected != null and isGameEntry(f.selected.?)))
         {
             // the gaming boot is chosen on purpose (vh-game play), not a fallback
-            o.ev.add(vh.fmt("this boot is {s}, not the default machine kernel {s}: if {s} failed, doas vh-limine-update --demote makes the stock UKI the default again", .{ f.selected orelse "another entry", verOf(st.default), verOf(st.default) }));
+            o.ev.add(vh.fmt("this boot is {s}, not the default, {s}: if the default failed, doas vh-limine-update --demote makes the stock UKI the default again", .{ f.selected orelse "another entry", describe(st.default) }));
         }
     } else if (f.default != null) {
-        // no machine UKI has passed: a default entry in NVRAM would override the stock one
+        // nothing has passed a trial: a default entry in NVRAM would override the stock one
         o.a.clear_default = true;
-        o.ev.add(vh.fmt("LoaderEntryDefault named {s} while no machine kernel has passed: deleted, the stock UKI is the default", .{f.default.?}));
+        o.ev.add(vh.fmt("LoaderEntryDefault named {s} while nothing has passed a trial: deleted, the stock UKI is the default", .{f.default.?}));
     }
     return o.done();
 }
@@ -433,7 +469,7 @@ pub fn booted(st0: State, f: Facts, boots: u32) Action {
 fn trial(o: *Out, f: Facts, boots: u32) bool {
     const st = &o.a.state;
     const id = ukiId(st.trial);
-    const ver = verOf(st.trial);
+    const what = describe(st.trial);
     const armed_now = st.armed.len > 0 and vh.eql(st.armed, f.id);
     if (f.started(st.trial)) {
         // this boot started the trial's entry: the one-shot entry, or the menu
@@ -448,7 +484,7 @@ fn trial(o: *Out, f: Facts, boots: u32) bool {
                 st.reason = "";
                 if (st.good >= boots) {
                     o.a.set_default = id;
-                    o.ev.add(vh.fmt("the machine kernel {s} booted well {d} times in a row: it is Limine's default now", .{ ver, st.good }));
+                    o.ev.add(vh.fmt("{s} booted well {d} times in a row: it is Limine's default now", .{ what, st.good }));
                     st.default = st.trial;
                     st.default_hash = st.trial_hash;
                     clearTrial(st);
@@ -456,7 +492,7 @@ fn trial(o: *Out, f: Facts, boots: u32) bool {
                 }
                 o.a.arm = true;
                 st.armed = f.id;
-                o.ev.add(vh.fmt("the machine kernel {s} on trial: {d} of {d} good boots; the next boot tries it again", .{ ver, st.good, boots }));
+                o.ev.add(vh.fmt("{s} on trial: {d} of {d} good boots; the next boot tries it again", .{ what, st.good, boots }));
             },
             .bad => |why| {
                 o.fail(vh.fmt("it booted, but {s}", .{why}));
@@ -494,15 +530,15 @@ fn trial(o: *Out, f: Facts, boots: u32) bool {
         o.a.arm = true;
         st.armed = f.id;
         st.reason = "";
-        o.ev.add(vh.fmt("the machine kernel {s} on trial: the next boot tries it ({d} of {d} good boots)", .{ ver, st.good, boots }));
+        o.ev.add(vh.fmt("{s} on trial: the next boot tries it ({d} of {d} good boots)", .{ what, st.good, boots }));
     } else if (f.loader.len == 0) {
         st.reason = "no Limine in this boot: the trial waits for a boot through Limine";
     } else if (!f.oneshotWorks()) {
         st.reason = vh.fmt("{s} takes no one-shot entry by identifier (Limine 12.7 or later): boot the entry from the menu {d} times", .{ f.loader, boots });
-        o.ev.add(vh.fmt("the machine kernel {s} on trial: {s}", .{ ver, st.reason }));
+        o.ev.add(vh.fmt("{s} on trial: {s}", .{ what, st.reason }));
     } else {
         st.reason = vh.fmt("Limine does not list the entry {s} yet", .{id});
-        o.ev.add(vh.fmt("the machine kernel {s} on trial: {s}", .{ ver, st.reason }));
+        o.ev.add(vh.fmt("{s} on trial: {s}", .{ what, st.reason }));
     }
     return false;
 }
@@ -553,12 +589,12 @@ pub fn reconcile(st0: State, esp: []const OnEsp) Action {
         if (hashOf(esp, st.trial)) |h| {
             if (!vh.eql(h, st.trial_hash)) {
                 if (st.armed.len > 0) o.a.disarm = ukiId(st.trial);
-                o.ev.add(vh.fmt("the machine UKI {s} on trial changed on the ESP: its trial starts again", .{st.trial}));
+                o.ev.add(vh.fmt("the UKI {s} on trial changed on the ESP: its trial starts again", .{st.trial}));
                 st.* = install(st.*, st.trial, h);
             }
         } else {
             if (st.armed.len > 0) o.a.disarm = ukiId(st.trial);
-            o.ev.add(vh.fmt("the machine UKI {s} on trial is no longer on the ESP: its trial ends", .{st.trial}));
+            o.ev.add(vh.fmt("the UKI {s} on trial is no longer on the ESP: its trial ends", .{st.trial}));
             clearTrial(st);
         }
     }
@@ -566,7 +602,7 @@ pub fn reconcile(st0: State, esp: []const OnEsp) Action {
         if (hashOf(esp, st.default)) |h| {
             if (!vh.eql(h, st.default_hash)) {
                 o.a.clear_default = true;
-                o.ev.add(vh.fmt("the default machine UKI {s} changed on the ESP: the stock UKI is the default until it has passed its trial again", .{st.default}));
+                o.ev.add(vh.fmt("the default UKI {s} changed on the ESP: the stock UKI is the default until it has passed its trial again", .{st.default}));
                 const name = st.default;
                 st.default = "";
                 st.default_hash = "";
@@ -574,7 +610,7 @@ pub fn reconcile(st0: State, esp: []const OnEsp) Action {
             }
         } else {
             o.a.clear_default = true;
-            o.ev.add(vh.fmt("the default machine UKI {s} is no longer on the ESP: the stock UKI is the default", .{st.default}));
+            o.ev.add(vh.fmt("the default UKI {s} is no longer on the ESP: the stock UKI is the default", .{st.default}));
             st.default = "";
             st.default_hash = "";
         }
@@ -630,6 +666,15 @@ test "entry names and Limine's identifiers" {
     try t.expectEqualStrings("6.18.57-vh_2", verOf("linux-6.18.57-vh_2.efi"));
     try t.expectEqualStrings("6.18.57-vh", releaseOf("6.18.57-vh_2"));
     try t.expectEqualStrings("Void Linux 6.18.57-vh_2 (machine kernel)", entryName("6.18.57-vh_2"));
+    try t.expectEqualStrings("the machine kernel 6.18.57-vh_2", describe("linux-6.18.57-vh_2.efi"));
+    // the init twin of a stock UKI (vh-init --install): the stock kernel, another entry
+    try t.expectEqualStrings("linux-6.18.58_1-vh-init.efi", initTwinName("linux-6.18.58_1.efi"));
+    try t.expect(isInit("linux-6.18.58_1-vh-init.efi") and isInit("6.18.58_1-vh-init"));
+    try t.expect(!isInit("linux-6.18.58_1.efi") and !isInit("linux-6.18.57-vh_2.efi") and !isInit("6.18.57-vh_2"));
+    try t.expectEqualStrings("Void Linux 6.18.58_1 (vh-init)", entryName("6.18.58_1-vh-init"));
+    try t.expectEqualStrings("Void-Linux-6.18.58_1--vh-init-", ukiId("linux-6.18.58_1-vh-init.efi"));
+    try t.expectEqualStrings("6.18.58_1", releaseOf("6.18.58_1-vh-init"));
+    try t.expectEqualStrings("the stock kernel 6.18.58_1 with vh-init", describe("linux-6.18.58_1-vh-init.efi"));
 }
 
 test "UTF-16 values, the verdict, the state file" {
@@ -815,7 +860,7 @@ test "arming when the install's boot loader could not, and the default entry's u
     var other = limine("b7", stock_id, .good);
     other.default = did;
     a = booted(dflt, other, 3);
-    try t.expect(a.set_default == null and has(a.events, "not the default machine kernel"));
+    try t.expect(a.set_default == null and has(a.events, "not the default, the machine kernel"));
     // the gaming entry (vh-game play) is no fallback: nothing told, nothing acted on
     var game = limine("b7g", gameId("linux-6.18.58_1.efi"), .good);
     game.default = did;

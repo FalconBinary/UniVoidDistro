@@ -230,7 +230,9 @@ doas vh-game boot off   the marker, the script, the twin and its entry go (vh-ga
   the db key as every UKI; limine.conf carries its BLAKE2B. A twin already on the ESP is kept as
   it is; a stock kernel update makes the new twin and deletes the older one. A stock UKI whose
   command line lacks `ia32_emulation=0` gets no twin: vh-limine-update stops before it writes
-  anything. The PE image is untrusted data: every offset and size is checked.
+  anything. The PE image is untrusted data: every offset and size is checked. The same code
+  makes the init twin of `vh-init --install` (init/README.md); the gaming twin and the gaming
+  kernel keep runit even then: the gaming boot is runit's stage 2.
 - **The entry and `play`.** The gaming entry is the last of the menu and never the default.
   `vh-game play` runs `vh-limine-update --game-once`: Limine's one-shot entry names it, and the boot
   after the gaming one is the default again. It is refused while a machine kernel's trial waits for

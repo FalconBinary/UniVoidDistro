@@ -33,6 +33,8 @@ MSG = "/run/vh/boot-assess"
 BOOTID = "/tmp/vh-assess-bootid"
 GAME = ESP + "/EFI/vh-game"
 MARK = "/etc/vh/game-boot"
+INIT_MARK = "/etc/vh/init-boot"
+INIT_PARAM = "init=/usr/local/sbin/vh-init"
 GOOD = "VH_CHECK machine=same devices=0 firmware=2 lost=0"
 LOST = "VH_CHECK machine=same devices=1 firmware=0 lost=1"
 failures = 0
@@ -110,6 +112,7 @@ def pe_uki(name, cmdline, seed):
     struct.pack_into("<H", data, 0x54, opt_size)
     opt = 0x40 + 24
     struct.pack_into("<H", data, opt, 0x20B)
+    struct.pack_into("<II", data, opt + 32, 4096, 512)     # SectionAlignment, FileAlignment
     struct.pack_into("<I", data, opt + 108, 16)
     table = opt + opt_size
     for i, (sname, body) in enumerate(secs):
@@ -174,6 +177,31 @@ def ident(name):
 def menu():
     with open(CONF) as f:
         return [ident(l[1:].rstrip("\n")) for l in f if l.startswith("/")]
+
+
+def iid(ver):
+    """the identifier of the init twin's entry of the stock UKI VER, "Void Linux VER (vh-init)" """
+    return ident(f"Void Linux {ver} (vh-init)")
+
+
+def pe_sections(data):
+    """the section table of a PE image: {name: (raw offset, raw size, virtual size, address)}"""
+    pe = struct.unpack_from("<I", data, 0x3C)[0]
+    nsec = struct.unpack_from("<H", data, pe + 6)[0]
+    table = pe + 24 + struct.unpack_from("<H", data, pe + 20)[0]
+    out = {}
+    for i in range(nsec):
+        h = table + i * 40
+        name = data[h:h + 8].rstrip(b"\0").decode()
+        vsize, vma, rsize, rptr = struct.unpack_from("<IIII", data, h + 8)
+        out[name] = (rptr, rsize, vsize, vma)
+    return out
+
+
+def section(data, name):
+    """a section's bytes, the virtual size of them"""
+    rptr, rsize, vsize, _ = pe_sections(data)[name]
+    return data[rptr:rptr + (vsize or rsize)]
 
 
 def mid(ver):
@@ -243,6 +271,7 @@ def main():
     try:
         scenario()
         game_scenario()
+        init_scenario()
     finally:
         teardown()
     print(f"assess_test: {failures} failure(s)")
@@ -486,6 +515,212 @@ def game_scenario():
        "(games)" not in conf and "vh-game" not in conf and getvar("LoaderEntryOneShot") is None, out)
     rc, out = run("--game-once")
     ok("game: --game-once while off is refused", rc != 0 and "off" in out, out)
+
+
+def init_twin_ok(stock, twin, cmdline):
+    """the twin is the stock UKI with the parameter appended and nothing else: every section's
+    bytes the stock one's, the command line's the new line, the addresses in memory unchanged"""
+    ss, ts = pe_sections(stock), pe_sections(twin)
+    if set(ss) != set(ts):
+        return False
+    for name, (rptr, rsize, vsize, vma) in ss.items():
+        trptr, trsize, tvsize, tvma = ts[name]
+        if tvma != vma:
+            return False
+        if name == ".cmdline":
+            want = (cmdline + " " + INIT_PARAM).encode() + b"\0"
+            if tvsize != len(want) or twin[trptr:trptr + len(want)] != want or any(twin[trptr + len(want):trptr + trsize]):
+                return False
+        elif stock[rptr:rptr + rsize] != twin[trptr:trptr + trsize] or tvsize != vsize:
+            return False
+    return True
+
+
+def init_scenario():
+    """vh-init --install through the boot assessment (init/README.md, docs/uni/kernel.md): the
+    marker makes the newest stock UKI's twin with init= appended, its entry after the machine
+    entries, on trial; a command line that needs one more block of the file; three good boots to
+    the default with the stock UKI untouched; a reset trial; a kernel update: the new kernel's
+    twin on trial while the old one stays the default; a machine kernel's trial is not cut
+    short; --demote; the marker removed: the twins gone, the trial forgotten."""
+    for n in os.listdir(UKI):
+        os.remove(f"{UKI}/{n}")
+    for v in os.listdir(EFIVARS):
+        os.remove(f"{EFIVARS}/{v}")
+    for p in (STATE, MARK, INIT_MARK):
+        if os.path.exists(p):
+            os.remove(p)
+    shutil.rmtree(GAME, ignore_errors=True)
+    # 495 bytes with the NUL: the 28 bytes of the parameter and a space do not fit the 512-byte
+    # section, so the twin's .cmdline takes one more block and .linux and .initrd move
+    cmd = "root=UUID=x efi=disable_early_pci_dma ia32_emulation=0 module_blacklist=" + ",".join(f"mod{i:03d}" for i in range(60)) + " ro"
+    assert 484 <= len(cmd) + 1 <= 511, len(cmd)
+    pe_uki("linux-6.18.57_1.efi", cmd, 1)
+    pe_uki("linux-6.18.58_1.efi", cmd, 2)
+    rc, out = run()
+    with open(CONF) as f:
+        off_conf = f.read()
+    ok("init: without the marker no UKI with vh-init, no state", rc == 0 and "vh-init" not in off_conf and state() is None, out)
+    sel, rc, out = boot()
+    ok("init: the stock UKI boots", sel == "Void-Linux-6.18.58_1" and state() is None, sel)
+    stock = read(f"{UKI}/linux-6.18.58_1.efi")
+
+    # vh-init --install: the marker, then vh-limine-update
+    open(INIT_MARK, "w").close()
+    rc, out = run()
+    with open(CONF) as f:
+        on_conf = f.read()
+    names = sorted(os.listdir(UKI))
+    ok("init: the twin of the newest stock UKI, beside it", rc == 0 and names == ["linux-6.18.57_1.efi", "linux-6.18.58_1-vh-init.efi", "linux-6.18.58_1.efi"], str(names) + out)
+    twin = read(f"{UKI}/linux-6.18.58_1-vh-init.efi")
+    ok("init: the stock UKI is untouched", read(f"{UKI}/linux-6.18.58_1.efi") == stock)
+    # the stub's signature is a tail the twin copies from the stock UKI, so it is "signed" as it is
+    ok("init: the twin is signed (sbctl)", twin.endswith(b"vh-test-signed\n"))
+    ok("init: the twin is the stock UKI with init= appended, the kernel and the initrd as they are, moved by one block",
+       init_twin_ok(stock, twin, cmd) and len(twin) == len(stock) + 512 and pe_sections(twin)[".cmdline"][1] == 1024, str(pe_sections(twin)))
+    ok("init: the stock entries as before, the twin's entry after them, none a machine entry",
+       on_conf.startswith(off_conf) and menu() == ["Void-Linux-6.18.58_1", "Void-Linux-6.18.57_1--previous-kernel-", iid("6.18.58_1")], str(menu()))
+    want = f"/Void Linux 6.18.58_1 (vh-init)\n    protocol: efi\n    path: boot():/EFI/void/linux-6.18.58_1-vh-init.efi#{hashlib.blake2b(twin).hexdigest()}"
+    ok("init: its entry carries the twin's BLAKE2B", want in on_conf, on_conf[-400:])
+    ok("init: on trial, set for the next boot, the state says so",
+       getvar("LoaderEntryOneShot") == iid("6.18.58_1") and state()["TRIAL"] == "linux-6.18.58_1-vh-init.efi" and state()["TRIAL_GOOD"] == "0" and state()["TRIAL_ARMED"] != "",
+       str(state()))
+    ok("init: says so", "the stock kernel 6.18.58_1 with vh-init is on trial: the next boot tries it once" in out and "leaves the one after to the stock UKI 6.18.58_1" in out, out)
+    mtime = os.stat(f"{UKI}/linux-6.18.58_1-vh-init.efi").st_mtime_ns
+    rc, out = run()
+    with open(CONF) as f:
+        ok("init: a second run keeps the twin, the menu and the trial as they are",
+           rc == 0 and os.stat(f"{UKI}/linux-6.18.58_1-vh-init.efi").st_mtime_ns == mtime and f.read() == on_conf and state()["TRIAL_GOOD"] == "0" and getvar("LoaderEntryOneShot") == iid("6.18.58_1"), out)
+    rc, out = run("--status")
+    ok("init: --status names vh-init's twin", rc == 0 and "on trial: the stock kernel 6.18.58_1 with vh-init (linux-6.18.58_1-vh-init.efi), 0 of 3 good boots, set for the next boot" in out and "vh-init (init/README.md): wanted" in out, out)
+
+    # a trial reset at the passphrase prompt: Limine consumed the one-shot entry, the service
+    # never ran; the next boot is the stock UKI (runit) by itself
+    sel, _, _ = boot(service=False)
+    ok("init: the first trial boot started the twin (the one-shot entry)", sel == iid("6.18.58_1") and getvar("LoaderEntryOneShot") is None, sel)
+    sel, rc, out = boot()
+    ok("init: the boot after the reset is the stock UKI by itself, the trial failed",
+       sel == "Void-Linux-6.18.58_1" and state()["TRIAL_STATE"] == "failed" and "did not reach the end of the boot" in state()["TRIAL_REASON"], str(state()))
+    ok("init: the admin is told", "the stock kernel 6.18.58_1 with vh-init failed its trial" in message() and "--retry" in message(), message())
+    rc, out = run("--retry")
+    ok("init: --retry: on trial again", rc == 0 and "the stock kernel 6.18.58_1 with vh-init is on trial again" in out and getvar("LoaderEntryOneShot") == iid("6.18.58_1"), out)
+
+    # three good boots: the default, limine.conf unchanged
+    for n in (1, 2):
+        sel, rc, out = boot()
+        ok(f"init: trial boot {n}: the twin booted, counted, set again", sel == iid("6.18.58_1") and state()["TRIAL_GOOD"] == str(n) and getvar("LoaderEntryOneShot") == iid("6.18.58_1"), out)
+        ok(f"init: trial boot {n}: the admin's message", f"the stock kernel 6.18.58_1 with vh-init on trial: {n} of 3 good boots" in message(), message())
+    sel, rc, out = boot()
+    ok("init: trial boot 3: Limine's default now", sel == iid("6.18.58_1") and getvar("LoaderEntryDefault") == iid("6.18.58_1") and getvar("LoaderEntryOneShot") is None and state()["DEFAULT"] == "linux-6.18.58_1-vh-init.efi" and state()["TRIAL"] == "", out + str(state()))
+    with open(CONF) as f:
+        ok("init: the promotion did not touch limine.conf", f.read() == on_conf)
+    sel, rc, out = boot()
+    ok("init: the next boot is the twin, nothing to say", sel == iid("6.18.58_1") and rc == 0 and message() == "", out + message())
+    rc, out = run("--status")
+    ok("init: --status: the default is vh-init's twin", "the default: the stock kernel 6.18.58_1 with vh-init (linux-6.18.58_1-vh-init.efi)" in out and "on trial: none" in out, out)
+
+    # a kernel update (the hook's --new): the new kernel's twin on trial, the old one the default
+    # until it has passed; the stock series rotates as ever
+    pe_uki("linux-6.18.59_1.efi", cmd, 3)
+    rc, out = run("--new", "6.18.59_1")
+    names = sorted(os.listdir(UKI))
+    ok("init: a new stock kernel: its twin made, the old twin (the default) kept, the oldest stock UKI gone",
+       rc == 0 and names == ["linux-6.18.58_1-vh-init.efi", "linux-6.18.58_1.efi", "linux-6.18.59_1-vh-init.efi", "linux-6.18.59_1.efi"], str(names) + out)
+    ok("init: the new twin on trial, the old one the default", state()["TRIAL"] == "linux-6.18.59_1-vh-init.efi" and state()["DEFAULT"] == "linux-6.18.58_1-vh-init.efi"
+       and getvar("LoaderEntryOneShot") == iid("6.18.59_1") and getvar("LoaderEntryDefault") == iid("6.18.58_1"), str(state()))
+    ok("init: the menu: the stock entries, then the twins, the newest first",
+       menu() == ["Void-Linux-6.18.59_1", "Void-Linux-6.18.58_1--previous-kernel-", iid("6.18.59_1"), iid("6.18.58_1")], str(menu()))
+    ok("init: says the fallback is the old twin", "the stock kernel 6.18.59_1 with vh-init is on trial" in out and "leaves the one after to the stock kernel 6.18.58_1 with vh-init" in out, out)
+    for n in (1, 2, 3):
+        sel, rc, out = boot()
+        ok(f"init: the new twin's trial boot {n}", sel == iid("6.18.59_1"), sel)
+    ok("init: the new twin is the default, the old one an ordinary entry", state()["DEFAULT"] == "linux-6.18.59_1-vh-init.efi" and getvar("LoaderEntryDefault") == iid("6.18.59_1"), str(state()))
+    rc, out = run()
+    names = sorted(os.listdir(UKI))
+    ok("init: the next run drops the old twin (neither the newest stock UKI's, nor the default, trial or running one)",
+       names == ["linux-6.18.58_1.efi", "linux-6.18.59_1-vh-init.efi", "linux-6.18.59_1.efi"] and "deleting the UKI with vh-init linux-6.18.58_1-vh-init.efi" in out, str(names) + out)
+
+    # --demote: the stock UKI (runit) boots; the twin stays in the menu, --retry NAME assesses it again
+    rc, out = run("--demote")
+    ok("init: --demote", rc == 0 and "the stock kernel 6.18.59_1 with vh-init is no longer the default" in out and getvar("LoaderEntryDefault") is None and state()["DEFAULT"] == "", out)
+    sel, rc, out = boot()
+    ok("init: after --demote the newest stock UKI boots", sel == "Void-Linux-6.18.59_1", sel)
+    rc, out = run("--retry", "linux-6.18.59_1-vh-init.efi")
+    ok("init: --retry NAME: the twin on trial again", rc == 0 and state()["TRIAL"] == "linux-6.18.59_1-vh-init.efi" and getvar("LoaderEntryOneShot") == iid("6.18.59_1"), out)
+    for n in (1, 2, 3):
+        boot()
+    ok("init: the default again after three good boots", state()["DEFAULT"] == "linux-6.18.59_1-vh-init.efi" and getvar("LoaderEntryDefault") == iid("6.18.59_1"), str(state()))
+
+    # a machine UKI arrives: the newest installed UKI is the trial, as ever (a machine UKI built
+    # while the marker exists carries init= itself: vh-kconf install); a kernel update during its
+    # trial makes the new twin the trial and leaves the machine UKI in the menu for --retry NAME
+    uki("linux-6.18.59-vh_1.efi", 7)
+    rc, out = run("--new", "6.18.59-vh_1")
+    ok("init: a machine UKI arrives: on trial, the twin stays the default",
+       rc == 0 and state()["TRIAL"] == "linux-6.18.59-vh_1.efi" and state()["DEFAULT"] == "linux-6.18.59_1-vh-init.efi" and getvar("LoaderEntryOneShot") == mid("6.18.59-vh_1"), out)
+    ok("init: the machine entry before the twins", menu()[2:] == [mid("6.18.59-vh_1"), iid("6.18.59_1")], str(menu()))
+    pe_uki("linux-6.18.60_1.efi", cmd, 4)
+    rc, out = run("--new", "6.18.60_1")
+    ok("init: a kernel update during the machine trial: the new twin is the trial, the machine UKI in the menu, the old twin the default",
+       rc == 0 and state()["TRIAL"] == "linux-6.18.60_1-vh-init.efi" and state()["DEFAULT"] == "linux-6.18.59_1-vh-init.efi" and getvar("LoaderEntryOneShot") == iid("6.18.60_1")
+       and os.path.exists(f"{UKI}/linux-6.18.59-vh_1.efi"), out + str(state()))
+
+    # the machine kernel assessed by hand and passing: a machine kernel that is the default keeps
+    # its place through a kernel update, whose twin waits in the menu
+    rc, out = run("--retry", "linux-6.18.59-vh_1.efi")
+    ok("init: --retry NAME: the machine kernel on trial", rc == 0 and state()["TRIAL"] == "linux-6.18.59-vh_1.efi" and getvar("LoaderEntryOneShot") == mid("6.18.59-vh_1"), out)
+    for n in (1, 2, 3):
+        sel, rc, out = boot()
+        ok(f"init: the machine kernel's trial boot {n}", sel == mid("6.18.59-vh_1"), sel)
+    ok("init: the machine kernel is the default; the twin that was is an ordinary entry", state()["DEFAULT"] == "linux-6.18.59-vh_1.efi" and getvar("LoaderEntryDefault") == mid("6.18.59-vh_1"), str(state()))
+    pe_uki("linux-6.18.61_1.efi", cmd, 5)
+    rc, out = run("--new", "6.18.61_1")
+    names = sorted(os.listdir(UKI))
+    ok("init: a kernel update while a machine kernel is the default: its twin made, in the menu, not on trial; the default stays; the twins of before go",
+       rc == 0 and names == ["linux-6.18.59-vh_1.efi", "linux-6.18.60_1.efi", "linux-6.18.61_1-vh-init.efi", "linux-6.18.61_1.efi"] and state()["TRIAL"] == "" and state()["DEFAULT"] == "linux-6.18.59-vh_1.efi"
+       and getvar("LoaderEntryOneShot") is None and "the stock kernel 6.18.61_1 with vh-init is in the menu, not on trial: the machine kernel 6.18.59-vh_1 is Limine's default" in out, str(names) + out)
+    rc, out = run("--retry", "linux-6.18.61_1-vh-init.efi")
+    ok("init: --retry NAME puts the twin on trial beside the machine default", rc == 0 and state()["TRIAL"] == "linux-6.18.61_1-vh-init.efi" and state()["DEFAULT"] == "linux-6.18.59-vh_1.efi" and getvar("LoaderEntryOneShot") == iid("6.18.61_1"), out)
+    sel, rc, out = boot(service=False)
+    ok("init: that trial boot started the twin", sel == iid("6.18.61_1"), sel)
+    sel, rc, out = boot()
+    ok("init: after its reset the machine default boots, the twin's trial failed", sel == mid("6.18.59-vh_1") and state()["TRIAL_STATE"] == "failed", str(state()))
+    rc, out = run("--demote")
+    ok("init: --demote of the machine kernel", rc == 0 and "the machine kernel 6.18.59-vh_1 is no longer the default" in out and getvar("LoaderEntryDefault") is None and state()["DEFAULT"] == "", out)
+    os.remove(f"{UKI}/linux-6.18.59-vh_1.efi")
+
+    # vh-init --rollback: the marker goes, then vh-limine-update deletes every twin and forgets
+    # the trial; the one-shot entry that named it is deleted
+    run("--retry")
+    ok("init: a trial set before the rollback", getvar("LoaderEntryOneShot") == iid("6.18.61_1"))
+    os.remove(INIT_MARK)
+    rc, out = run()
+    names = sorted(os.listdir(UKI))
+    ok("init: without the marker every twin goes", rc == 0 and names == ["linux-6.18.60_1.efi", "linux-6.18.61_1.efi"] and "vh-init is not wanted" in out, str(names) + out)
+    ok("init: the trial forgotten, no one-shot entry, no default", state()["TRIAL"] == "" and state()["DEFAULT"] == "" and getvar("LoaderEntryOneShot") is None and getvar("LoaderEntryDefault") is None, str(state()))
+    ok("init: the menu is the stock one again", menu() == ["Void-Linux-6.18.61_1", "Void-Linux-6.18.60_1--previous-kernel-"], str(menu()))
+    sel, rc, out = boot()
+    ok("init: the next boot is the stock UKI, the service has nothing to say", sel == "Void-Linux-6.18.61_1" and rc == 0 and message() == "", out)
+
+    # a stock command line that names an init= already (the hook edited by hand): no twin, and
+    # nothing is written; a short command line fits its section
+    open(INIT_MARK, "w").close()
+    with open(CONF) as f:
+        before = f.read()
+    pe_uki("linux-6.18.62_1.efi", "root=UUID=x init=/usr/bin/runit-init ro", 6)
+    rc, out = run()
+    with open(CONF) as f:
+        ok("init: no twin of a command line with an init= already; limine.conf unchanged", rc != 0 and "names an init= already" in out and f.read() == before, out)
+    os.remove(f"{UKI}/linux-6.18.62_1.efi")
+    short = "root=UUID=x ro quiet"
+    pe_uki("linux-6.18.62_1.efi", short, 7)
+    rc, out = run("--new", "6.18.62_1")
+    stock62 = read(f"{UKI}/linux-6.18.62_1.efi")
+    tw62 = read(f"{UKI}/linux-6.18.62_1-vh-init.efi")
+    ok("init: a short command line: the parameter in the section's padding, nothing moved",
+       rc == 0 and init_twin_ok(stock62, tw62, short) and len(tw62) == len(stock62) and state()["TRIAL"] == "linux-6.18.62_1-vh-init.efi", out + str(pe_sections(tw62)))
+    os.remove(INIT_MARK)
+    run()
 
 
 if __name__ == "__main__":

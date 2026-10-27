@@ -43,28 +43,35 @@ if mountpoint -q /boot/efi; then
 	else
 		unk "Secure Boot keys are offline: sbctl verify skipped without the media"
 	fi
-	# two series (docs/uni/kernel.md): the stock UKIs, KEEP of them and the running one, and the
-	# machine UKIs linux-A.B.C-vh_N.efi, which never take their place
-	nstock=0 nmachine=0
+	# three series (docs/uni/kernel.md): the stock UKIs, KEEP of them and the running one; the
+	# machine UKIs linux-A.B.C-vh_N.efi and the init twins linux-A.B.C_D-vh-init.efi (vh-init
+	# --install), which never take their place
+	nstock=0 nmachine=0 ninit=0
 	for f in /boot/efi/EFI/void/linux-*.efi; do
 		[ -e "$f" ] || continue
-		case $f in *-vh_[0-9]*.efi) nmachine=$((nmachine + 1)) ;; *) nstock=$((nstock + 1)) ;; esac
+		case $f in *-vh_[0-9]*.efi) nmachine=$((nmachine + 1)) ;; *-vh-init.efi) ninit=$((ninit + 1)) ;; *) nstock=$((nstock + 1)) ;; esac
 	done
 	[ "$nstock" -ge 1 ] && [ "$nstock" -le 3 ] && ok "stock UKIs on the ESP: $nstock" || bad "stock UKIs on the ESP: $nstock (expected 1-3)"
 	[ "$nmachine" = 0 ] || ok "machine UKIs on the ESP: $nmachine"
+	if [ -e /etc/vh/init-boot ]; then
+		[ "$ninit" -ge 1 ] && ok "UKIs with vh-init on the ESP: $ninit (vh-init is wanted)" || bad "vh-init is wanted (/etc/vh/init-boot) but no UKI with vh-init is on the ESP (doas vh-limine-update with /boot/efi mounted)"
+	else
+		[ "$ninit" = 0 ] && ok "no UKI with vh-init on the ESP (vh-init is not wanted)" || bad "UKIs with vh-init on the ESP: $ninit, but vh-init is not wanted (no /etc/vh/init-boot): doas vh-limine-update removes them"
+	fi
 	[ "$esp" = 1 ] && umount /boot/efi
 else
 	unk "the ESP did not mount: signatures not checked"
 fi
-# the boot assessment of a machine kernel: limine.conf does not change for it, the EFI variables do
+# the boot assessment of a machine kernel or of vh-init's UKI: limine.conf does not change for
+# it, the EFI variables do
 if [ -e /var/lib/vh/boot-assess ]; then
 	assess=$(/usr/local/sbin/vh-limine-update --status 2>/dev/null | sed -n 's/^VH_BOOT_ASSESS //p')
 	case $assess in
-		*" state=failed "*) unk "machine kernel: a trial failed, the default did not change ($assess; doas vh-limine-update --status)" ;;
-		*" state=trying "*) unk "machine kernel: on trial, not the default yet ($assess)" ;;
-		default=stock*) ok "machine kernel: none is the default, the stock UKI boots ($assess)" ;;
-		?*) ok "machine kernel: the default passed its boot assessment ($assess)" ;;
-		*) unk "machine kernel: vh-limine-update --status gave no summary" ;;
+		*" state=failed "*) unk "boot assessment: a trial failed, the default did not change ($assess; doas vh-limine-update --status)" ;;
+		*" state=trying "*) unk "boot assessment: on trial, not the default yet ($assess)" ;;
+		default=stock*) ok "boot assessment: nothing passed one yet, the stock UKI boots ($assess)" ;;
+		?*) ok "boot assessment: the default passed it ($assess)" ;;
+		*) unk "boot assessment: vh-limine-update --status gave no summary" ;;
 	esac
 fi
 if [ "$nomod" = 1 ]; then

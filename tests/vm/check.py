@@ -12,8 +12,9 @@
   check.py assess     -- the boot assessment of a machine UKI (a copy of the stock UKI), docs/uni/kernel.md
   check.py machine    -- vh-kconf install of a kernel-custom run's qemu-q35 kernel (build/kernel-custom)
                          through the boot assessment
-  check.py vhinit     -- vh-init as PID 1 (init/README.md): the install, the boot under it; it stays
-                         PID 1 for the steps after it (vhinit-rollback: runit back)
+  check.py vhinit     -- vh-init as PID 1 (init/README.md): the install through the boot assessment, a
+                         reset trial, the trial boot under it; it stays PID 1 for the steps after it
+                         (vhinit-rollback: the boots to the default, then runit back)
   check.py sched      -- vh-sched under vh-init on the machine kernel of build/kernel-custom (sched/README.md)
   check.py selinux    -- the SELinux policy, permissive, on that kernel under vh-init (docs/uni/selinux.md);
                          needs an installation with VH_MAC=selinux

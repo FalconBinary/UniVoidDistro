@@ -238,10 +238,15 @@ scheduled run is unchanged.
   faults of the container-verified v0.2, all fixed here: the shim ran runit's `sv` under the
   name `sv.runit` (an LSB init script to runit), the manager saw no service because runit's
   stage 2 makes `/var/service` resolve, a service enabled again after `disable` stayed down,
-  and the audit took a done oneshot for a dead service. Open: PID 1 holds 4.2 MiB of RSS; the
-  rebuilt UKI replaces this kernel version's, so no runit UKI remains until the rollback (the
-  message claimed a fallback; an install through the boot assessment is the follow-up). `init=`
-  stays runit's by default.
+  and the audit took a done oneshot for a dead service. Open: PID 1 holds 4.2 MiB of RSS. The
+  install of that day rebuilt this kernel version's UKI in place, so no runit UKI remained until
+  the rollback (the message claimed a fallback); the follow-up is done on 2026-10-27: `vh-init
+  --install` goes through the boot assessment (the newest stock UKI's twin with `init=` appended,
+  `linux-A.B.C_D-vh-init.efi`, on trial through Limine's one-shot entry, the default after three
+  good boots, the stock UKI untouched as the fallback, a kernel update's twin on trial by itself;
+  [init/README.md](../../init/README.md#the-uki-with-vh-init-the-install-through-the-boot-assessment)),
+  verified on the rig: run RUN_ID_PENDING `vhinit,base,vhinit-rollback` (RESULTS_SHORT_PENDING).
+  `init=` stays runit's by default.
 - **vh-sched under vh-init: verified** (run 40340658992). The installer puts the loader and
   `vh_sched.o` in place (it never had: the service named a program that was not installed);
   on the machine kernel's trial boot the service is ready 83 ms after its start, the loader
