@@ -5,7 +5,7 @@
 # (tests/kernel/fixtures, kernel/pins, kernel/profiles, kernel/hw, hwdb, the golden plans of tests/adapt) and the
 # binaries are streamed in with tar instead of a bind mount: Docker Desktop on macOS refuses files that carry the
 # com.apple.provenance attribute ("Resource deadlock would occur"), and files written from
-# the Claude app carry it.
+# the Claude app carry it. The aarch64 fixtures resolve against the arm64 pins (U5).
 #   sh tests/kernel/run.sh
 set -eu
 # macOS tar: no AppleDouble ("._name") files for the extended attributes
@@ -32,6 +32,19 @@ tar -C "$repo" -cf - kernel/pins kernel/profiles kernel/hw hwdb vh.conf.example 
 	/src/build/kt/bin/vh-kconf resolve --hw /tmp/gf63.zon --plan /src/tests/adapt/golden/gf63/strict/plan.zon --repo /src --out /tmp/r
 	head -4 /tmp/r/resolve-report.txt
 	wc -l /tmp/r/lsmod /tmp/r/fragment.config /tmp/r/.config
+	echo "== the aarch64 fixtures through the installed binary, against the arm64 pins (U5)"
+	for m in aarch64-virt rpi5; do
+		/src/build/kt/bin/vh-kconf probe --from /src/tests/kernel/fixtures/$m > /tmp/$m.zon
+		# the golden plan of tiered mode: strict refuses both (no Secure Boot, no TPM)
+		/src/build/kt/bin/vh-kconf resolve --hw /tmp/$m.zon --plan /src/tests/adapt/golden/$m/tiered/plan.zon --repo /src --out /tmp/r-$m
+		grep -q "^tables: /src/kernel/pins/aarch64-modules.alias, " /tmp/r-$m/resolve-report.txt
+		grep -q "^CONFIG_ARM64=y" /tmp/r-$m/.config && ! grep -q "^CONFIG_X86_64=y" /tmp/r-$m/.config
+		grep -q "^  arch/aarch64: " /tmp/r-$m/resolve-report.txt
+		echo "$m: $(grep -c . /tmp/r-$m/lsmod) LSMOD modules, kcflags $(cat /tmp/r-$m/kcflags)"
+	done
+	grep -qx aes_ce_blk /tmp/r-aarch64-virt/lsmod && [ "$(cat /tmp/r-aarch64-virt/kcflags)" = -march=armv8-a ]
+	for mod in brcmfmac vc4 v3d sdhci_brcmstb; do grep -qx $mod /tmp/r-rpi5/lsmod; done
+	[ "$(cat /tmp/r-rpi5/kcflags)" = -mcpu=cortex-a76 ]
 	echo "== vh-kconf check: the GF63 against its own probe, then the AMD desktop against the GF63s"
 	c() { rc=0; /src/build/kt/bin/vh-kconf check --kmsg /dev/null --root /tmp/croot --repo /src "$@" > /tmp/check.out 2>&1 || rc=$?; echo "exit $rc: $(cat /tmp/croot/run/vh/check.done)"; }
 	c --from /src/tests/kernel/fixtures/gf63 --hw /src/kernel/hw/gf63.zon --vh-plan none
