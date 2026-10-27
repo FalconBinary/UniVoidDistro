@@ -2,20 +2,37 @@
 # installer would otherwise compile in the live system's RAM are built here (live/prebuilt.sh),
 # and void-mklive at a pinned commit makes the ISO (live/build-image.sh): the kernel series of
 # the installed system, the official base image's packages and services, the repository at this
-# commit in /root/vh. The ISO carries a GitHub build provenance attestation:
+# commit in /root/vh. One image per architecture, each built natively on a runner of that
+# architecture (x86_64 on ubuntu-latest, aarch64 on ubuntu-24.04-arm: U5): mklive chroots into
+# the image's root, and the desktop is built for the host. Each ISO carries a GitHub build
+# provenance attestation:
 #   gh attestation verify ISO --repo FalconBinary/UniVoidDistro
-# On demand the ISO is this run's artifact (kvm-smoke takes it with live_run=RUN); on a v* tag it
-# is a release asset as well.
+# On demand the ISOs are this run's artifacts, univoiddistro-live-ARCH (kvm-smoke takes one with
+# live_run=RUN); on a v* tag they are release assets as well.
 name: live-image
 on:
   workflow_dispatch:
+    inputs:
+      arch:
+        description: "the images to build, space-separated: x86_64 aarch64 (both by default)"
+        default: "x86_64 aarch64"
   push:
     tags: ["v*"]
 permissions:
   contents: read
 jobs:
   build:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-latest
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+    # on demand only the architectures asked for; a tag builds both
+    if: github.event_name != 'workflow_dispatch' || contains(format(' {0} ', github.event.inputs.arch || 'x86_64 aarch64'), format(' {0} ', matrix.arch))
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 150
     permissions:
       contents: read
@@ -23,6 +40,12 @@ jobs:
       attestations: write
     steps:
       - uses: actions/checkout@v4
+      - name: the runner (${{ matrix.arch }}), and whether it has /dev/kvm (docs/uni/live-image.md, "aarch64")
+        run: |
+          uname -m
+          [ "$(uname -m)" = "${{ matrix.arch }}" ] || { echo "the runner is $(uname -m), the image ${{ matrix.arch }}"; exit 1; }
+          nproc; free -m | head -2
+          if [ -e /dev/kvm ]; then ls -l /dev/kvm; else echo "no /dev/kvm on this runner"; fi
       - uses: ./.github/actions/setup-zig
       - name: the programs of the image (live/prebuilt.sh)
         run: sh live/prebuilt.sh "$RUNNER_TEMP/prebuilt"
@@ -54,7 +77,7 @@ jobs:
           subject-path: ${{ runner.temp }}/out/*.iso
       - uses: actions/upload-artifact@v4
         with:
-          name: univoiddistro-live-x86_64
+          name: univoiddistro-live-${{ matrix.arch }}
           path: ${{ runner.temp }}/out
           if-no-files-found: error
           compression-level: 0
@@ -67,34 +90,44 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: univoiddistro-live-x86_64
+          pattern: univoiddistro-live-*
           path: out
-      - name: the ISO as a release asset of ${{ github.ref_name }}
+      - name: the ISOs as release assets of ${{ github.ref_name }}
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
-          cd out && sha256sum -c SHA256SUMS
+          cd out
+          # one directory per architecture (the artifact's name); the files of each keep their
+          # names, SHA256SUMS included, so each image is checked in its own directory and the
+          # release gets ARCH-SHA256SUMS
+          assets=""
+          lines=""
+          for d in univoiddistro-live-*/; do
+            a=${d#univoiddistro-live-} a=${a%/}
+            ( cd "$d" && sha256sum -c SHA256SUMS )
+            iso=$(cd "$d" && ls -- *.iso) sum=$(cut -d' ' -f1 "$d/SHA256SUMS")
+            cp "$d/SHA256SUMS" "$a-SHA256SUMS"; cp "$d/BUILD" "$a-BUILD"; cp "$d/live-packages.txt" "$a-live-packages.txt"
+            assets="$assets $d$iso $a-SHA256SUMS $a-BUILD $a-live-packages.txt"
+            lines="$lines
+          - \`$iso\` ($a): sha256 \`$sum\`; the attestation: \`curl -fsSL https://api.github.com/repos/$GH_REPO/attestations/sha256:$sum | jq -c '.attestations[].bundle' > bundle.jsonl && gh attestation verify $iso --bundle bundle.jsonl --repo $GH_REPO --signer-workflow $GH_REPO/.github/workflows/live-image.yml --source-ref refs/tags/$GITHUB_REF_NAME --deny-self-hosted-runners\`"
+          done
+          commit=$(sed -n 's/^COMMIT=//p' x86_64-BUILD)
+          fence='```'
           # the release's own check, as docs/uni/install.md gives it: no GitHub account, the
           # attestation by the ISO's sha256 from the public API, this workflow and this tag
-          iso=$(ls -- *.iso) sum=$(cut -d' ' -f1 SHA256SUMS) commit=$(sed -n 's/^COMMIT=//p' BUILD)
-          fence='```'
           notes=$(cat <<EOF
-          UniVoidDistro $GITHUB_REF_NAME for x86_64 machines with a 64-bit UEFI, built from commit ${commit:0:12}.
+          UniVoidDistro $GITHUB_REF_NAME for x86_64 machines with a 64-bit UEFI and for ARM64 machines with UEFI (U5), built from commit ${commit:0:12}.
 
-          Check the live image before writing it to a USB stick; no GitHub account is needed. The download is whole (on macOS: \`shasum -a 256 -c SHA256SUMS\`):
-
-          $fence
-          sha256sum -c SHA256SUMS
-          $fence
-
-          This repository's live-image workflow built it from this tag (GitHub CLI, curl and jq):
+          Check a live image before writing it to a USB stick; no GitHub account is needed. The download is whole (on macOS: \`shasum -a 256 -c ARCH-SHA256SUMS\`):
 
           $fence
-          curl -fsSL https://api.github.com/repos/$GH_REPO/attestations/sha256:$sum | jq -c '.attestations[].bundle' > bundle.jsonl
-          gh attestation verify $iso --bundle bundle.jsonl --repo $GH_REPO --signer-workflow $GH_REPO/.github/workflows/live-image.yml --source-ref refs/tags/$GITHUB_REF_NAME --deny-self-hosted-runners
+          sha256sum -c x86_64-SHA256SUMS
           $fence
+
+          This repository's live-image workflow built each image from this tag (GitHub CLI, curl and jq):
+          $lines
 
           How to install it: [docs/uni/install.md](https://github.com/$GH_REPO/blob/$GITHUB_REF_NAME/docs/uni/install.md). \`vh-tools-x86_64.tar.gz\` holds the Zig tools (the zig-test workflow).
           EOF
@@ -104,4 +137,5 @@ jobs:
           # zig-test, ten minutes into the same tag, usually makes the release first with notes of
           # its own (v0.1.0): the image's notes say what the release is and how to check it
           gh release edit "$GITHUB_REF_NAME" --title "UniVoidDistro $GITHUB_REF_NAME" --notes "$notes"
-          gh release upload "$GITHUB_REF_NAME" ./*.iso SHA256SUMS BUILD live-packages.txt --clobber
+          # shellcheck disable=SC2086 # the asset paths have no spaces
+          gh release upload "$GITHUB_REF_NAME" $assets --clobber
