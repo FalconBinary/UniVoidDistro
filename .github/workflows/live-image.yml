@@ -21,17 +21,36 @@ on:
 permissions:
   contents: read
 jobs:
+  images:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      list: ${{ steps.list.outputs.list }}
+    steps:
+      - name: the images to build (on demand the arch input; a tag builds both), each on a runner of its architecture
+        id: list
+        env:
+          ARCHES: ${{ github.event.inputs.arch || 'x86_64 aarch64' }}
+        run: |
+          set -euo pipefail
+          list=""
+          for a in $ARCHES; do
+            case $a in
+              x86_64) r=ubuntu-latest ;;
+              aarch64) r=ubuntu-24.04-arm ;;
+              *) echo "no live image for $a (x86_64, aarch64)"; exit 1 ;;
+            esac
+            list="$list{\"arch\":\"$a\",\"runner\":\"$r\"},"
+          done
+          test -n "$list"
+          echo "list=[${list%,}]" >> "$GITHUB_OUTPUT"
+          echo "images: [${list%,}]"
   build:
+    needs: images
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - arch: x86_64
-            runner: ubuntu-latest
-          - arch: aarch64
-            runner: ubuntu-24.04-arm
-    # on demand only the architectures asked for; a tag builds both
-    if: github.event_name != 'workflow_dispatch' || contains(format(' {0} ', github.event.inputs.arch || 'x86_64 aarch64'), format(' {0} ', matrix.arch))
+        include: ${{ fromJSON(needs.images.outputs.list) }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 150
     permissions:
