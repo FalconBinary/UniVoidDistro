@@ -68,8 +68,10 @@ def setup():
         f.write(str(uuid.uuid4()) + "\n")
     sh("mount", "--bind", BOOTID, "/proc/sys/kernel/random/boot_id")
     os.makedirs("/usr/share/limine", exist_ok=True)
-    with open("/usr/share/limine/BOOTX64.EFI", "wb") as f:
-        f.write(os.urandom(4096))
+    # the loader the tool takes is the one of its architecture (BOOTX64.EFI, BOOTAA64.EFI)
+    for name in ("BOOTX64.EFI", "BOOTAA64.EFI"):
+        with open(f"/usr/share/limine/{name}", "wb") as f:
+            f.write(os.urandom(4096))
     # sbctl leaves a file it has signed as it is ("already signed"): so does the stub, or every
     # run would look like a rebuilt UKI to the assessment
     for name, body in (("sbctl", 'grep -q vh-test-signed "$2" || printf "vh-test-signed\\n" >> "$2"\n'),

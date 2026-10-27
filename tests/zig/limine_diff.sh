@@ -8,7 +8,9 @@ ref=$1 new=$2
 w=$(mktemp -d)
 mkdir -p /boot/efi /usr/share/limine /var/lib/sbctl/keys/db /etc/vh
 mountpoint -q /boot/efi || mount -t tmpfs tmpfs /boot/efi
+# the loader of the container's architecture, the file the tool takes (BOOTX64.EFI, BOOTAA64.EFI)
 head -c 300000 /dev/urandom > /usr/share/limine/BOOTX64.EFI
+cp /usr/share/limine/BOOTX64.EFI /usr/share/limine/BOOTAA64.EFI
 head -c 1048577 /dev/urandom > "$w/big"
 printf '#!/bin/sh\nprintf "signed\\n" >> "$2"\n' > /usr/bin/sbctl
 printf '#!/bin/sh\nprintf "enrolled %%s\\n" "$3" >> "$2"\n' > /usr/bin/limine
@@ -39,7 +41,7 @@ for keep in 1 2 3; do
 				# shellcheck disable=SC2086
 				$cmd $args > "$w/$impl.o" 2> "$w/$impl.e" && rc=0 || rc=$?
 				{ cat "$w/$impl.o"; echo "--- stderr"; cat "$w/$impl.e"; echo "rc=$rc"; } |
-					sed 's|/tmp/[^/]*/BOOTX64.EFI|/tmp/X/BOOTX64.EFI|' > "$w/$impl.out"
+					sed 's|/tmp/[^/]*/BOOT\([A-Z0-9]*\).EFI|/tmp/X/BOOT\1.EFI|' > "$w/$impl.out"
 				(cd /boot/efi && find . -type f | sort | while read -r f; do sha256sum "$f"; done) > "$w/$impl.esp"
 			done
 			if ! cmp -s "$w/ref.out" "$w/new.out" || ! cmp -s "$w/ref.esp" "$w/new.esp"; then
