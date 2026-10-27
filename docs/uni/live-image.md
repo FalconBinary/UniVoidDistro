@@ -146,6 +146,15 @@ is. A cross-build on `ubuntu-latest` was not tried: it would need `qemu-user-sta
 binfmt in the privileged container, and the result would run every package hook under
 emulation [not measured]. The `arch` input of the workflow builds one image or both.
 
+The first aarch64 image (live-image run 40596256568, commit 4b529ae, 2026-10-27): the programs
+took 17 minutes on the arm64 runner (4 CPUs), mklive 4.4 minutes; the ISO is 1.30 GB (the
+x86_64 one 1.3 GB), with `linux6.18-6.18.59_1` and the firmware packages of Void's aarch64
+base (`linux-firmware-network`, `-broadcom`, `-qualcomm`); the prebuilt programs are 180 files,
+21 MB; the attestation was issued. What the first attempt found (run 40593873482): the dev
+image's Dockerfile wrote the x86_64 repository path into an aarch64 container; Void keeps the
+aarch64 packages under `current/aarch64`, and the installer, the xbps.d templates and the
+Dockerfile now take the path by architecture (`install/lib.sh`, `vh_repo_sub`).
+
 **`/dev/kvm` on the arm64 runner: none.** The aarch64 job prints `ls -l /dev/kvm` or "no
 /dev/kvm on this runner" as its first step. Run 40593873482 (2026-10-27, `ubuntu-24.04-arm`:
 4 CPUs, 15947 MiB) printed "no /dev/kvm on this runner": GitHub's hosted arm64 runners expose
