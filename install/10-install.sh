@@ -42,11 +42,17 @@ if [ "$DRY_RUN" = 0 ] && [ -r /proc/meminfo ]; then
 	export VH_SAY_MEM=1
 	: > "$VH_MEM_LOW"
 	mem_sampler &
-	trap 'kill '"$!"' 2>/dev/null' EXIT
+	# "|| true": under set -e a kill of a sampler that already ended would make the whole
+	# installation exit 1 after "done" (kvm-smoke run 40394832080)
+	trap 'kill '"$!"' 2>/dev/null || true' EXIT
 fi
 MNT=/mnt
 REPO=$VH_MIRROR/current
 NONFREE=$VH_MIRROR/current/nonfree
+# the live environment's own xbps (the headers, Zig's dependencies, xbps itself) takes the same
+# mirror: /etc/xbps.d overrides the image's /usr/share/xbps.d file of this name (the default
+# mirror was unreachable for hours on 2026-10-26; the rig passes another through VH_MIRROR)
+[ "$DRY_RUN" = 1 ] || { mkdir -p /etc/xbps.d && echo "repository=$REPO" > /etc/xbps.d/00-repository-main.conf; }
 
 # ---------------------------------------------------------------- checks
 say "checks"
@@ -285,9 +291,21 @@ fi
 # brings it (live/prebuilt.sh), the installer only copies it. The machine kernel of the plan
 # gets CONFIG_SECURITY_SELINUX from the feature the rule security.mac.selinux selects.
 if [ "$VH_MAC" = selinux ]; then
-	[ -n "$PREBUILT" ] && [ -s "$PREBUILT/selinux/file_contexts" ] || die "VH_MAC=selinux needs the policy built: install from UniVoidDistro's live image (live/prebuilt.sh builds selinux/ with secilc), or build it with sh selinux/build.sh and set VH_SELINUX_DIR"
+	SELINUX_SRC=
+	if [ -n "$PREBUILT" ] && [ -s "$PREBUILT/selinux/file_contexts" ]; then
+		SELINUX_SRC=$PREBUILT/selinux
+	elif [ -n "$VH_SELINUX_DIR" ]; then
+		# a policy built elsewhere (sh selinux/build.sh DIR, on a USB stick or the VM rig's repository
+		# copy); checked here and not in load_config, which chroot.sh runs where DIR does not exist
+		[ -s "$VH_SELINUX_DIR/SHA256SUMS" ] || die "VH_SELINUX_DIR: $VH_SELINUX_DIR has no SHA256SUMS (sh selinux/build.sh DIR)"
+		( cd "$VH_SELINUX_DIR" && sha256sum -c --quiet SHA256SUMS ) || die "$VH_SELINUX_DIR: a file does not match its SHA256SUMS"
+		[ -s "$VH_SELINUX_DIR/file_contexts" ] || die "$VH_SELINUX_DIR: no file_contexts"
+		SELINUX_SRC=$VH_SELINUX_DIR
+	fi
+	[ -n "$SELINUX_SRC" ] || die "VH_MAC=selinux needs the policy built: install from UniVoidDistro's live image (live/prebuilt.sh builds selinux/ with secilc), or build it with sh selinux/build.sh DIR and set VH_SELINUX_DIR=DIR"
+	say "SELinux policy from $SELINUX_SRC ($(sed -n 's/^COMMIT=//p' "$SELINUX_SRC/BUILD"))"
 	run install -d -m 0755 "$MNT/etc/vh/selinux"
-	run install -m 0644 "$PREBUILT"/selinux/policy.* "$PREBUILT/selinux/file_contexts" "$PREBUILT/selinux/BUILD" "$PREBUILT/selinux/SHA256SUMS" "$MNT/etc/vh/selinux/"
+	run install -m 0644 "$SELINUX_SRC"/policy.* "$SELINUX_SRC/file_contexts" "$SELINUX_SRC/BUILD" "$SELINUX_SRC/SHA256SUMS" "$MNT/etc/vh/selinux/"
 fi
 [ -f "$CFG" ] && run install -m 0600 "$CFG" "$MNT/root/vh/vh.conf"
 if [ "$DRY_RUN" != 1 ]; then
@@ -333,6 +351,15 @@ run chroot "$MNT" efibootmgr -q -c -d "$VH_DISK" -p 1 -L "Void Linux (Limine)" -
 
 # The package cache (~1.5 GB) is not needed on the target system.
 run rm -rf "$MNT/var/cache/xbps"
+
+# the labels of what came after the chroot's relabel: the kernel package (its modules), the UKI
+# hook's files (the mounted ESP itself takes no label; /boot is relabelled at boot)
+if [ "$VH_MAC" = selinux ] && [ "$DRY_RUN" != 1 ]; then
+	say "SELinux: the labels of the kernel's files"
+	chroot "$MNT" /usr/local/sbin/vh-selabel --one-fs / | tail -1
+	selabel_diff=$(chroot "$MNT" /usr/local/sbin/vh-selabel --check --one-fs / 2>&1) \
+		|| { printf '%s\n' "$selabel_diff" | tail -25; die "vh-selabel: a label differs after the kernel's installation"; }
+fi
 
 say "thor policy: enforce (baseline: $(grep -vc '^#' "$MNT/etc/thor/baseline" 2>/dev/null || echo 0) entries)"
 if [ "$DRY_RUN" = 1 ]; then echo "   + /etc/thor/policy.conf: mode=enforce"

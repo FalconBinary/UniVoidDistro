@@ -85,7 +85,7 @@ reboots, checks the marker, every service, the audit, and rolls back. The measur
 manager, two processes from one binary (docs/ROADMAP.md, I: "Process split"):
 
 ```
-vh-init (PID 1, ~300 KiB RSS)   stage 1 in-process (the steps above), the manager as its child,
+vh-init (PID 1, 4.2 MiB RSS)    stage 1 in-process (the steps above), the manager as its child,
                                  zombies, the shutdown signals, stage 3
   '- vh-init --manager           the service graph: epoll over a signalfd, the control socket,
                                  the services' log and readiness pipes; starts, stops, restarts
@@ -139,17 +139,21 @@ vh-ctl / sv                      the client over /run/vh/init.sock (root only)
   sv(8)'s commands (`up`, `down`, `restart`, `status`, `once`, `check`, `-w`, the signal letters)
   and prints sv's lines (`run: NAME: (pid N) Ns`), so vh-audit, iwd's `conf`, `ctrlaltdel` and
   the tests work unchanged; while runit is PID 1 the shim runs runit's own `sv`, kept as
-  `/usr/bin/sv.runit`.
+  `/usr/bin/sv.runit`. `--install` writes `/etc/xbps.d/31-vh-init.conf` (`noextract=/usr/bin/sv`)
+  so that an update of runit keeps the shim; `xbps-pkgdb -a` reports the hash mismatch of
+  `/usr/bin/sv` meanwhile, and `--rollback` takes both away.
 
 ```sh
 cd init && zig build -Dtarget=x86_64-linux -Dcpu=baseline --prefix DIR   # DIR/bin/{vh-stage1,vh-init,vh-ctl}
 doas vh-init --check         # the definitions as the manager reads them: the graph, the start order
 doas vh-init --install       # init= into the UKI's command line (/etc/default/dracut-uefi-hook), the sv shim;
-                             # then: doas xbps-reconfigure -f linux6.18 (the previous UKI stays in Limine)
+                             # then: doas xbps-reconfigure -f linux6.18, which replaces this kernel
+                             # version's UKI (no runit UKI is left to fall back to: see below)
 vh-init --status             # which init is PID 1, this boot's markers, the manager
 doas vh-init --rollback      # init= out again, runit's sv back; rebuild the UKI the same way
 sh tests/init/init_test.sh   # vh-init as PID 1 of a privileged container (below)
-python3 tests/vm/check.py vhinit --repo   # the rig: install, a boot under vh-init, the audit, the rollback
+python3 tests/vm/check.py vhinit,base,vhinit-rollback --repo   # the rig: install, the boot under vh-init, the base
+                                                                # checks on it, the rollback (kvm-smoke: step=...)
 ```
 
 **Verified** (2026-10-26, Apple Silicon, the aarch64 Void container of `tests/docker`):
@@ -162,10 +166,34 @@ ambient sets), `no_new_privs`, the ABI filter (Seccomp 2), `nice`, `sched`, the 
 enable, disable, reload with a runit directory (its logger, `check` and `finish`); the `sv`
 shim's lines and exit codes; the manager killed with SIGKILL and started again by PID 1 with
 every service kept (adopted from its cgroup, same pid); the poweroff: b stopped before a, stage
-3, `reboot(2)`. 37 unit tests. **Not verified:** a real boot (the rig's `vhinit` step is written,
-not run: it needs `check.py` on the rig; kvm-smoke with `step=vhinit`), vh-stage1's steps under
-vh-init on a machine, `vh-deadman final` at a vh-init shutdown, the x86_64 build in a running
-system (built, not booted). **Not done:** `vh-logd` (/dev/log stays with socklog; the manager
+3, `reboot(2)`. 37 unit tests.
+
+**Verified on the VM rig** (2026-10-26, kvm-smoke runs 40343277197 `vhinit,base,vhinit-rollback`
+and 40340658992 `vhinit,sched`; EPYC-Milan ×4 under KVM, the stock kernel 6.18.58_1, x86_64):
+`vh-init --install` puts `init=` into the command line and the shim in place, the rebuilt UKI is
+signed and enrolled; the boot after it runs vh-init as PID 1: stage 1 in-process in 970 to
+1118 ms over four boots with 0 errors (of it udev-settle 466 to 496, static-devnodes 176 to 219,
+vh-nftables 141 to 165, pseudofs 84 to 119 ms), the manager starts the 15 services of
+`/var/service` in parallel (agetty-tty1 at +6 ms, dbus ready in 103 ms, nanoklogd started at
++1042 ms, every oneshot done, vh-fstrim delayed) and reports them settled 5.1 s after its start
+(vh-check's `delay = 5s`); `vh-ctl status` and the `sv` shim agree for every service, no runsv,
+PID 1 at 4.2 MiB RSS; vh-stage1's state (hidepid, noexec, zram, the nft table, the power profile,
+THP, sysctl, the sandbox directory, the dmesg log); vh-audit: ok 178 and the one FAIL of the rig
+(Secure Boot off) against ok 171 under runit, the init area clean; `check.py base` passes under
+vh-init (DNS, NTS, vh-kconf check, the desktop programs, the ruleset, `vh-ctl disable` and
+`enable` of a runit service, the power button through tiny_power_button, `ctrlaltdel` and
+vh-acpid); runit-void's `poweroff` ends in stage 3 (67 to 76 ms) and `reboot(2)`;
+`vh-init --rollback` with the rebuild gives runit back with every service up. The rig found and
+this verified: the shim must give runit's `sv` the name `sv`; the manager must make
+`/var/service` resolve, which runit's stage 2 did; a service enabled again after a disable
+must start; the audit judges a done oneshot by vh-ctl, not by `sv`.
+**Not verified:** real hardware (the GF63), `vh-deadman final` at a vh-init shutdown, a runit
+runlevel from the command line and `/etc/rc.local` (not taken over), the boot time against
+runit by the bench method (below). **Open:** PID 1 keeps 4.2 MiB of RSS (stage 1 runs in it and
+its allocations stay; the audit's line is `[ ?? ]` above 4 MiB); the rebuilt UKI replaces this
+kernel version's, so no runit UKI remains until the rollback: an install through the boot
+assessment (a trial UKI with `init=`) is the follow-up.
+**Not done:** `vh-logd` (/dev/log stays with socklog; the manager
 writes the services' own logs), the Landlock and mount-namespace sandbox of a service, the
 `SCX` link held by the manager (vh-sched is a service that holds its own link).
 
@@ -177,7 +205,7 @@ writes the services' own logs), the Landlock and mount-namespace sandbox of a se
 | our timers | `sleep 3600` loops in shell (vh-fstrim), `sleep 5; exec pause` (vh-check) | oneshots with `delay` and `every`, nothing resident |
 | sandbox of a service | the run script's own | user, caps, nnp, the ABI filter, nice/sched, rlimits, cgroup limits |
 | manager crash | runsvdir dies: nothing restarts services | PID 1 starts it again; the services are kept |
-| speed | [VERIFY] the boot time against runit's stage 2 on the rig and the GF63 (bench/init, the method of docs/19) |
+| speed | stage 1 in PID 1: 970 to 1118 ms on the KVM rig (kernel log, four boots; docs/19's TCG bench of v0.1 is another machine: 5041 ms vh-stage1, 6034 ms runit's shell); stage 3: 67 to 76 ms. [VERIFY] against runit's stage 1 and 2 on the same rig and the GF63 by the bench method (bench/init, docs/19) |
 
 The speed claim stays open: PID 1 itself yields milliseconds (docs/ROADMAP.md, I: "An honest
 frame"); what v0.2 removes is the processes, the shell loops and the polling of readiness.

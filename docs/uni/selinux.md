@@ -72,10 +72,17 @@ tests/selinux/run.sh                    compiles, then tests/selinux/checks.py r
                                         the browser away from what is not theirs, every exec type entered
                                         by a transition, every domain in a role, the file contexts within
                                         vh-selabel's subset
+tests/vm/steps/selinux.py               the VM rig (kvm-smoke: mac=selinux, step=vhinit,selinux with
+                                        kernel_run): the policy built on the runner, an installation with
+                                        VH_MAC=selinux, the machine kernel's trial boot under vh-init,
+                                        the labels, the domains, a login on tty1 into the desktop, every
+                                        AVC denial listed with the CIL it asks for
 ```
 
 **At installation** (`VH_MAC=selinux`): the live image brings the policy built
-(`live/prebuilt.sh` runs `selinux/build.sh`); `10-install.sh` copies `policy.33`,
+(`live/prebuilt.sh` runs `selinux/build.sh`); from an image without it (Void's own, the VM
+rig) `VH_SELINUX_DIR=DIR` in `vh.conf` names a directory `sh selinux/build.sh DIR` made,
+checked against its `SHA256SUMS`; `10-install.sh` copies `policy.33`,
 `file_contexts`, `BUILD` and `SHA256SUMS` into `/etc/vh/selinux`; `chroot.sh` writes the
 mode and runs `vh-selabel /` with no policy active (a process with `CAP_SYS_ADMIN` may set
 `security.selinux`), then checks that nothing differs. The plan (`hwdb/platform.zon`,
@@ -92,8 +99,19 @@ no SELinux, runs AppArmor with the same command line and the same files.
    `secure_mode_policyload` set and committed (the last boolean anyone sets this boot), and
    `/run/vh/selinux` written for the audit. Without selinuxfs (the stock kernel) the step says so
    and the boot goes on: AppArmor's step runs instead.
-2. `vh-selinux-label`, after `mount-all`: `vh-selabel --one-fs /run /dev /dev/shm /dev/pts /tmp
-   /var/tmp`, the tmpfs and devtmpfs mounts whose nodes udev made meanwhile.
+2. `vh-selinux-early`, right after it: `vh-selabel --one-fs /run /dev /dev/shm` as the kernel
+   just made them (`tmpfs_t`, `device_t`), before udevd makes `/run/udev` and the nodes: the
+   policy's type transitions key on `var_run_t` (the rig's first boot had udev's files as
+   `tmpfs_t`, run 40349043789).
+3. `vh-selinux-label`, after `mount-all`: `vh-selabel --one-fs /run /dev /dev/shm /tmp /var/tmp`,
+   the tmpfs and devtmpfs mounts whose nodes udev made meanwhile (devpts takes no xattr: its
+   labels are the policy's). **Two kernels, one disk:** the stock kernel of the fallback UKI
+   has no SELinux and labels nothing it creates, so after a boot on it every new file is
+   unlabelled (`file_t` to the machine kernel: unbound's `root.key`, chrony's NTS cookies, the
+   logs, a shell's history). Stage 1 keeps the marker `/var/lib/vh/selinux.last` ("selinux" or
+   "none"); when the previous boot ran without the policy, `/etc`, `/usr`, `/var`, `/root`,
+   `/home` and `/boot` are relabelled once, before any service starts. [VERIFY] the cost on a
+   large `/home` (the step's time is in the kernel log).
 
 Everything stage 1 runs is `kernel_t` (the policy is loaded by the process that is already
 running), which is an init domain like `init_t`; the manager (`vh-init --manager`), runsvdir and
@@ -104,6 +122,12 @@ transition on its executable, also under `no_new_privs` (the policy capability
 it runs bash) under two names, two files, two labels; `login` executing one or the other is the
 one point where the policy tells the admin from the user without a PAM module. The game user's
 shell is `vh-game-enter`.
+
+The admin account's home is `admin_home_t`, like `/root`: the policy cannot name the account,
+so `chroot.sh` writes its line into `/etc/vh/selinux/file_contexts.local`, which `vh-selabel`
+reads after the table. `/root/vh`, the installer's copy of the repository (the plan, `vh.conf`,
+the scripts), is `vh_repo_t`, the system's and not the admin's: the tools read it, `vh-update`
+runs it, and the rule that keeps every daemon out of the people's files holds.
 
 **After an update**, `vh-update` runs `vh-selabel /usr /etc`: a package's new files take their
 directory's label (the kernel's inheritance), the few programs that enter a domain get theirs.
@@ -128,8 +152,8 @@ small matcher for the subset the policy keeps to (literals, `\.`, `.`, `.*`, `[.
 `(a|b)`, `?`, `*`, `+`, `(/.*)?`); `tests/selinux/checks.py` fails on a pattern outside it. The
 most specific line wins as in libselinux: the exact path before a pattern, the longer literal
 prefix, the later line. `vh-selabel` walks the given trees (the whole root by default, crossing
-into the tmpfs mounts and skipping the pseudo file systems and vfat, whose labels are the
-kernel's), compares `security.selinux` and sets it where it differs; `--check` only reports
+into the tmpfs mounts and skipping the pseudo file systems and vfat, mount point included,
+whose labels are the kernel's), compares `security.selinux` and sets it where it differs; `--check` only reports
 (exit 1 on a difference); `--root DIR` for the installer's chroot and the tests.
 
 ## Definition of done, and what is verified
@@ -141,15 +165,44 @@ is the default of `VH_MAC=selinux`: every denial is logged, nothing is refused, 
 the same as without SELinux but for the labels and the audit lines.
 
 **Verified** (2026-10-26, Apple Silicon): the policy compiles with secilc 3.8 and every
-neverallow holds (36 domains, 83 exec types and file types, 222 file contexts; `tests/selinux`,
-19 checks); `vh-selabel` relabels a tree and reports no difference afterwards (a privileged
-Void container; its matcher has 4 unit tests over the policy's own patterns); the stage-1
-steps parse and compile with vh-init. **Not verified**: a boot with the policy loaded, in
-either mode: the rules of each domain are written from the programs' documented behaviour,
-not from a trace; the first permissive boot on the rig will list what they miss
-(`vh-selinux denials` gives the CIL). **[VERIFY]**: the hook scripts of the kernel packages
-under `pkg_t`, Firefox under `browser_t` (its own sandbox uses `ptrace` for the crash reporter,
-denied here), the exact caps `bwrap` needs inside its user namespace.
+neverallow holds (37 domains, 225 file contexts; `tests/selinux`, 19 checks); `vh-selabel`
+relabels a tree and reports no difference afterwards (a privileged Void container; its matcher
+has 4 unit tests over the policy's own patterns); the stage-1 steps parse and compile with vh-init.
+
+**Verified on the VM rig, permissive** (2026-10-26, kvm-smoke `mac=selinux`, `step=vhinit,selinux`
+with the machine kernel of kernel-custom run 40321559300, features `auto,selinux`; the runs
+40349043789, 40373457582, 40383056402, 40388319429, 40401275073, 40407123621, 40411465314,
+40416570814, 40468812437 and 40473233569, each a boot after the previous one's rules): the installation with `VH_MAC=selinux` labels every file (the installer
+relabels once more after the kernel package, whose modules came after the chroot's pass); on
+the machine kernel SELinux is the active LSM (`lockdown,capability,landlock,yama,selinux`),
+stage 1 loads `policy.33` (114 KB) in its first step, sets `secure_mode_policyload`, labels
+`/run` and `/dev` before udev and, after a boot on the stock kernel, relabels `/etc`, `/usr`,
+`/var`, `/root`, `/home` and `/boot` (stage 1 took 955 to 1008 ms with it against 970 to 1118 without);
+`vh-selabel --check /` then finds no difference, `/run` included; PID 1 is `kernel_t`, the manager
+`init_t`, every daemon in its domain (udev, dbus, socklog, agetty, unbound, chronyd, seatd,
+dhcpcd, vh-acpid, vh-sched as `sched_t` with the scheduler loaded); the admin's login shell is
+`admin_t` and `doas -s` gives `sysadm_t`; a login on tty1 typed on the VM's keyboard starts
+the desktop on the virtio GPU as `user_t` with RefursWM `wm_t`, RefursLine `bar_t`,
+`vh-wlfilter` `wlfilter_t`, PipeWire and WirePlumber `pipewire_t`; `vh-audit` has no FAIL in
+its SELinux area. The first boot logged 195 AVC lines, the sixth, seventh and eighth 18 each,
+the ninth 9, the tenth 8, every boot a new layer once the previous one's accesses were allowed,
+and **the eleventh boot (run 40473233569) left zero: the boot, the login on tty1 and the start
+of the desktop with no AVC line** (the tenth's 8 were the daemons': dhcpcd's leases in
+`/var/db/dhcpcd` and its raw IP socket, a run script's `dbus-send`, a capability ask each of
+unbound and chronyd that the refusal answers). What the rig taught the policy is in the git
+history of `selinux/policy` (no `filesystem associate` rule at all, the role change at login,
+every domain's own `/proc` entry, the type transitions of what stage 1 and the run scripts
+make in `/run`, the device directories and symlinks of udev and its inotify watches, libudev's
+hwdb, data and monitor for the compositor and the bar, the bar's lock and rtnetlink, the
+session programs' inherited log and tty, init reading what a stock-kernel boot left
+unlabelled, yescrypt's huge-page attempt and the three exec sanitising checks as `dontaudit`),
+and two things beyond the policy: the manager's channel to
+PID 1 was inherited by every service (CLOEXEC now), and the admin's home had the user's type
+(`file_contexts.local`). **Not verified:** enforcing mode (the definition of done above), a
+day of use, the browser (`browser_t`, bwrap's caps, Firefox's crash reporter ptrace), the
+kernel packages' hooks under `pkg_t`, the gaming session, iwd and bluetoothd (the rig has
+neither), real hardware. **[VERIFY]** the cost of the relabel after a stock-kernel boot on a
+large `/home`.
 
 ## Later
 

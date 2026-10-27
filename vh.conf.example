@@ -21,6 +21,9 @@ VH_SECURITY="strict"
 #             next boot (vh-audit selinux checks the state).
 VH_MAC="apparmor"
 VH_SELINUX_MODE="permissive"
+# The built policy (sh selinux/build.sh DIR: policy.33, file_contexts, BUILD, SHA256SUMS) when the
+# live image does not bring it (Void's own image; the VM rig). Empty: the image's.
+VH_SELINUX_DIR=""
 
 # ---------------------------------------------------------------- disk
 # The target disk, WHOLE. Everything on it will be destroyed. Required.

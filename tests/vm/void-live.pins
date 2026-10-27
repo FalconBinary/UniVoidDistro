@@ -2,5 +2,9 @@
 # KEY is the minisign public key that signs sha256sum.txt (docs/ru/00-prepare.md, key id 4D56E70F102AF9F9);
 # verify it through a second channel before trusting it.
 BASE=https://repo-default.voidlinux.org/live/20250202
+# the same directory on Void's other mirrors, tried in this order when one does not answer
+# (repo-default and repo-fi were unreachable for an hour on 2026-10-26, kvm-smoke runs
+# 40357937984 and 40362544839); the signed sha256sum.txt makes the mirror a matter of reach only
+MIRRORS="https://repo-default.voidlinux.org/live/20250202 https://repo-fastly.voidlinux.org/live/20250202 https://repo-de.voidlinux.org/live/20250202"
 ISO=void-live-x86_64-20250202-base.iso
 KEY=RWT5+SoQD+dWTeOdNuc4Q/jq2+3+jpql7+JJp4WukkxTdpsZlk2EGuPj

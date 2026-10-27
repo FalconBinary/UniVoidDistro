@@ -1,7 +1,8 @@
 #!/bin/sh
 # The programs of the live image, built (docs/uni/live-image.md), into OUT:
-#   OUT/bin                       vh-kconf, vh-plan, the Zig tools, the gaming session's programs and
-#                                 vh-stage1, vh-init, vh-ctl (install/build-tools.sh's list)
+#   OUT/bin                       vh-kconf, vh-plan, the Zig tools, the gaming session's programs,
+#                                 vh-stage1, vh-init, vh-ctl, vh-sched and its BPF object vh_sched.o
+#                                 (install/build-tools.sh's list)
 #   OUT/thor/{dest,repo}          thor and its package (install/build-thor.sh --out)
 #   OUT/desktop/x86-64-LEVEL-BT   RefursWM and RefursLine for x86-64-v1 and -v3, without and with
 #                                 the bar's Bluetooth menu (install/build-desktop.sh --out)
@@ -20,10 +21,10 @@ rm -rf "$out"
 mkdir -p "$out/bin"
 
 echo "== static programs (x86_64, baseline)"
-for c in zig kernel adapt session init; do
+for c in zig kernel adapt session init sched; do
 	(cd "$repo/$c" && zig build -Dtarget=x86_64-linux -Dcpu=baseline --prefix "$out/.z-$c")
 done
-cp "$out"/.z-zig/bin/* "$out"/.z-session/bin/* "$out"/.z-init/bin/* "$out/bin/"
+cp "$out"/.z-zig/bin/* "$out"/.z-session/bin/* "$out"/.z-init/bin/* "$out"/.z-sched/bin/* "$out/.z-sched/bpf/vh_sched.o" "$out/bin/"
 cp "$out/.z-kernel/bin/vh-kconf" "$out/.z-adapt/bin/vh-plan" "$out/bin/"
 rm -rf "$out"/.z-*
 

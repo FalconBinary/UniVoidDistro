@@ -39,6 +39,11 @@
 (userrole system_u admin_r)
 (userrole system_u game_r)
 (userrole system_u object_r)
+;; login and doas change the role (the constraint below); the kernel also asks whether the role
+;; may change at all (the rig's first permissive login was refused the transition to user_r)
+(roleallow system_r user_r)
+(roleallow system_r admin_r)
+(roleallow system_r game_r)
 (userlevel system_u low)
 (userrange system_u s0r)
 (roleattribute roles)
@@ -69,7 +74,7 @@
 (classpermission file_manage) (classpermissionset file_manage (file (ioctl read write create getattr setattr lock append open map unlink link rename)))
 (classpermission dir_r) (classpermissionset dir_r (dir (ioctl read getattr lock open search)))
 (classpermission dir_rw) (classpermissionset dir_rw (dir (ioctl read write getattr setattr lock open search add_name remove_name)))
-(classpermission dir_manage) (classpermissionset dir_manage (dir (ioctl read write create getattr setattr lock open search add_name remove_name reparent rmdir)))
+(classpermission dir_manage) (classpermissionset dir_manage (dir (ioctl read write create getattr setattr lock open search add_name remove_name reparent rmdir rename)))
 (classpermission lnk_r) (classpermissionset lnk_r (lnk_file (read getattr)))
 (classpermission lnk_manage) (classpermissionset lnk_manage (lnk_file (read getattr setattr create unlink rename)))
 (classpermission chr_rw) (classpermissionset chr_rw (chr_file (ioctl read write getattr lock append open)))
@@ -146,13 +151,18 @@
     (allow d zero_device_t chr_rw)
     (allow d random_device_t chr_r)
     (allow d urandom_device_t chr_r)
-    ;; its own /proc entry, and the kernel's answers about itself
-    (allow d proc_t (dir (search getattr read)))
+    ;; its own /proc entry (the self type: /proc/self/status, fd, exe, loginuid), and the kernel's
+    ;; answers about itself; open on the directories, which opendir(3) asks for
+    (allow d self (dir (search getattr read open)))
+    (allow d self (file (read write getattr open)))   ; write: its own comm (thread names), oom_score_adj, loginuid
+    (allow d self (lnk_file (read)))
+    (allow d proc_t (dir (search getattr read open)))
     (allow d proc_t (lnk_file (read getattr)))
     (allow d proc_t file_r)
-    (allow d sysfs_t (dir (search getattr read)))
+    (allow d sysfs_t (dir (search getattr read open)))
     (allow d sysfs_t (lnk_file (read getattr)))
     (allow d sysfs_t file_r)
+    (allow d sysctl_t (dir (search)))
     (allow d sysctl_kernel_t (dir (search)))
     (allow d sysctl_kernel_t (file (read getattr open)))
     (allow d sysctl_vm_t (file (read getattr open)))
@@ -270,6 +280,7 @@
 (type xbps_db_t) (call file (xbps_db_t))                ; /var/db/xbps
 (type xbps_cache_t) (call file (xbps_cache_t))          ; /var/cache/xbps
 (type vh_conf_t) (call file (vh_conf_t))                ; /etc/vh (plan, hw.zon, policy)
+(type vh_repo_t) (call file (vh_repo_t))        ; /root/vh: the installer's copy of the repository (vh.conf, the plan, the scripts the tools read)
 (type vh_state_t) (call file (vh_state_t))              ; /var/lib/vh
 (type vh_log_t) (call file (vh_log_t))                  ; /var/log/vh
 (type vh_run_t) (call file (vh_run_t)) (typeattributeset tmpfs_type vh_run_t)             ; /run/vh
@@ -418,6 +429,24 @@
 
 ;; ---------------------------------------------------------------- how file systems are labelled
 ;; xattr: the root (XFS) and the ESP's host (vfat has no xattrs: genfscon below)
+;; a file of a type may live on a file system of a type: the kernel checks "associate" at every
+;; creation and relabel (the rig's first permissive boot, kvm-smoke run 40349043789, had none of
+;; these and logged a denial for every new file). Every file type on the root file systems, the
+;; tmpfs types on tmpfs (/run, /tmp, /dev/shm), the device nodes and what udev makes on devtmpfs,
+;; the EFI variables on efivarfs (vh-limine-update's one-shot entry)
+(allow file_type fs_t (filesystem (associate)))
+(allow tmpfs_type tmpfs_t (filesystem (associate)))
+(allow device_node device_t (filesystem (associate)))
+(allow efivarfs_t efivarfs_t (filesystem (associate)))
+(allow cgroup_t cgroup_t (filesystem (associate)))
+;; the terminal a person's programs inherit was opened by login (the stdio of every command of a
+;; session); the file itself is governed by its own type
+(allow domain login_t (fd (use)))
+;; at an exec that changes the domain the kernel asks whether the new domain may inherit the
+;; signal state, the rlimits and the non-secure environment of the old one; refused, they are
+;; sanitised, which is the behaviour wanted here: refused without a line in the log
+(dontaudit domain domain (process (siginh rlimitinh noatsecure)))
+
 (fsuse xattr xfs (system_u object_r fs_t s0r))
 (fsuse xattr ext4 (system_u object_r fs_t s0r))
 (fsuse xattr btrfs (system_u object_r fs_t s0r))

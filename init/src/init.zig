@@ -80,8 +80,13 @@ pub fn main(init: std.process.Init.Minimal) void {
             var m: manager.Manager = .{};
             m.verbose = o.verbose;
             m.extra_dir = o.extra_dir;
-            // fd 3 is the channel from PID 1 (a socketpair) when it started us
-            if (isSocket(3)) m.pid1_fd = 3;
+            // fd 3 is the channel from PID 1 (a socketpair) when it started us: ours alone, never
+            // a service's (the rig's SELinux boot saw login holding it: a service could have asked
+            // PID 1 for a poweroff, kvm-smoke run 40373457582)
+            if (isSocket(3)) {
+                m.pid1_fd = 3;
+                _ = linux.fcntl(3, linux.F.SETFD, linux.FD_CLOEXEC);
+            }
             m.run();
         },
         .pid1_test => pid1.main(o),

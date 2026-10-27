@@ -129,7 +129,15 @@ def root_shell(ser):
 
 # from build/ the VM needs only the finished programs and build/thor-repo (tests/zig/build.sh)
 VM_SKIP_BUILD = ["docker-ctx", "zig-dl", "xbps-dl", "devimg", "zig-test", "zt", "zt2", "zx", "zig-bin",
-                 "thor-work", "thor-dest", "kx", "kd", "*.log"]
+                 "thor-work", "thor-dest", "kx", "kd", "sx", "ix", "scx", "*.log"]
+
+
+def keys(vm, text):
+    """type TEXT on the VM's keyboard (QEMU's sendkey): letters, digits, '-', ' ', '.', '/'"""
+    for ch in text:
+        name = {"-": "minus", " ": "spc", ".": "dot", "/": "slash"}.get(ch, ch)
+        vm.monitor(f"sendkey {name}")
+        time.sleep(0.2)
 
 
 def boot(a, extra=None, on_prompt=None):
@@ -184,7 +192,11 @@ def boot(a, extra=None, on_prompt=None):
                  f"bash /root/vh/install/build-tools.sh --prebuilt {VM_SRC}/build / >/dev/null && "
                  # a system without python3 (docs/17): ignorepkg and removal if a previous install had it
                  f"install -m 0644 {VM_SRC}/rootfs/etc/xbps.d/20-vh-ignorepkg.conf /etc/xbps.d/ && "
-                 "{ xbps-remove -Fy python3 >/dev/null 2>&1; true; }")
+                 "{ xbps-remove -Fy python3 >/dev/null 2>&1; true; } && "
+                 # with VH_MAC=selinux the refreshed files need their labels, as after vh-update
+                 # (docs/uni/selinux.md); on the stock kernel the xattrs are stored, the machine
+                 # kernel reads them (kvm-smoke 40349043789 ran the refreshed vh-init unlabelled)
+                 "{ [ ! -d /etc/vh/selinux ] || /usr/local/sbin/vh-selabel /usr/local /root/vh /etc/xbps.d | tail -1; }")
     return vm, ser
 
 

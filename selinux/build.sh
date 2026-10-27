@@ -10,6 +10,7 @@ repo=$(cd "$(dirname "$0")/.." && pwd)
 out=${1:?"output directory"}
 ver=${VH_POLICY_VERSION:-33}
 mkdir -p "$out"
+out=$(cd "$out" && pwd)          # docker takes a host directory by its absolute path only
 rm -f "$out/policy.$ver" "$out/file_contexts"
 if command -v secilc >/dev/null 2>&1; then
 	secilc -c "$ver" -O -o "$out/policy.$ver" -f "$out/file_contexts" "$repo"/selinux/policy/*.cil

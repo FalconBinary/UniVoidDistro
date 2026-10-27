@@ -17,6 +17,14 @@ pass=0 fail=0 unk=0
 ok()   { pass=$((pass+1)); printf '[ ok ] %s\n' "$*"; }
 bad()  { fail=$((fail+1)); printf '[FAIL] %s\n' "$*"; }
 unk()  { unk=$((unk+1));  printf '[ ?? ] %s\n' "$*"; }
+# a service is up: runit's sv says run:; under vh-init (init/README.md) vh-ctl says up, or done
+# for a oneshot that ran to its end, or delayed for a timer (the sv shim reports those as down)
+svc_up() {
+	case $(readlink /proc/1/exe 2>/dev/null) in
+	*vh-init*) case $(/usr/local/sbin/vh-ctl status "$1" 2>/dev/null | awk 'NR==1 {print $2}') in up|done|delayed) return 0 ;; esac; return 1 ;;
+	*) sv status "$1" 2>/dev/null | grep -q '^run:' ;;
+	esac
+}
 chk()  { if [ "$2" = "$3" ]; then ok "$1 = $3"; else bad "$1 = $2 (expected $3)"; fi; }
 sec()  { printf '\n== %s\n' "$*"; }
 # the plan of this machine (docs/uni/runtime.md): vh-plan renders /etc/vh/plan.zon in the form of

@@ -39,7 +39,7 @@ mem_sampler() {
 	while sleep 2; do
 		a=$(awk '/^MemAvailable:/ { print $2 }' /proc/meminfo) || continue
 		l=$(cat "$VH_MEM_LOW" 2>/dev/null) || l=
-		if [ -z "$l" ] || [ "$a" -lt "$l" ]; then echo "$a" > "$VH_MEM_LOW"; fi
+		if [ -z "$l" ] || [ "$a" -lt "$l" ]; then echo "$a" > "$VH_MEM_LOW" || true; fi
 	done
 }
 

@@ -8,12 +8,15 @@
 //!       --check            report what differs, change nothing (exit 1 when something does)
 //!       --root DIR         the system's root is DIR (the installer's chroot, the tests): the
 //!                          table's paths are relative to it
-//!       --contexts FILE    the table (default /etc/vh/selinux/file_contexts)
+//!       --contexts FILE    the table (default /etc/vh/selinux/file_contexts); FILE.local, when it
+//!                          exists, adds this installation's lines (the admin's home)
 //!       --one-fs           do not cross into other file systems (the default for /)
 //!       -v                 every change
 //! Pseudo and foreign file systems (proc, sysfs, cgroup2, bpf, securityfs, selinuxfs, efivarfs,
-//! devpts, vfat, debugfs, tracefs, pstore, binfmt_misc, mqueue, hugetlbfs) are skipped: their
-//! labels come from the policy's genfscon and fsuse statements.
+//! devpts, vfat, debugfs, tracefs, pstore, binfmt_misc, mqueue, hugetlbfs) are skipped, their
+//! mount point included (its inode is the other file system's root and takes no xattr: the
+//! installer's chroot, kvm-smoke run 40333027036): their labels come from the policy's genfscon
+//! and fsuse statements. A named path on such a file system is skipped the same way.
 const std = @import("std");
 const linux = std.os.linux;
 const mem = std.mem;
@@ -82,6 +85,14 @@ const Opts = struct {
 
 const Counts = struct { seen: usize = 0, changed: usize = 0, unlabeled: usize = 0, errors: usize = 0, skipped_fs: usize = 0 };
 
+/// A file with several names has one label: the first name visited decides, as setfiles
+/// does, and a name that would give another is reported (Void's /usr/bin/getconf and its
+/// links under /usr/lib/getconf, bin_t against lib_t, kvm-smoke run 40343290525: the policy
+/// names them now; this keeps the check consistent with the relabel for the next pair)
+const LinkKey = struct { dev: u64, ino: u64 };
+const First = struct { want: []const u8, path: []const u8 };
+var links: std.AutoHashMapUnmanaged(LinkKey, First) = .empty;
+
 fn currentLabel(path: []const u8, buf: []u8) ?[]const u8 {
     const rc = linux.lgetxattr(vh.z(path).ptr, xattr, buf.ptr, buf.len);
     if (linux.errno(rc) != .SUCCESS) return null;
@@ -91,13 +102,22 @@ fn currentLabel(path: []const u8, buf: []u8) ?[]const u8 {
 }
 
 /// one path: compare and set
-fn label(t: *const selabel.Table, o: Opts, real: []const u8, logical: []const u8, mode: u32, c: *Counts) void {
+fn label(t: *const selabel.Table, o: Opts, real: []const u8, logical: []const u8, st: vh.Stat, c: *Counts) void {
     c.seen += 1;
-    const want = t.lookup(logical, selabel.kindOf(mode)) orelse {
+    var want = t.lookup(logical, selabel.kindOf(st.mode)) orelse {
         c.unlabeled += 1;
         if (o.verbose) vh.out("no line for {s}\n", .{logical});
         return;
     };
+    if (st.nlink > 1 and !vh.S.isDir(st.mode)) {
+        const key: LinkKey = .{ .dev = (@as(u64, st.dev_major) << 32) | st.dev_minor, .ino = st.ino };
+        if (links.get(key)) |first| {
+            if (!vh.eql(first.want, want)) {
+                vh.warn("{s}: a hard link of {s}: {s} kept, not {s}", .{ logical, first.path, first.want, want });
+                want = first.want;
+            }
+        } else links.put(vh.gpa, key, .{ .want = want, .path = vh.dupe(logical) }) catch vh.oom();
+    }
     var buf: [256]u8 = undefined;
     const have = currentLabel(real, &buf);
     if (have != null and vh.eql(have.?, want)) return;
@@ -119,9 +139,12 @@ fn walk(t: *const selabel.Table, o: Opts, real: []const u8, logical: []const u8,
         vh.warn("{s}: stat: {s}", .{ logical, vh.serr() });
         return;
     };
-    label(t, o, real, logical, st.mode, c);
-    if (!vh.S.isDir(st.mode)) return;
-    // another file system below: skipped when it is a pseudo one (or any, with --one-fs)
+    if (!vh.S.isDir(st.mode)) {
+        label(t, o, real, logical, st, c);
+        return;
+    }
+    // another file system below: skipped with its mount point when it is a pseudo one (or
+    // any, with --one-fs); its root inode is the other file system's and takes no xattr
     if (st.dev_major != dev_major or st.dev_minor != dev_minor) {
         if (o.one_fs) {
             c.skipped_fs += 1;
@@ -131,9 +154,11 @@ fn walk(t: *const selabel.Table, o: Opts, real: []const u8, logical: []const u8,
             c.skipped_fs += 1;
             return;
         };
+        label(t, o, real, logical, st, c);
         walkDir(t, o, real, logical, st.dev_major, st.dev_minor, c);
         return;
     }
+    label(t, o, real, logical, st, c);
     walkDir(t, o, real, logical, dev_major, dev_minor, c);
 }
 
@@ -193,7 +218,13 @@ pub fn main(init: std.process.Init.Minimal) void {
         o.one_fs = !(paths.items.len == 1 and vh.eql(paths.items[0], "/"));
     }
     const cpath = if (vh.eql(contexts, default_contexts) and o.root.len > 0) vh.fmt("{s}{s}", .{ o.root, contexts }) else contexts;
-    const text = vh.readFile(cpath) catch vh.die("{s}: {s}", .{ cpath, vh.serr() });
+    var text = vh.readFile(cpath) catch vh.die("{s}: {s}", .{ cpath, vh.serr() });
+    // FILE.local: the lines of this installation (the admin's home directory, which the policy
+    // cannot name), after the table's; the most specific line wins as everywhere
+    const lpath = vh.fmt("{s}.local", .{cpath});
+    if (vh.readFile(lpath)) |local| {
+        text = vh.fmt("{s}\n{s}", .{ text, local });
+    } else |_| {}
     const table = selabel.Table.parse(text) catch |e| vh.die("{s}: {s}", .{ cpath, @errorName(e) });
     var c: Counts = .{};
     for (paths.items) |p| {
@@ -201,10 +232,16 @@ pub fn main(init: std.process.Init.Minimal) void {
         const real = if (o.root.len == 0) logical else if (vh.eql(logical, "/")) o.root else vh.fmt("{s}{s}", .{ o.root, logical });
         const st = vh.stat(real, false) catch vh.die("{s}: {s}", .{ real, vh.serr() });
         if (!vh.S.isDir(st.mode)) {
-            label(&table, o, real, logical, st.mode, &c);
+            label(&table, o, real, logical, st, &c);
             continue;
         }
-        label(&table, o, real, logical, st.mode, &c);
+        // a named directory on a pseudo file system (/dev/pts, /proc): the kernel's labels
+        if (fsType(real)) |ft| if (skipFs(ft)) {
+            c.skipped_fs += 1;
+            if (o.verbose) vh.out("{s}: a file system whose labels are the kernel's, skipped\n", .{logical});
+            continue;
+        };
+        label(&table, o, real, logical, st, &c);
         walkDir(&table, o, real, logical, st.dev_major, st.dev_minor, &c);
     }
     vh.out("{d} files, {d} {s}, {d} without a line, {d} other file systems skipped, {d} errors ({d} contexts from {s})\n", .{ c.seen, c.changed, if (o.check) "differ" else "relabelled", c.unlabeled, c.skipped_fs, c.errors, table.specs.len, cpath });

@@ -67,7 +67,11 @@
 ;; vh-selabel: the labels of the system's files (can_relabel), run by the installer, by vh-update
 ;; (pkg_t) and by hand (sysadm_t); it must see and set the label of everything
 (typeattributeset can_relabel vh_tools_t)
-(allow vh_tools_t file_type (dir (search read getattr relabelfrom relabelto)))
+(allow vh_tools_t file_type (dir (search read getattr open relabelfrom relabelto)))
+(allow vh_tools_t device_t (filesystem (getattr)))                       ; statfs of /dev (devtmpfs)
+(allow vh_tools_t device_t (chr_file (read write getattr ioctl)))        ; the console before its label at the early step
+(call read_files (vh_tools_t vh_repo_t))                                 ; vh-kconf check reads kernel/profiles of the repository copy
+(allow vh_tools_t tmp_t (file (write append getattr)))                   ; output redirected by the admin
 (allow vh_tools_t file_type (file (getattr relabelfrom relabelto)))
 (allow vh_tools_t file_type (lnk_file (getattr read relabelfrom relabelto)))
 (allow vh_tools_t file_type (sock_file (getattr relabelfrom relabelto)))
@@ -96,6 +100,7 @@
 ;; ---------------------------------------------------------------- the root helper scripts
 (type vh_sbin_t)
 (call daemon_type (vh_sbin_t vh_sbin_exec_t))
+(call read_files (vh_sbin_t vh_repo_t))                                  ; vh-audit reads vh.conf of the repository copy
 (roletype user_r vh_sbin_t)
 (roletype admin_r vh_sbin_t)
 (allow vh_sbin_t self (capability (chown dac_override dac_read_search fowner fsetid kill setgid setuid net_admin net_raw sys_admin sys_resource sys_nice sys_tty_config)))

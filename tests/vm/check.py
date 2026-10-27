@@ -12,10 +12,16 @@
   check.py assess     -- the boot assessment of a machine UKI (a copy of the stock UKI), docs/uni/kernel.md
   check.py machine    -- vh-kconf install of a kernel-custom run's qemu-q35 kernel (build/kernel-custom)
                          through the boot assessment
+  check.py vhinit     -- vh-init as PID 1 (init/README.md): the install, the boot under it; it stays
+                         PID 1 for the steps after it (vhinit-rollback: runit back)
+  check.py sched      -- vh-sched under vh-init on the machine kernel of build/kernel-custom (sched/README.md)
+  check.py selinux    -- the SELinux policy, permissive, on that kernel under vh-init (docs/uni/selinux.md);
+                         needs an installation with VH_MAC=selinux
   check.py all        -- the installation path in order (vmlib.ALL)
+  check.py A,B C      -- several steps in order (comma-separated or as separate arguments)
   check.py --list     -- every step the registry knows
 
-Each step is a separate VM boot. Steps are discovered from tests/vm/steps/*.py (one module
+Each step is one or more VM boots. Steps are discovered from tests/vm/steps/*.py (one module
 per area and per track). The result: "PASS/FAIL ..." lines at the end of the output.
 """
 import argparse
@@ -30,7 +36,7 @@ import vmlib  # noqa: E402
 def main():
     reg = vmlib.discover()
     ap = argparse.ArgumentParser()
-    ap.add_argument("step", nargs="?", choices=sorted(reg) + ["all"])
+    ap.add_argument("step", nargs="*", help="steps, in order; comma-separated or as separate arguments; all = vmlib.ALL")
     ap.add_argument("--list", action="store_true", help="list the steps and exit")
     ap.add_argument("--dir", default=os.path.join(vhvm.REPO, "tests", "vm", "work"))
     ap.add_argument("--mem", type=int, default=3072)
@@ -48,7 +54,17 @@ def main():
     missing = [s for s in vmlib.ALL if s not in reg]
     if missing:
         sys.exit(f"vmlib.ALL names unknown steps: {missing}")
-    for name in (vmlib.ALL if a.step == "all" else [a.step]):
+    names = []
+    for arg in a.step:
+        for s in arg.split(","):
+            if s == "all":
+                names += vmlib.ALL
+            elif s in reg:
+                names.append(s)
+            elif s:
+                ap.error(f"unknown step {s!r} (--list)")
+    for name in names:
+        print(f"\n==== STEP {name}", flush=True)
         reg[name](a)
     print("\n==== SUMMARY")
     for n, ok, d in vmlib.RESULTS:

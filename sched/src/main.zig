@@ -14,6 +14,8 @@
 //!       --sysrq-after S     write S to /proc/sysrq-trigger after S seconds (the reset test)
 //!       --vmlinux PATH      the kernel BTF (/sys/kernel/btf/vmlinux)
 //!       --object PATH       run: the object (/usr/local/lib/vh/vh_sched.o)
+//!       --ready-fd N        run: a line to fd N and close it once the scheduler runs (vh-init's
+//!                           ready = fd N; s6 and dinit do the same)
 //!       --topology DIR      a sysfs root for the topology (tests)
 //!       --log-level N       verifier log level (1)
 //!       --verbose           every step
@@ -92,7 +94,7 @@ pub fn main(init: std.process.Init.Minimal) void {
 }
 
 fn usage() noreturn {
-    vh.writeAllFd(2, "vh-sched run [--object PATH] [--set SYM.FIELD=N] [--stats [S]] [--vmlinux PATH] [--topology DIR] [--verbose]\nvh-sched load FILE.o [--ops TYPE] [--name NAME] [--set SYM.FIELD=N] [--flags N] [--hold S] [--stats [S]] [--detach-after S] [--sysrq-after S] [--vmlinux PATH] [--topology DIR] [--log-level N] [--verbose]\nvh-sched topology [--topology DIR] | lint FILE.o | btf | state\n") catch {};
+    vh.writeAllFd(2, "vh-sched run [--object PATH] [--ready-fd N] [--set SYM.FIELD=N] [--stats [S]] [--vmlinux PATH] [--topology DIR] [--verbose]\nvh-sched load FILE.o [--ops TYPE] [--name NAME] [--set SYM.FIELD=N] [--flags N] [--hold S] [--stats [S]] [--detach-after S] [--sysrq-after S] [--vmlinux PATH] [--topology DIR] [--log-level N] [--verbose]\nvh-sched topology [--topology DIR] | lint FILE.o | btf | state\n") catch {};
     vh.exit(2);
 }
 
@@ -219,6 +221,7 @@ fn loadCmd(args: []const [:0]const u8, service: bool) void {
     var sysrq_after: ?u64 = null;
     var vmlinux_path: []const u8 = "/sys/kernel/btf/vmlinux";
     var topo_dir: []const u8 = "";
+    var ready_fd: ?linux.fd_t = null;
     var i: usize = 0;
     while (i < args.len) : (i += 1) {
         const a = args[i];
@@ -248,6 +251,8 @@ fn loadCmd(args: []const [:0]const u8, service: bool) void {
             file = arg(args, &i);
         } else if (vh.eql(a, "--topology")) {
             topo_dir = arg(args, &i);
+        } else if (vh.eql(a, "--ready-fd")) {
+            ready_fd = @intCast(num(arg(args, &i)));
         } else if (vh.eql(a, "--log-level")) {
             opts.log_level = @intCast(num(arg(args, &i)));
         } else if (vh.eql(a, "--verbose")) {
@@ -307,6 +312,21 @@ fn loadCmd(args: []const [:0]const u8, service: bool) void {
         vh.log("link: type {d} (struct_ops = {d}), id {d}, map id {d}", .{ info.type, uapi.link_type_struct_ops, info.id, info.u.struct_ops.map_id });
     } else |_| vh.warn("BPF_OBJ_GET_INFO_BY_FD on the link: {s}", .{@tagName(uapi.errno)});
     if (is_scx) printState();
+    if (ready_fd) |fd| {
+        // the service manager's readiness pipe (vh-sched.svc: ready = fd 3, --ready-fd 3): a line
+        // once the scheduler runs. The kernel enables it after the link is attached, in a work item
+        // (scx_root_enable_workfn); /sys/kernel/sched_ext/state says enabling until then
+        if (is_scx) {
+            var waited_ms: u32 = 0;
+            while (waited_ms < 5000 and !vh.eql(sysfs("/sys/kernel/sched_ext/state"), "enabled")) : (waited_ms += 50) {
+                const ts: linux.timespec = .{ .sec = 0, .nsec = 50_000_000 };
+                _ = linux.nanosleep(&ts, null);
+            }
+            if (waited_ms > 0) printState();
+        }
+        _ = linux.write(fd, "\n", 1);
+        _ = linux.close(fd);
+    }
 
     // the ring buffer of exit records and the counters
     var rb: ?loader.Ringbuf = null;

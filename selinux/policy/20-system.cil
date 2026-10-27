@@ -19,6 +19,13 @@
 (call manage_files (udev_t device_t))
 (allow udev_t device_node (chr_file (ioctl read write create getattr setattr lock append open unlink link rename relabelfrom relabelto)))
 (allow udev_t device_node (blk_file (ioctl read write create getattr setattr lock append open unlink link rename relabelfrom relabelto)))
+(allow udev_t device_node dir_manage)            ; /dev/snd, /dev/dri, /dev/input: the directories of the nodes it makes
+(allow udev_t device_node (lnk_file (create read getattr setattr unlink rename write)))   ; /dev/dri/by-path, /dev/char/MAJ:MIN
+(allow udev_t device_node (blk_file (watch)))    ; inotify on the block devices (a changed partition table)
+(allow udev_t self (file (write)))              ; its own oom_score_adj
+(allow udev_t udev_rules_t (dir (watch)))        ; inotify on the rules directories
+(allow udev_t udev_var_run_t (dir (watch)))
+(allow udev_t lib_t (dir (watch)))
 (allow udev_t sysfs_t (dir (ioctl read write getattr setattr lock open search add_name remove_name)))
 (allow udev_t sysfs_t (file (ioctl read write getattr setattr lock append open)))
 (allow udev_t sysfs_t (lnk_file (read getattr)))
@@ -46,12 +53,13 @@
 (type dbusd_t)
 (type dbusd_exec_t) (call executable (dbusd_exec_t))
 (call daemon_type (dbusd_t dbusd_exec_t))
-(allow dbusd_t self (capability (setgid setuid sys_resource audit_write)))
+(allow dbusd_t self (capability (setgid setuid sys_resource audit_write dac_override)))
 (allow dbusd_t self (netlink_audit_socket (create getattr setattr read write nlmsg_relay)))
 (call manage_files (dbusd_t dbus_var_run_t))
 (typetransition dbusd_t var_run_t dir "dbus" dbus_var_run_t)
 (typetransition init_domain var_run_t dir "dbus" dbus_var_run_t)
 (typetransition initrc_t var_run_t dir "dbus" dbus_var_run_t)
+(call manage_files (initrc_t dbus_var_run_t))    ; /etc/sv/dbus/run: install -d /run/dbus
 (allow dbusd_t var_lib_t (dir (search getattr)))
 (allow dbusd_t domain (dir (search getattr)))
 (allow dbusd_t domain (file (read getattr open)))
@@ -80,6 +88,7 @@
 (call manage_files (syslogd_t var_log_t))
 (call manage_files (syslogd_t devlog_t))
 (typetransition syslogd_t device_t sock_file devlog_t)
+(allow devlog_t device_t (filesystem (associate)))      ; /dev/log lives on devtmpfs
 (allow syslogd_t device_t (dir (write add_name remove_name)))
 (call exec_files (syslogd_t syslogd_exec_t))
 (call exec_files (syslogd_t shell_exec_t))
@@ -93,6 +102,11 @@
 (allow getty_t tty_device_t (chr_file (ioctl read write getattr setattr lock append open)))
 (allow getty_t console_device_t (chr_file (ioctl read write getattr setattr lock append open)))
 (call rw_files (getty_t utmp_t))
+(allow getty_t var_log_t (dir (search)))         ; /var/log/wtmp: the login record
+(allow getty_t var_run_t (dir (write add_name remove_name)))   ; /run/agetty.reload
+(allow getty_t var_run_t (file (create read write getattr open unlink watch)))
+(call rw_files (getty_t wtmp_t))
+(dontaudit getty_t self (capability2 (checkpoint_restore)))   ; asked for on the way, not needed
 (call read_files (getty_t etc_runtime_t))
 (call domtrans (getty_t login_exec_t login_t))
 
@@ -112,6 +126,7 @@
 (typetransition login_t var_run_t dir "faillock" faillock_t)
 (typetransition init_domain var_run_t dir "faillock" faillock_t)
 (call rw_files (login_t utmp_t))
+(allow login_t self (file (write)))              ; /proc/self/loginuid (pam_loginuid)
 (call rw_files (login_t wtmp_t))
 (call rw_files (login_t var_log_t))              ; lastlog, btmp
 (allow login_t tty_device_t (chr_file (ioctl read write getattr setattr lock append open relabelfrom relabelto)))
@@ -130,6 +145,12 @@
 (type user_shell_exec_t) (call executable (user_shell_exec_t))      ; /usr/local/bin/vh-usersh
 (type admin_shell_exec_t) (call executable (admin_shell_exec_t))    ; /usr/local/bin/vh-adminsh
 (type game_enter_exec_t) (call executable (game_enter_exec_t))      ; /usr/local/bin/vh-game-enter
+;; libxcrypt's yescrypt tries mmap(MAP_HUGETLB) for its memory before falling back to ordinary
+;; pages (an "anon_hugepage" file of hugetlbfs_t): refused silently in the domains that check
+;; a password, the fallback is the path every machine without reserved huge pages takes anyway
+(dontaudit login_t hugetlbfs_t (file (read map)))
+(dontaudit doas_t hugetlbfs_t (file (read map)))
+(dontaudit chkpwd_t hugetlbfs_t (file (read map)))
 (call domtrans (login_t user_shell_exec_t user_t))
 (call domtrans (login_t admin_shell_exec_t admin_t))
 (call domtrans (login_t game_enter_exec_t game_t))
@@ -176,6 +197,7 @@
 (call domtrans (doas_t initctl_exec_t initctl_t))
 (call domtrans (doas_t vh_sbin_exec_t vh_sbin_t))
 (call domtrans (doas_t shell_exec_t sysadm_t))
+(call domtrans (doas_t admin_shell_exec_t sysadm_t))   ; doas -s runs the admin's login shell, vh-adminsh
 (call domtrans (doas_t bin_t sysadm_t))
 (call domtrans (doas_t vh_tools_exec_t vh_tools_t))
 (call domtrans (doas_t pkg_exec_t pkg_t))
@@ -221,6 +243,14 @@
 (call manage_files (sysadm_t var_tmp_t))
 (call manage_files (sysadm_t tmp_t))
 (call manage_files (sysadm_t utmp_t))
+(call manage_files (sysadm_t vh_repo_t))
+;; the admin looks at every process (ps, pgrep: /proc/PID of any domain), never into it (no ptrace,
+;; neverallow #2; the capability a shell asks for while reading another uid's /proc/PID/exe is refused quietly)
+(allow sysadm_t domain (dir (search getattr read open)))
+(allow sysadm_t domain (file (read getattr open)))
+(allow sysadm_t domain (lnk_file (read)))
+(dontaudit sysadm_t self (capability (sys_ptrace)))
+(allow sysadm_t home_root_t (dir (read getattr open search)))
 (call manage_files (sysadm_t runit_var_run_t))
 (call manage_files (sysadm_t vh_run_t))
 (call manage_files (sysadm_t vh_state_t))
@@ -320,6 +350,7 @@
 (roletype system_r pkg_t)
 (allow pkg_t self (capability (chown dac_override dac_read_search fowner fsetid kill setgid setuid setpcap linux_immutable net_admin sys_chroot sys_admin sys_nice sys_resource sys_tty_config mknod setfcap)))
 (allow pkg_t self (process (setexec setfscreate setrlimit)))
+(call exec_files (pkg_t vh_repo_t))              ; vh-update runs the scripts of the repository copy
 (typeattributeset mount_domain pkg_t)
 (typeattributeset can_relabel pkg_t)
 (allow pkg_t fs_type (filesystem (mount remount unmount getattr)))

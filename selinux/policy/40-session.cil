@@ -31,6 +31,7 @@
     (allow d devpts_t (dir (search getattr read)))
     (allow d devpts_t (chr_file (ioctl read write getattr setattr lock append open)))
     (allow d ptmx_t (chr_file (ioctl read write getattr lock append open)))
+    (allow d dri_device_t (dir (search getattr read open)))
     (allow d dri_device_t (chr_file (ioctl read write getattr lock append open map)))   ; the render node (group render)
     (allow d sound_device_t (chr_file (getattr)))
     (allow d var_run_t (dir (read)))
@@ -76,6 +77,7 @@
 (type lock_t)
 (type lock_exec_t) (call executable (lock_exec_t))              ; swaylock
 (call domtrans (user_t wm_exec_t wm_t))
+(call read_files (wm_t udev_rules_t))           ; libudev's hwdb.bin in /etc/udev
 (roletype user_r wm_t)
 (roletype user_r bar_t)
 (roletype user_r pipewire_t)
@@ -93,6 +95,8 @@
 (allow wm_t seatd_var_run_t sock_w)
 (allow wm_t seatd_t (fd (use)))
 (allow wm_t dri_device_t (chr_file (ioctl read write getattr lock append open map)))
+(allow wm_t dri_device_t (dir (search getattr read open)))
+(allow wm_t self (netlink_kobject_uevent_socket (create bind getattr setopt read write)))   ; libudev's monitor: the outputs and the input devices that come and go
 (allow wm_t input_device_t (chr_file (ioctl read write getattr lock append open)))
 (allow wm_t tty_device_t (chr_file (ioctl read write getattr open)))
 (allow wm_t console_device_t (chr_file (ioctl read write getattr open)))
@@ -134,7 +138,11 @@
     (allow wm_t d (unix_stream_socket (read write getattr)))
     (allow d wm_t (fd (use)))
     (allow d tmpfs_t (file (read write getattr map)))
-    (allow d dri_device_t (chr_file (ioctl read write getattr lock append open map))))
+    (allow d dri_device_t (chr_file (ioctl read write getattr lock append open map)))
+    ;; what the session's programs inherit from vh-session: the log in /run/user/UID and the tty of the login
+    (allow d user_t (fd (use)))
+    (allow d user_runtime_t (file (append write getattr)))
+    (allow d tty_device_t (chr_file (read write getattr ioctl))))
 (call wayland_client (user_t))
 
 ;; the bar: sysfs, the clock, the system bus (iwd, bluez), the wallpapers, its launcher broker
@@ -143,6 +151,15 @@
 (call wayland_client (bar_t))
 (call dbus_client (bar_t))
 (allow bar_t self (process (setrlimit)))
+(call manage_files (bar_t user_runtime_t))      ; its lock and state in /run/user/UID
+(allow bar_t self (netlink_route_socket (create bind getattr setopt read write nlmsg_read)))   ; the network's state (rtnetlink)
+(allow bar_t self (netlink_kobject_uevent_socket (create bind getattr setopt read write)))     ; the battery and the backlight as they change (libudev)
+(call read_files (bar_t udev_var_run_t))         ; libudev's /run/udev/data
+(allow bar_t user_home_dir_t (dir (search getattr read open write add_name remove_name create)))   ; ~/.cache/refursline: the wallpaper it rendered
+(call manage_files (bar_t user_home_t))
+(typetransition bar_t user_home_dir_t dir user_home_t)
+(typetransition bar_t user_home_dir_t file user_home_t)
+(allow bar_t self (bluetooth_socket (create ioctl getattr bind read write)))   ; the Bluetooth menu asks the HCI for the adapters
 (call rw_files (bar_t user_home_t))
 (allow bar_t user_home_dir_t (dir (search getattr)))
 (allow bar_t sysfs_t (file (read getattr open)))
@@ -168,6 +185,14 @@
 (allow pipewire_t self (process (setsched setrlimit)))
 (allow pipewire_t self (capability (sys_nice ipc_lock)))
 (allow pipewire_t sound_device_t (chr_file (ioctl read write getattr lock append open map)))
+(allow pipewire_t sound_device_t (dir (search getattr read open watch)))   ; ALSA enumerates /dev/snd; WirePlumber watches it for hotplug
+(allow pipewire_t root_t (dir (read open)))                             ; it lists / looking for its plugin directories
+(allow pipewire_t user_home_dir_t (dir (search getattr read open write add_name remove_name create)))   ; WirePlumber's state in ~/.local/state
+(call manage_files (pipewire_t user_home_t))
+(typetransition pipewire_t user_home_dir_t dir user_home_t)
+(typetransition pipewire_t user_home_dir_t file user_home_t)
+(call read_files (pipewire_t udev_rules_t))                              ; libudev reads /etc/udev/udev.conf
+(allow pipewire_t var_lib_t (file (read getattr open)))                  ; /var/lib/dbus/machine-id
 (allow pipewire_t video_device_t (chr_file (ioctl read write getattr lock append open map)))
 (call manage_files (pipewire_t user_runtime_t))
 (call manage_files (pipewire_t vh_sandbox_run_t))
@@ -363,7 +388,9 @@
 (call manage_files (seatd_t var_run_t))
 (typetransition seatd_t var_run_t sock_file "seatd.sock" seatd_var_run_t)
 (allow seatd_t dri_device_t (chr_file (ioctl read write getattr setattr lock append open)))
+(allow seatd_t dri_device_t (dir (search getattr read open)))
 (allow seatd_t input_device_t (chr_file (ioctl read write getattr setattr lock append open)))
+(allow seatd_t input_device_t (dir (search getattr read open)))
 (allow seatd_t tty_device_t (chr_file (ioctl read write getattr setattr lock append open)))
 (allow seatd_t console_device_t (chr_file (ioctl read write getattr setattr lock append open)))
 (allow seatd_t sysfs_t (file (read getattr open)))

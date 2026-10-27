@@ -53,6 +53,7 @@ const Step = struct {
 pub const steps = [_]Step{
     .{ .name = "pseudofs", .run = stPseudofs }, // 00-pseudofs.sh
     .{ .name = "vh-selinux", .run = vhsteps.selinuxLoad }, // the policy, before any process is started (docs/uni/selinux.md)
+    .{ .name = "vh-selinux-early", .run = vhsteps.selinuxLabelEarly }, // /run and /dev before udev fills them
     .{ .name = "static-devnodes", .run = misc.staticDevnodes }, // 01-static-devnodes.sh
     .{ .name = "kmods", .run = misc.kmods, .not_in_container = true }, // 02-kmods.sh
     .{ .name = "udev-start", .run = udev.start, .not_in_container = true }, // 02-udev.sh
@@ -261,7 +262,7 @@ const testing = std.testing;
 
 test "steps: the order of the core-services" {
     var prev: usize = 0;
-    for ([_][]const u8{ "pseudofs", "vh-selinux", "udev-settle", "remount-root", "vh-selinux-label", "vh-mounts", "vh-zram", "vh-nftables", "sysctl", "vh-apparmor", "vh-suid", "vh-game", "cleanup", "vh-modlock" }) |name| {
+    for ([_][]const u8{ "pseudofs", "vh-selinux", "vh-selinux-early", "udev-start", "udev-settle", "remount-root", "vh-selinux-label", "vh-mounts", "vh-zram", "vh-nftables", "sysctl", "vh-apparmor", "vh-suid", "vh-game", "cleanup", "vh-modlock" }) |name| {
         var idx: usize = 0;
         for (steps, 0..) |s, i| if (vh.eql(s.name, name)) {
             idx = i;

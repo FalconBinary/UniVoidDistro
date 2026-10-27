@@ -1,3 +1,7 @@
 kind = oneshot
+# the delay counts from the moment the service may start: after c-oneshot is done here, so
+# that the driver measures it from c's stamp (without the after, from the manager's start,
+# which a loaded host puts more than 50 ms before c's end)
+after = c-oneshot
 delay = 1s
 exec = /bin/sh -c "date +%s%N > /tmp/delayed-done"

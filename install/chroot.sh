@@ -221,10 +221,16 @@ if [ "$VH_MAC" = selinux ]; then
 	say "SELinux: the policy's mode and the labels of every file"
 	[ -s /etc/vh/selinux/file_contexts ] || die "no /etc/vh/selinux/file_contexts (10-install.sh installs the live image's policy)"
 	echo "$VH_SELINUX_MODE" > /etc/vh/selinux/mode
+	# the admin's home is the admin's (admin_home_t, like /root): the policy cannot name the
+	# account, so this installation's line goes next to the table (vh-selabel reads FILE.local)
+	printf '# this installation (install/chroot.sh): the admin account'"'"'s home\n/home/%s(/.*)?\tsystem_u:object_r:admin_home_t:s0\n' "$VH_ADMIN" > /etc/vh/selinux/file_contexts.local
 	# the labels into the xattrs now, with no policy active: the kernel takes security.selinux
-	# from a process with CAP_SYS_ADMIN; stage 1 relabels the tmpfs mounts at every boot
-	/usr/local/sbin/vh-selabel / || die "vh-selabel failed"
-	/usr/local/sbin/vh-selabel --check / >/dev/null || die "vh-selabel: a label differs right after the relabel"
+	# from a process with CAP_SYS_ADMIN. The root file system alone (--one-fs): /dev here is the
+	# live system's, where udev adds and removes nodes meanwhile (kvm-smoke 40337571376 saw a
+	# difference right after the relabel), and stage 1 relabels the tmpfs mounts at every boot
+	/usr/local/sbin/vh-selabel --one-fs / || die "vh-selabel failed"
+	selabel_diff=$(/usr/local/sbin/vh-selabel --check --one-fs / 2>&1) \
+		|| { printf '%s\n' "$selabel_diff" | tail -25; die "vh-selabel: a label differs right after the relabel"; }
 	ok "SELinux: $VH_SELINUX_MODE at boot; every file labelled"
 fi
 

@@ -9,7 +9,12 @@ nomod=0
 [ -e /proc/modules ] || nomod=1
 # every machine's parameters; what the hardware asks for (the IOMMU of a DMAR table ...) is
 # checked against the plan (area plan)
-for p in lockdown=confidentiality module.sig_enforce=1 lsm=landlock,lockdown,yama,apparmor \
+# the LSM line names selinux before apparmor with VH_MAC=selinux (docs/uni/selinux.md): the
+# machine kernel runs SELinux, the stock kernel of the fallback UKI AppArmor
+mac=$(sed -n 's/^VH_MAC=//p' /root/vh/vh.conf 2>/dev/null | tr -d '"')
+lsm_want=lsm=landlock,lockdown,yama,apparmor
+[ "$mac" = selinux ] && lsm_want=lsm=landlock,lockdown,yama,selinux,apparmor
+for p in lockdown=confidentiality module.sig_enforce=1 $lsm_want \
 	iommu.strict=1 init_on_free=1 rd.shell=0 rd.emergency=poweroff panic=10; do
 	if [ "$p" = module.sig_enforce=1 ] && [ "$nomod" = 1 ]; then
 		ok "no loadable modules in this kernel ($(uname -r)): module.sig_enforce has nothing to check"
@@ -20,7 +25,11 @@ done
 chk lockdown "$(cat /sys/kernel/security/lockdown)" "none integrity [confidentiality]"
 lsm=$(cat /sys/kernel/security/lsm)
 case ",$lsm," in *,bpf,*) bad "LSM: bpf is enabled ($lsm)" ;; *) ok "LSM: $lsm" ;; esac
-case ",$lsm," in *,apparmor,*) ok "AppArmor is active" ;; *) bad "AppArmor is not active" ;; esac
+case ",$lsm," in
+*,selinux,*) [ "$mac" = selinux ] && ok "SELinux is active, AppArmor is not (VH_MAC=selinux; area selinux)" || bad "SELinux is active but VH_MAC=${mac:-apparmor}" ;;
+*,apparmor,*) ok "AppArmor is active" ;;
+*) bad "neither AppArmor nor SELinux is active ($lsm)" ;;
+esac
 chk kernel.panic "$(cat /proc/sys/kernel/panic)" 10
 sb=$(od -An -t u1 -j4 -N1 /sys/firmware/efi/efivars/SecureBoot-* 2>/dev/null | tr -d ' ')
 [ "$sb" = 1 ] && ok "Secure Boot is on" || bad "Secure Boot is off (stage 2: 20-firstboot.sh)"

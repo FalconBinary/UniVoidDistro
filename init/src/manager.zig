@@ -53,6 +53,8 @@ const Inst = struct {
     waiters: std.ArrayList(Waiter) = .empty,
     /// a request to start again after the stop
     restart_pending: bool = false,
+    /// no longer enabled: being stopped, dropped at the next reload once down
+    gone: bool = false,
     /// the time stamp file of a periodic oneshot
     stamp: ?[]const u8 = null,
 };
@@ -102,6 +104,27 @@ pub const Manager = struct {
     }
 
     // ---------------------------------------------------------------- definitions
+
+    /// What runit-void's stage 2 (/etc/runit/2) does before runsvdir, so that /var/service
+    /// resolves: /var/service -> /run/runit/runsvdir/current -> /etc/runit/runsvdir/current
+    /// (runsvchdir: -> default). The link in /run is gone after every boot and nothing but
+    /// stage 2 made it; without it the manager, sv and vh-ctl enable would see no service at all
+    /// (the rig's first boot under vh-init, kvm-smoke run 40323258202). The runlevel of the
+    /// command line (/etc/runit/runsvdir/NAME) and /etc/rc.local are not taken over.
+    fn runitServiceDir(m: *Manager) void {
+        if (m.root.len > 0 or vh.isDir(svc.runit_dir)) return;
+        const run_link = "/run/runit/runsvdir/current";
+        const etc_current = "/etc/runit/runsvdir/current";
+        if (!vh.pathExists(etc_current)) {
+            if (!vh.isDir("/etc/runit/runsvdir/default")) return;
+            _ = linux.symlink("default", etc_current);
+        }
+        vh.mkdirs("/run/runit/runsvdir", 0o755);
+        if (vh.pathExists(run_link)) return;
+        if (linux.errno(linux.symlink(etc_current, run_link)) == .SUCCESS) {
+            vh.log("{s} -> {s} (runit's stage 2 does not run under vh-init)", .{ run_link, etc_current });
+        } else vh.warn("{s}: {s}", .{ run_link, vh.serr() });
+    }
 
     /// /var/service/* (runit directories, a .svc of the same name taking over how it runs) and
     /// /etc/vh/services/enabled/* (.svc only)
@@ -178,6 +201,12 @@ pub const Manager = struct {
             if (m.find(s.name)) |old| {
                 var i = old.*;
                 i.s = s;
+                if (i.gone) {
+                    // enabled again before its stop was dropped (vh-ctl disable, then enable;
+                    // the rig's base step, kvm-smoke 40333007498): wanted up as a new one
+                    i.gone = false;
+                    i.want_up = !s.down;
+                }
                 fresh.append(vh.gpa, i) catch vh.oom();
             } else {
                 var i: Inst = .{ .s = s, .logw = log.Writer.init(s.name, if (s.log == .kmsg) .kmsg else .file, s.log_size, s.log_keep) };
@@ -197,6 +226,7 @@ pub const Manager = struct {
             if (!still and (old.state != .down and old.state != .failed and old.state != .done)) {
                 vh.log("{s}: no longer enabled: stopping", .{old.s.name});
                 old.want_up = false;
+                old.gone = true;
                 fresh.append(vh.gpa, old.*) catch vh.oom();
             }
         }
@@ -229,6 +259,7 @@ pub const Manager = struct {
         }
         vh.mkdirs(vh.fmt("{s}{s}", .{ m.root, m.state_dir }), 0o700);
         m.listenSocket();
+        m.runitServiceDir();
         m.reload();
         m.adopt();
         vh.log("vh-init manager {s}: {d} services", .{ version, m.insts.items.len });

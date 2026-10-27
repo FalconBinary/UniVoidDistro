@@ -6,14 +6,19 @@
 # against Void's signed sha256sum.txt (minisign key and ISO name pinned in tests/vm/void-live.pins).
 # With live_run, it is our own image of that live-image run instead (docs/uni/live-image.md):
 # its sha256, its build provenance attestation, and its commit must be this run's, so that the
-# installer takes the image's programs instead of building them.
+# installer takes the image's programs instead of building them. With mac=selinux the policy is
+# compiled here (selinux/build.sh, secilc in a Fedora container) and the installation takes it
+# through VH_SELINUX_DIR: Void's image has no policy; ours brings it (docs/uni/selinux.md).
 name: kvm-smoke
 on:
   workflow_dispatch:
     inputs:
       step:
-        description: "check.py step after the installation (base; assess: the boot assessment of a machine UKI; machine: vh-kconf install of kernel_run's kernel, docs/uni/kernel.md)"
+        description: "check.py steps after the installation, comma-separated, in order (base; assess: the boot assessment of a machine UKI; machine: vh-kconf install of kernel_run's kernel, docs/uni/kernel.md; vhinit: vh-init as PID 1, kept for the steps after it, vhinit-rollback: runit back, init/README.md; sched: vh-sched under vh-init on kernel_run's kernel, sched/README.md; selinux: the policy permissive on that kernel under vh-init, with mac=selinux)"
         default: base
+      mac:
+        description: "VH_MAC of the installation: apparmor, or selinux (the policy of selinux/ built here, permissive at boot; docs/uni/selinux.md)"
+        default: apparmor
       kernel_run:
         description: "the id of a kernel-custom run that built qemu-q35 (hw=all or hw=kernel/hw/qemu-q35.zon), for the step machine"
         default: ""
@@ -32,6 +37,9 @@ on:
       security:
         description: "VH_SECURITY of the installation: strict, or tiered (below 2 GiB strict refuses: Argon2id with 1 GiB)"
         default: strict
+      mirror:
+        description: "the Void package mirror (VH_MIRROR, https://...) for the installer, the dev image and the sysroot; empty: repo-default"
+        default: ""
   schedule:
     - cron: "17 4 * * 1"
 permissions:
@@ -48,6 +56,8 @@ env:
   # below 2 GiB. 4096 while the live ISO rode along (run 39297735098)
   VH_MEM: ${{ github.event.inputs.mem || '3072' }}
   VH_SECURITY: ${{ github.event.inputs.security || 'strict' }}
+  VH_MAC: ${{ github.event.inputs.mac || 'apparmor' }}
+  VH_MIRROR: ${{ github.event.inputs.mirror || 'https://repo-default.voidlinux.org' }}
 jobs:
   smoke:
     runs-on: ubuntu-latest
@@ -114,9 +124,16 @@ jobs:
           set -euo pipefail
           . tests/vm/void-live.pins
           mkdir -p iso && cd iso
-          curl -fsSL -o "$ISO" "$BASE/$ISO"
-          curl -fsSL -o sha256sum.txt "$BASE/sha256sum.txt"
-          curl -fsSL -o sha256sum.sig "$BASE/sha256sum.sig"
+          # the first mirror that answers serves all three files; the signature decides, not the mirror
+          got=""
+          for m in $MIRRORS; do
+            echo "== $m"
+            if curl -fsSL --connect-timeout 20 -m 1200 -o "$ISO" "$m/$ISO" \
+               && curl -fsSL --connect-timeout 20 -m 120 -o sha256sum.txt "$m/sha256sum.txt" \
+               && curl -fsSL --connect-timeout 20 -m 120 -o sha256sum.sig "$m/sha256sum.sig"; then got=$m; break; fi
+            echo "$m: not reachable or incomplete, the next mirror"
+          done
+          [ -n "$got" ] || { echo "no mirror served $ISO"; exit 1; }
           minisign -Vm sha256sum.txt -x sha256sum.sig -P "$KEY"
           # sha256sum.txt is in the BSD format, "SHA256 (NAME) = HASH": the ISO's own hash must
           # be in the signed file, on exactly that line
@@ -127,10 +144,19 @@ jobs:
         run: sh tests/zig/build.sh
       - name: vh-stage1 for the VM (tests/init/build.sh; the stage1 step installs it)
         run: sh tests/init/build.sh
+      - name: the SELinux policy (selinux/build.sh, secilc in a Fedora container), for VH_MAC=selinux
+        if: env.VH_MAC == 'selinux'
+        run: |
+          sh selinux/build.sh build/selinux
+          cat build/selinux/BUILD
       - name: install
         env:
           VH_ACCEL: kvm
-        run: python3 tests/vm/vhvm.py install --iso "$VH_ISO" --mem "$VH_MEM" --timeout 10800 --conf "VH_SECURITY=\"$VH_SECURITY\""
+        run: |
+          set --
+          [ "$VH_MAC" != selinux ] || set -- --selinux build/selinux
+          python3 tests/vm/vhvm.py install --iso "$VH_ISO" --mem "$VH_MEM" --timeout 10800 \
+            --conf "VH_SECURITY=\"$VH_SECURITY\"" --conf "VH_MAC=\"$VH_MAC\"" --conf "VH_MIRROR=\"$VH_MIRROR\"" "$@"
       - name: check
         env:
           VH_ACCEL: kvm

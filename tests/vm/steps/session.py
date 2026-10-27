@@ -13,7 +13,7 @@ import struct
 import time
 
 import vhvm
-from vmlib import AUDIT_RX, VM_SRC, as_user, boot, check, put_file, run, shq, shutdown
+from vmlib import AUDIT_RX, VM_SRC, as_user, boot, check, keys, put_file, run, shq, shutdown
 
 ROOT = "/var/lib/vh/roots/game"
 # what changes between two boots by itself: the logs, chrony's drift, dhcpcd's lease, the seed
@@ -76,14 +76,6 @@ def peak(path):
 def acl_counts(names):
     """for each node of /dev/snd: NAME and how many entries for game with rw its ACL has"""
     return "; ".join(f"echo \"{n} $(getfacl -p /dev/snd/{n} 2>/dev/null | grep -c '^user:game:rw-')\"" for n in names)
-
-
-def keys(vm, text):
-    """type TEXT on the VM's keyboard (QEMU's sendkey): letters, digits and '-'"""
-    for ch in text:
-        name = {"-": "minus", " ": "spc", ".": "dot", "/": "slash"}.get(ch, ch)
-        vm.monitor(f"sendkey {name}")
-        time.sleep(0.2)
 
 
 def fails(ser, name):
