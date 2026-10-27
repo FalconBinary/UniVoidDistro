@@ -245,7 +245,11 @@ scheduled run is unchanged.
   `linux-A.B.C_D-vh-init.efi`, on trial through Limine's one-shot entry, the default after three
   good boots, the stock UKI untouched as the fallback, a kernel update's twin on trial by itself;
   [init/README.md](../../init/README.md#the-uki-with-vh-init-the-install-through-the-boot-assessment)),
-  verified on the rig: run RUN_ID_PENDING `vhinit,base,vhinit-rollback` (RESULTS_SHORT_PENDING).
+  verified on the rig: run 40472898818 `vhinit,base,vhinit-rollback`, 64 checks, 0 FAIL (the
+  twin made in a second, the stock UKI's bytes unchanged, a trial reset at the passphrase prompt
+  falls back to runit by itself, three good boots make vh-init Limine's default, the rollback
+  gives runit back; run 40468673377 before it, the same flow with two failures of the step's own
+  parsing).
   `init=` stays runit's by default.
 - **vh-sched under vh-init: verified** (run 40340658992). The installer puts the loader and
   `vh_sched.o` in place (it never had: the service named a program that was not installed);

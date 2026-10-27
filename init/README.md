@@ -221,7 +221,28 @@ runit by the bench method (below). **Open:** PID 1 keeps 4.2 MiB of RSS (stage 1
 its allocations stay; the audit's line is `[ ?? ]` above 4 MiB).
 
 **The install through the boot assessment, verified on the VM rig** (2026-10-27, kvm-smoke run
-RUN_ID_PENDING `vhinit,base,vhinit-rollback`): RESULTS_PENDING
+40472898818 `vhinit,base,vhinit-rollback`, 64 checks, 0 FAIL; run 40468673377 before it passed the
+same flow with two failures of the step's own parsing; Limine 12.9.4, the stock kernel 6.18.59_1):
+`vh-init --install` makes the twin `linux-6.18.59_1-vh-init.efi` in a second (the stock command
+line is 1078 bytes, so the parameter fits the section's padding; the one-more-block layout ran in
+the unit tests and `assess_test.py` only), signed and enrolled, on trial and set for the next boot
+through the one-shot entry; the stock UKI's bytes are unchanged, the twin carries `init=` once and
+the stock UKI never, the hook is untouched. The first trial boot reset at its passphrase prompt:
+the boot after it runs runit by itself, the trial is "failed: the trial boot did not reach the end
+of the boot", `vh-init --status` names `--retry`. After `--retry` the trial boot runs vh-init as
+PID 1 (stage 1 in 1013 ms, 0 errors; udev-settle 478, static-devnodes 204, vh-nftables 148 ms;
+the 15 services settled 5.1 s after the manager; PID 1 RSS 4300 kB; `vh-ctl status` and the shim
+agree; vh-audit ok 179 with the rig's Secure Boot FAIL, the init area clean, the boot area counts
+the twin and the trial), the service counts it (1 of 3) and sets the entry again; runit-void's
+`poweroff` ends in stage 3 (110 ms). `check.py base` under vh-init is the second good boot; the
+third makes the twin `LoaderEntryDefault` with limine.conf unchanged, the default boots it with no
+one-shot entry and the service has no news; `vh-init --rollback` demotes it, deletes the twin and
+its entry, restores runit's `sv` and the noextract file goes; the boot after it runs runit with
+every service up, nothing on trial, no UKI with vh-init on the ESP. **Not verified:** real
+hardware with Secure Boot on (the twin is signed as every UKI; the rig has no Secure Boot), a
+stock kernel update with the marker (the e2e test covers it), a machine kernel with `init=`
+(`vhinit,sched` / `vhinit,selinux` on this branch).
+
 **Not done:** `vh-logd` (/dev/log stays with socklog; the manager
 writes the services' own logs), the Landlock and mount-namespace sandbox of a service, the
 `SCX` link held by the manager (vh-sched is a service that holds its own link).
