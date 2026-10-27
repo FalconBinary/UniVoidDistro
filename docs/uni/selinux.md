@@ -185,12 +185,11 @@ dhcpcd, vh-acpid, vh-sched as `sched_t` with the scheduler loaded); the admin's 
 the desktop on the virtio GPU as `user_t` with RefursWM `wm_t`, RefursLine `bar_t`,
 `vh-wlfilter` `wlfilter_t`, PipeWire and WirePlumber `pipewire_t`; `vh-audit` has no FAIL in
 its SELinux area. The first boot logged 195 AVC lines, the sixth, seventh and eighth 18 each,
-the ninth 9, the tenth 8, every boot a new layer once the previous one's accesses were allowed;
-on the tenth the login and the desktop left no line at all, and the 8 are the daemons' (dhcpcd's
-leases in `/var/db/dhcpcd` and its raw IP socket, a run script's `dbus-send`, a capability ask
-each of unbound and chronyd that the refusal answers; their rules are the last commit,
-**[VERIFY]** the eleventh boot, run 40473233569, shows what they leave): what the rig taught
-the policy is in the git
+the ninth 9, the tenth 8, every boot a new layer once the previous one's accesses were allowed,
+and **the eleventh boot (run 40473233569) left zero: the boot, the login on tty1 and the start
+of the desktop with no AVC line** (the tenth's 8 were the daemons': dhcpcd's leases in
+`/var/db/dhcpcd` and its raw IP socket, a run script's `dbus-send`, a capability ask each of
+unbound and chronyd that the refusal answers). What the rig taught the policy is in the git
 history of `selinux/policy` (no `filesystem associate` rule at all, the role change at login,
 every domain's own `/proc` entry, the type transitions of what stage 1 and the run scripts
 make in `/run`, the device directories and symlinks of udev and its inotify watches, libudev's
