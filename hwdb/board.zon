@@ -4,6 +4,13 @@
 .{
     .rules = .{
         .{
+            .id = "board.rpi",
+            .why = "A Raspberry Pi (the device tree says raspberrypi,*) boots from its own firmware, not UEFI: the firmware's drivers (the mailbox, the power domains, the clocks), its SD controller and PCIe root, its watchdog, built into the machine kernel [VERIFY: no board at hand, mainline 6.18 drives the Pi 5 partly].",
+            .when = .{ .dt_compatible = .{"raspberrypi,*"} },
+            .kconfig = .{"platform-rpi"},
+            .note = "A Raspberry Pi has no UEFI, so VH_SECURITY=strict refuses it (the uefi requirement): nothing verifies the kernel it boots. VH_SECURITY=tiered installs it with that risk confirmed. The Pi's own secure boot would close the gap, but its key goes into the board's OTP memory once and for all: the installer never writes it; the runbook docs/uni/rpi.md says what it means [VERIFY].",
+        },
+        .{
             .id = "board.asus.secure-boot",
             .why = "ASUS firmware: the keys are cleared under Boot, Secure Boot, Key Management.",
             .when = .{ .dmi = .{.{ .field = "board_vendor", .any = .{"ASUSTeK*"} }} },

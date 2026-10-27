@@ -14,11 +14,11 @@
         },
         .{
             .id = "uefi",
-            .why = "On ARM64 the verified boot chain of this system needs UEFI (servers, laptops); a Raspberry Pi boots from its own firmware.",
+            .why = "On ARM64 the verified boot chain of this system needs UEFI (servers, laptops: Limine, the signed UKI, Secure Boot with our keys); a Raspberry Pi boots from its own firmware.",
             .only = .{ .arch = .{"aarch64"} },
             .when = .{ .has = .{"efi"} },
             .risk = "The board's firmware boots the kernel unverified: whoever holds the board for a while can replace it and read what is typed.",
-            .fix = "A UEFI firmware for the board where one exists [VERIFY], or the Raspberry Pi's own secure boot (milestone U5: its key is burnt into OTP, irreversibly).",
+            .fix = "A UEFI firmware for the board where one exists [VERIFY], or the Raspberry Pi's own secure boot, which the installer never sets up: its key goes into the board's OTP memory irreversibly (docs/uni/rpi.md).",
         },
         .{
             .id = "secure-boot",

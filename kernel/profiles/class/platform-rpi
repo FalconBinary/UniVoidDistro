@@ -1,0 +1,19 @@
+# kernel/profiles/class/platform-rpi: a Raspberry Pi (board.rpi).
+#
+# A class fragment: vh-kconf resolve applies it when the machine's plan names it
+# (vh-plan, hwdb/); a symbol of it that does not survive olddefconfig is an error, as for
+# mandatory.
+
+# The firmware's mailbox and the services behind it (power domains, the frequency driver that
+# asks the firmware for the clocks), the SDHCI controller the SD card and the eMMC hang off
+# (the boot disk), the PCIe root (the Pi 5's RP1 southbridge and its USB, Ethernet and SD sit
+# behind it), the power-management watchdog for optional/deadman; all modules in Void's arm64
+# kernel, built into a machine kernel that loads none. Everything here is [VERIFY]: no board is
+# at hand, and mainline 6.18 drives the Pi 5's RP1 only in part (docs/uni/rpi.md).
+CONFIG_RASPBERRYPI_FIRMWARE=y
+CONFIG_RASPBERRYPI_POWER=y
+CONFIG_ARM_RASPBERRYPI_CPUFREQ=y
+CONFIG_BCM2835_MBOX=y
+CONFIG_MMC_SDHCI_BRCMSTB=y
+CONFIG_PCIE_BRCMSTB=y
+CONFIG_BCM2835_WDT=y

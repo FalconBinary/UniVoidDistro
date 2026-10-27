@@ -24,9 +24,9 @@
     .missing = .{
         .{
             .id = "uefi",
-            .why = "On ARM64 the verified boot chain of this system needs UEFI (servers, laptops); a Raspberry Pi boots from its own firmware.",
+            .why = "On ARM64 the verified boot chain of this system needs UEFI (servers, laptops: Limine, the signed UKI, Secure Boot with our keys); a Raspberry Pi boots from its own firmware.",
             .risk = "The board's firmware boots the kernel unverified: whoever holds the board for a while can replace it and read what is typed.",
-            .fix = "A UEFI firmware for the board where one exists [VERIFY], or the Raspberry Pi's own secure boot (milestone U5: its key is burnt into OTP, irreversibly).",
+            .fix = "A UEFI firmware for the board where one exists [VERIFY], or the Raspberry Pi's own secure boot, which the installer never sets up: its key goes into the board's OTP memory irreversibly (docs/uni/rpi.md).",
             .floor = false,
         },
         .{
@@ -93,6 +93,7 @@
         .{ .value = "cpu-arm64", .rules = .{"arm.kernel"} },
         .{ .value = "cpu-arm64-aes", .rules = .{"arm.aes"} },
         .{ .value = "gpu-vc4", .rules = .{"gpu.vc4"} },
+        .{ .value = "platform-rpi", .rules = .{"board.rpi"} },
         .{ .value = "storage-mmc", .rules = .{"storage.mmc"} },
     },
     .features = .{
@@ -183,7 +184,7 @@
     },
     .internal_input = .{},
     .exports = .{},
-    .notes = .{},
+    .notes = .{.{ .value = "A Raspberry Pi has no UEFI, so VH_SECURITY=strict refuses it (the uefi requirement): nothing verifies the kernel it boots. VH_SECURITY=tiered installs it with that risk confirmed. The Pi's own secure boot would close the gap, but its key goes into the board's OTP memory once and for all: the installer never writes it; the runbook docs/uni/rpi.md says what it means [VERIFY].", .rules = .{"board.rpi"} }},
     .luks = .{
         .cipher = "aes-xts-plain64",
         .key_size = 512,

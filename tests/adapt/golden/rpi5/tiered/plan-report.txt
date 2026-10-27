@@ -4,7 +4,8 @@ module tables: the pinned stock kernel's
 security: tiered; tier: reduced
 tags: bluetooth devicetree disk disk-discard disk-mmc disk-on-mmc_block disk-on-sdhci_brcmstb display keyboard keyboard-usb sbc sound wifi wired
 
-Rules that apply (21):
+Rules that apply (22):
+  board.rpi [board.zon]: A Raspberry Pi (the device tree says raspberrypi,*) boots from its own firmware, not UEFI: the firmware's drivers (the mailbox, the power domains, the clocks), its SD controller and PCIe root, its watchdog, built into the machine kernel [VERIFY: no board at hand, mainline 6.18 drives the Pi 5 partly].
   arm.kernel [cpu-arm.zon]: The machine kernel's ARM64 class: the generic timer, PSCI, CPPC or SCMI frequency control, the errata of the cores.
   arm.mcpu.cortex-a76 [cpu-arm.zon]: Cortex-A76 (implementer 0x41, part 0xd0b), the cores of the Raspberry Pi 5: -mcpu=cortex-a76.
   arm.mcpu.generic [cpu-arm.zon]: Any other ARMv8 core: -march=armv8-a, the instruction set every ARM64 CPU has.
@@ -28,9 +29,9 @@ Rules that apply (21):
   storage.trim [storage.zon]: A fixed disk that accepts discard and VH_TRIM=yes: fstrim once a week (SSD speed and wear levelling; the cost is that the disk shows which blocks are free).
 
 Requirements not met (4):
-  uefi: On ARM64 the verified boot chain of this system needs UEFI (servers, laptops); a Raspberry Pi boots from its own firmware.
+  uefi: On ARM64 the verified boot chain of this system needs UEFI (servers, laptops: Limine, the signed UKI, Secure Boot with our keys); a Raspberry Pi boots from its own firmware.
     residual risk: The board's firmware boots the kernel unverified: whoever holds the board for a while can replace it and read what is typed.
-    fix: A UEFI firmware for the board where one exists [VERIFY], or the Raspberry Pi's own secure boot (milestone U5: its key is burnt into OTP, irreversibly).
+    fix: A UEFI firmware for the board where one exists [VERIFY], or the Raspberry Pi's own secure boot, which the installer never sets up: its key goes into the board's OTP memory irreversibly (docs/uni/rpi.md).
   secure-boot: Secure Boot with the system's own keys verifies the bootloader and the UKI before they run.
     residual risk: The boot chain is not verified: an evil maid can replace the kernel and capture the LUKS passphrase.
     fix: Enable Secure Boot support (Custom or Standard mode) in the firmware setup; the system enrols its own keys after the first boot (install/20-firstboot.sh).
@@ -52,10 +53,11 @@ packages (7):
 
 gaming root packages (vh-game) (0):
 
-kernel class fragments (4):
+kernel class fragments (5):
   cpu-arm64  <- arm.kernel
   cpu-arm64-aes  <- arm.aes
   gpu-vc4  <- gpu.vc4
+  platform-rpi  <- board.rpi
   storage-mmc  <- storage.mmc
 
 kernel features (3):
@@ -93,7 +95,8 @@ initrd drivers (7):
 
 internal input (vh-acpid) (0):
 
-notes (0):
+notes (1):
+  A Raspberry Pi has no UEFI, so VH_SECURITY=strict refuses it (the uefi requirement): nothing verifies the kernel it boots. VH_SECURITY=tiered installs it with that risk confirmed. The Pi's own secure boot would close the gap, but its key goes into the board's OTP memory once and for all: the installer never writes it; the runbook docs/uni/rpi.md says what it means [VERIFY].  <- board.rpi
 
 scalars (4):
   class = sbc  <- class.sbc.set
