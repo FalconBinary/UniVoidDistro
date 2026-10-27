@@ -53,7 +53,7 @@
 (type dbusd_t)
 (type dbusd_exec_t) (call executable (dbusd_exec_t))
 (call daemon_type (dbusd_t dbusd_exec_t))
-(allow dbusd_t self (capability (setgid setuid sys_resource audit_write)))
+(allow dbusd_t self (capability (setgid setuid sys_resource audit_write dac_override)))
 (allow dbusd_t self (netlink_audit_socket (create getattr setattr read write nlmsg_relay)))
 (call manage_files (dbusd_t dbus_var_run_t))
 (typetransition dbusd_t var_run_t dir "dbus" dbus_var_run_t)
@@ -88,6 +88,7 @@
 (call manage_files (syslogd_t var_log_t))
 (call manage_files (syslogd_t devlog_t))
 (typetransition syslogd_t device_t sock_file devlog_t)
+(allow devlog_t device_t (filesystem (associate)))      ; /dev/log lives on devtmpfs
 (allow syslogd_t device_t (dir (write add_name remove_name)))
 (call exec_files (syslogd_t syslogd_exec_t))
 (call exec_files (syslogd_t shell_exec_t))
@@ -103,7 +104,7 @@
 (call rw_files (getty_t utmp_t))
 (allow getty_t var_log_t (dir (search)))         ; /var/log/wtmp: the login record
 (allow getty_t var_run_t (dir (write add_name remove_name)))   ; /run/agetty.reload
-(allow getty_t var_run_t (file (create read write getattr open unlink)))
+(allow getty_t var_run_t (file (create read write getattr open unlink watch)))
 (call rw_files (getty_t wtmp_t))
 (dontaudit getty_t self (capability2 (checkpoint_restore)))   ; asked for on the way, not needed
 (call read_files (getty_t etc_runtime_t))

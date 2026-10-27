@@ -78,6 +78,8 @@
 (call manage_files (dhcpcd_t dhcpcd_var_run_t))
 (call manage_files (dhcpcd_t var_run_t))
 (typetransition dhcpcd_t var_run_t dir "dhcpcd" dhcpcd_var_run_t)
+(allow dhcpcd_t self (netlink_generic_socket (create bind getattr read write)))   ; its nl80211 lookup (docs/uni/runtime.md: cfg80211 stays blacklisted)
+(allow dhcpcd_t unlabeled_t (file (getattr)))                                    ; /proc/self/ns/net: nsfs carries no label
 (call exec_files (dhcpcd_t shell_exec_t))               ; /usr/libexec/dhcpcd-run-hooks
 (call exec_files (dhcpcd_t bin_t))
 (allow dhcpcd_t sysctl_net_t (dir (search)))

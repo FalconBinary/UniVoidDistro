@@ -185,7 +185,7 @@
 (allow pipewire_t self (process (setsched setrlimit)))
 (allow pipewire_t self (capability (sys_nice ipc_lock)))
 (allow pipewire_t sound_device_t (chr_file (ioctl read write getattr lock append open map)))
-(allow pipewire_t sound_device_t (dir (search getattr read open)))      ; ALSA enumerates /dev/snd
+(allow pipewire_t sound_device_t (dir (search getattr read open watch)))   ; ALSA enumerates /dev/snd; WirePlumber watches it for hotplug
 (allow pipewire_t root_t (dir (read open)))                             ; it lists / looking for its plugin directories
 (allow pipewire_t user_home_dir_t (dir (search getattr read open write add_name remove_name create)))   ; WirePlumber's state in ~/.local/state
 (call manage_files (pipewire_t user_home_t))
