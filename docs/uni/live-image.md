@@ -146,9 +146,13 @@ is. A cross-build on `ubuntu-latest` was not tried: it would need `qemu-user-sta
 binfmt in the privileged container, and the result would run every package hook under
 emulation [not measured]. The `arch` input of the workflow builds one image or both.
 
-**`/dev/kvm` on the arm64 runner**: the aarch64 job prints `ls -l /dev/kvm` or "no /dev/kvm
-on this runner" as its first step; the answer, with the run that gave it, is in
-[ROADMAP.md](ROADMAP.md) under U5 [VERIFY: filled in from the first run].
+**`/dev/kvm` on the arm64 runner: none.** The aarch64 job prints `ls -l /dev/kvm` or "no
+/dev/kvm on this runner" as its first step. Run 40593873482 (2026-10-27, `ubuntu-24.04-arm`:
+4 CPUs, 15947 MiB) printed "no /dev/kvm on this runner": GitHub's hosted arm64 runners expose
+no KVM, so the aarch64 rig cannot run there with hardware virtualisation (`kvm-smoke` with
+`arch=aarch64` stops before the installation unless `accel=tcg` asks for the emulated run,
+hours long); the verification of U5 ran under Apple's hvf on a Mac instead
+([hardware.md](hardware.md#arm64), [ROADMAP](ROADMAP.md)).
 
 The rig (`tests/vm/vhvm.py --arch aarch64`) boots the image's `/boot/vmlinux` and
 `/boot/initrd` on QEMU's `virt` machine with AAVMF, as the x86_64 rig boots `vmlinuz` on q35
