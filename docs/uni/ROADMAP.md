@@ -276,10 +276,14 @@ Every piece has its test and its document; the numbers below are from the runs n
   before enrolment, as always on the rig's first boot). The one x86 rig change the branch made
   by mistake, two `ide-cd` devices on one AHCI port, was caught by that run's predecessor
   (40628964347) and undone.
+- **The sandboxes' seccomp filters** (after the merge): built per architecture in
+  `zig/lib/seccomp.zig` (the audit architecture, the system call numbers, the x32 check on x86_64
+  alone), the same policy on aarch64, the x86_64 filter's bytes unchanged; the self-test on
+  aarch64 is the evidence ([hardware.md](hardware.md#arm64)) [VERIFY: Firefox and `vh-open` on an
+  ARM64 system].
 - **Not done**: `vh-kconf install` of an arm64 `Image` and the boot assessment of a machine UKI on
-  ARM64; the sandboxes' seccomp filters are x86_64's ([hardware.md](hardware.md#arm64)); Secure
-  Boot enrolment on an ARM64 firmware (`enroll`, `sb` steps) [VERIFY under KVM with a Secure Boot
-  AAVMF]; the Raspberry Pi altogether ([rpi.md](rpi.md)).
+  ARM64; Secure Boot enrolment on an ARM64 firmware (`enroll`, `sb` steps) [VERIFY under KVM with
+  a Secure Boot AAVMF]; the Raspberry Pi altogether ([rpi.md](rpi.md)).
 
 ### State (2026-10-26, evening): the three pieces on the VM rig
 
