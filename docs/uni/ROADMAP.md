@@ -269,6 +269,13 @@ Every piece has its test and its document; the numbers below are from the runs n
   test, not the system's. The installer crashed once on the
   way, on the firmware without a SecureBoot variable at all (a `pipefail` on the variable's read:
   fixed in `10-install.sh` and `20-firstboot.sh`, no change where the variable exists).
+- **The x86_64 path unchanged**: the GF63 oracle, the x86_64 golden plans and
+  `tests/install/golden` are byte for byte what they were; live-image run 40630275835 built both
+  images from the branch's head, and `kvm-smoke` run 40633204498 (`base`, from that x86_64 image
+  under KVM) installed and passed every check (vh-audit ok=172, the one FAIL Secure Boot off
+  before enrolment, as always on the rig's first boot). The one x86 rig change the branch made
+  by mistake, two `ide-cd` devices on one AHCI port, was caught by that run's predecessor
+  (40628964347) and undone.
 - **Not done**: `vh-kconf install` of an arm64 `Image` and the boot assessment of a machine UKI on
   ARM64; the sandboxes' seccomp filters are x86_64's ([hardware.md](hardware.md#arm64)); Secure
   Boot enrolment on an ARM64 firmware (`enroll`, `sb` steps) [VERIFY under KVM with a Secure Boot
