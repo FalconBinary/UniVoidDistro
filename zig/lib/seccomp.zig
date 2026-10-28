@@ -3,6 +3,11 @@
 //! The classic BPF program is assembled here and passed to bwrap --seccomp FD. The filter
 //! is applied after the sandbox is assembled, inherited by every descendant and never removed.
 //!
+//! The filter is built for the architecture the program is compiled for (builtin.cpu.arch:
+//! x86_64 or aarch64): the audit architecture, the system call numbers and, on x86_64 alone,
+//! the x32 check come from the target; the policy (what is allowed, denied or checked by its
+//! arguments) is the same on both.
+//!
 //! The instruction order serves the kernel's seccomp cache: first the architecture and the
 //! x32 bit, then the calls with argument checks and the denied ones, and everything else is
 //! an unconditional ALLOW that reads no arguments: the kernel caches such calls and does not
@@ -10,6 +15,7 @@
 //! selftest() runs both filters through the built-in BPF interpreter on a set of calls with
 //! expected results.
 const std = @import("std");
+const builtin = @import("builtin");
 const vh = @import("vh");
 
 /// a classic BPF instruction in the kernel format (struct sock_filter)
@@ -17,8 +23,23 @@ pub const Ins = struct { code: u16, jt: u8, jf: u8, k: u32 };
 
 pub const max_ins = 256;
 
+/// AUDIT_ARCH_* (linux/audit.h): what the kernel puts into seccomp_data.arch
 const AUDIT_ARCH_X86_64: u32 = 0xC000003E;
+const AUDIT_ARCH_I386: u32 = 0x40000003;
+const AUDIT_ARCH_AARCH64: u32 = 0xC00000B7;
+const AUDIT_ARCH_ARM: u32 = 0x40000028;
+const audit_arches = [_]u32{ AUDIT_ARCH_X86_64, AUDIT_ARCH_I386, AUDIT_ARCH_AARCH64, AUDIT_ARCH_ARM };
+/// the target's architecture: a call of any other is killed, the 32-bit compat ABIs among them
+/// (i386 under an x86_64 kernel, arm under an arm64 one)
+const AUDIT_ARCH: u32 = switch (builtin.cpu.arch) {
+    .x86_64 => AUDIT_ARCH_X86_64,
+    .aarch64 => AUDIT_ARCH_AARCH64,
+    else => @compileError("seccomp: no filter for this architecture"),
+};
+/// the x32 ABI of x86_64: a system call number with this bit set reaches the kernel's x32 entry
+/// points under AUDIT_ARCH_X86_64, so the filter answers ENOSYS; no other architecture has it
 const X32_BIT: u32 = 0x40000000;
+const has_x32 = builtin.cpu.arch == .x86_64;
 const RET_ALLOW: u32 = 0x7FFF0000;
 const RET_KILL: u32 = 0x80000000;
 fn errnoRet(e: u32) u32 {
@@ -28,57 +49,76 @@ const EPERM_: u32 = 1;
 const ENOSYS_: u32 = 38;
 const EAFNOSUPPORT_: u32 = 97;
 
-/// x86_64 system call numbers
+const SYS = std.os.linux.SYS;
+
+/// the number of a system call on the target (std.os.linux.SYS is the table of the
+/// architecture the program is built for)
+fn nrOf(comptime name: []const u8) u32 {
+    return @intCast(@intFromEnum(@field(SYS, name)));
+}
+
+/// null where the target has no such call
+fn nrOpt(comptime name: []const u8) ?u32 {
+    return if (@hasField(SYS, name)) nrOf(name) else null;
+}
+
+/// The system call numbers of the target. The two tables differ: x86_64 kept the numbering of
+/// its original table (read 0, clone 56, ptrace 101), aarch64 was given the kernel's generic
+/// unistd.h (read 63, ptrace 117, clone 220; the same numbers from 425, io_uring_setup, on),
+/// and a filter with the wrong table denies the wrong calls (154 is modify_ldt on x86_64 and
+/// setpgid on aarch64). Three calls are x86's alone, the LDT and the I/O port permission bits
+/// being x86 hardware: on aarch64 they are null and left out of the deny list, since no number
+/// reaches them there.
 const NR = struct {
-    const read = 0;
-    const write = 1;
-    const mmap = 9;
-    const socket = 41;
-    const socketpair = 53;
-    const setsockopt = 54;
-    const clone = 56;
-    const ptrace = 101;
-    const syslog = 103;
-    const personality = 135;
-    const vhangup = 153;
-    const modify_ldt = 154;
-    const pivot_root = 155;
-    const chroot = 161;
-    const acct = 163;
-    const mount = 165;
-    const umount2 = 166;
-    const swapon = 167;
-    const swapoff = 168;
-    const iopl = 172;
-    const ioperm = 173;
-    const init_module = 175;
-    const delete_module = 176;
-    const quotactl = 179;
-    const kexec_load = 246;
-    const add_key = 248;
-    const request_key = 249;
-    const keyctl = 250;
-    const unshare = 272;
-    const perf_event_open = 298;
-    const open_by_handle_at = 304;
-    const setns = 308;
-    const process_vm_readv = 310;
-    const process_vm_writev = 311;
-    const finit_module = 313;
-    const kexec_file_load = 320;
-    const bpf = 321;
-    const userfaultfd = 323;
-    const io_uring_setup = 425;
-    const io_uring_enter = 426;
-    const io_uring_register = 427;
-    const open_tree = 428;
-    const move_mount = 429;
-    const fsopen = 430;
-    const fsconfig = 431;
-    const fsmount = 432;
-    const fspick = 433;
-    const clone3 = 435;
-    const mount_setattr = 442;
+    const read = nrOf("read");
+    const write = nrOf("write");
+    const mmap = nrOf("mmap");
+    const socket = nrOf("socket");
+    const socketpair = nrOf("socketpair");
+    const setsockopt = nrOf("setsockopt");
+    const clone = nrOf("clone");
+    const ptrace = nrOf("ptrace");
+    const syslog = nrOf("syslog");
+    const personality = nrOf("personality");
+    const vhangup = nrOf("vhangup");
+    const modify_ldt = nrOpt("modify_ldt");
+    const pivot_root = nrOf("pivot_root");
+    const chroot = nrOf("chroot");
+    const acct = nrOf("acct");
+    const mount = nrOf("mount");
+    const umount2 = nrOf("umount2");
+    const swapon = nrOf("swapon");
+    const swapoff = nrOf("swapoff");
+    const iopl = nrOpt("iopl");
+    const ioperm = nrOpt("ioperm");
+    const init_module = nrOf("init_module");
+    const delete_module = nrOf("delete_module");
+    const quotactl = nrOf("quotactl");
+    const kexec_load = nrOf("kexec_load");
+    const add_key = nrOf("add_key");
+    const request_key = nrOf("request_key");
+    const keyctl = nrOf("keyctl");
+    const unshare = nrOf("unshare");
+    const perf_event_open = nrOf("perf_event_open");
+    const open_by_handle_at = nrOf("open_by_handle_at");
+    const setns = nrOf("setns");
+    const process_vm_readv = nrOf("process_vm_readv");
+    const process_vm_writev = nrOf("process_vm_writev");
+    const finit_module = nrOf("finit_module");
+    const kexec_file_load = nrOf("kexec_file_load");
+    const bpf = nrOf("bpf");
+    const userfaultfd = nrOf("userfaultfd");
+    const io_uring_setup = nrOf("io_uring_setup");
+    const io_uring_enter = nrOf("io_uring_enter");
+    const io_uring_register = nrOf("io_uring_register");
+    const open_tree = nrOf("open_tree");
+    const move_mount = nrOf("move_mount");
+    const fsopen = nrOf("fsopen");
+    const fsconfig = nrOf("fsconfig");
+    const fsmount = nrOf("fsmount");
+    const fspick = nrOf("fspick");
+    const clone3 = nrOf("clone3");
+    const mount_setattr = nrOf("mount_setattr");
 };
 
 const CLONE_NEW_MASK: u32 = 0x7E020000; // NEWNS|NEWCGROUP|NEWUTS|NEWIPC|NEWUSER|NEWPID|NEWNET
@@ -97,15 +137,29 @@ const SO_ATTACH_BPF_: u32 = 50;
 const SO_ATTACH_REUSEPORT_CBPF_: u32 = 51; // cBPF/eBPF on a socket without privileges
 const SO_ATTACH_REUSEPORT_EBPF_: u32 = 52;
 
-const deny_common = [_]u32{
-    NR.perf_event_open, NR.bpf,                NR.userfaultfd,       NR.add_key,          NR.request_key, NR.keyctl,
-    NR.kexec_load,      NR.kexec_file_load,    NR.io_uring_setup,    NR.io_uring_enter,   NR.io_uring_register,
-    NR.modify_ldt,      NR.mount,              NR.umount2,           NR.pivot_root,       NR.fsopen,
-    NR.fsconfig,        NR.fsmount,            NR.fspick,            NR.move_mount,       NR.open_tree,
-    NR.mount_setattr,   NR.ptrace,             NR.process_vm_readv,  NR.process_vm_writev, NR.init_module,
-    NR.finit_module,    NR.delete_module,      NR.iopl,              NR.ioperm,           NR.open_by_handle_at,
-    NR.chroot,          NR.acct,               NR.swapon,            NR.swapoff,          NR.syslog,
-    NR.vhangup,         NR.quotactl,           NR.unshare,           NR.setns,
+/// the denied calls, in the order of the x86_64 filter (whose bytes the differential tests
+/// hold to); the calls the target does not have are left out
+const deny_common = blk: {
+    const all = [_]?u32{
+        NR.perf_event_open,   NR.bpf,             NR.userfaultfd,    NR.add_key,        NR.request_key,       NR.keyctl,
+        NR.kexec_load,        NR.kexec_file_load, NR.io_uring_setup, NR.io_uring_enter, NR.io_uring_register, NR.modify_ldt,
+        NR.mount,             NR.umount2,         NR.pivot_root,     NR.fsopen,         NR.fsconfig,          NR.fsmount,
+        NR.fspick,            NR.move_mount,      NR.open_tree,      NR.mount_setattr,  NR.ptrace,            NR.process_vm_readv,
+        NR.process_vm_writev, NR.init_module,     NR.finit_module,   NR.delete_module,  NR.iopl,              NR.ioperm,
+        NR.open_by_handle_at, NR.chroot,          NR.acct,           NR.swapon,         NR.swapoff,           NR.syslog,
+        NR.vhangup,           NR.quotactl,        NR.unshare,        NR.setns,
+    };
+    var n: usize = 0;
+    for (all) |e| n += @intFromBool(e != null);
+    var out: [n]u32 = undefined;
+    var i: usize = 0;
+    for (all) |e| {
+        if (e) |v| {
+            out[i] = v;
+            i += 1;
+        }
+    }
+    break :blk out;
 };
 
 const LD: u16 = 0x20;
@@ -163,9 +217,9 @@ const As = struct {
 
 fn header(a: *As) void {
     a.ldArch();
-    a.jmp(JEQ, AUDIT_ARCH_X86_64, .next, .kill);
+    a.jmp(JEQ, AUDIT_ARCH, .next, .kill);
     a.ldNr();
-    a.jmp(JGE, X32_BIT, .enosys, .next);
+    if (has_x32) a.jmp(JGE, X32_BIT, .enosys, .next);
 }
 
 fn tail(a: *As, allow_ptrace: bool) void {
@@ -346,7 +400,14 @@ const browser_cases = [_]Case{
     .{ .name = "perf_event_open", .nr = NR.perf_event_open, .args = .{ 0, 0, 0 }, .want = P },
     .{ .name = "read", .nr = NR.read, .args = .{ 0, 0, 0 }, .want = A },
     .{ .name = "mmap", .nr = NR.mmap, .args = .{ 0, 0, 0 }, .want = A },
+};
+
+/// what one architecture alone has: the x32 bit on x86_64; on aarch64 the number x86_64 gives
+/// modify_ldt belongs to setpgid, which the table of the target allows
+const arch_cases: []const Case = if (has_x32) &.{
     .{ .name = "x32 read", .nr = X32_BIT | NR.read, .args = .{ 0, 0, 0 }, .want = N },
+} else &.{
+    .{ .name = "setpgid (154: modify_ldt on x86_64)", .nr = nrOf("setpgid"), .args = .{ 0, 0, 0 }, .want = A },
 };
 
 const viewer_cases = [_]Case{
@@ -368,24 +429,33 @@ fn hexAlt(v: u32) []const u8 {
 
 /// check both filters with the built-in interpreter; returns the number of failures
 pub fn selftest() usize {
-    const Set = struct { kind: []const u8, cases: []const Case };
-    const sets = [_]Set{ .{ .kind = "browser", .cases = &browser_cases }, .{ .kind = "viewer", .cases = &viewer_cases } };
+    const Set = struct { kind: []const u8, cases: []const Case, arch: []const Case };
+    const sets = [_]Set{
+        .{ .kind = "browser", .cases = &browser_cases, .arch = arch_cases },
+        .{ .kind = "viewer", .cases = &viewer_cases, .arch = &.{} },
+    };
     var bad: usize = 0;
     for (sets) |s| {
         var buf: [max_ins]Ins = undefined;
         const prog = build(s.kind, &buf).?;
-        if (runBpf(prog, 0, @splat(0), 0x40000003) != RET_KILL) { // i386
-            vh.out("FAIL {s}: a foreign architecture is not killed\n", .{s.kind});
-            bad += 1;
+        var checks: usize = 0;
+        for (audit_arches) |arch| {
+            if (arch == AUDIT_ARCH) continue;
+            checks += 1;
+            if (runBpf(prog, NR.read, @splat(0), arch) != RET_KILL) {
+                vh.out("FAIL {s}: a foreign architecture (0x{x}) is not killed\n", .{ s.kind, arch });
+                bad += 1;
+            }
         }
-        for (s.cases) |c| {
-            const got = runBpf(prog, c.nr, .{ c.args[0], c.args[1], c.args[2], 0, 0, 0 }, AUDIT_ARCH_X86_64);
+        for ([_][]const Case{ s.cases, s.arch }) |cases| for (cases) |c| {
+            checks += 1;
+            const got = runBpf(prog, c.nr, .{ c.args[0], c.args[1], c.args[2], 0, 0, 0 }, AUDIT_ARCH);
             if (got != c.want) {
                 vh.out("FAIL {s}: {s}: {s}, expected {s}\n", .{ s.kind, c.name, hexAlt(got), hexAlt(c.want) });
                 bad += 1;
             }
-        }
-        vh.out("{s}: {d} instructions, {d} checks\n", .{ s.kind, prog.len, s.cases.len + 1 });
+        };
+        vh.out("{s}: {d} instructions, {d} checks\n", .{ s.kind, prog.len, checks });
     }
     if (bad > 0) vh.out("selftest: {d} failures\n", .{bad}) else vh.outs("selftest: OK\n");
     vh.flush();

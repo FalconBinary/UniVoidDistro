@@ -277,6 +277,11 @@ Every piece has its test and its document; the numbers below are from the runs n
   before enrolment, as always on the rig's first boot). The one x86 rig change the branch made
   by mistake, two `ide-cd` devices on one AHCI port, was caught by that run's predecessor
   (40628964347) and undone.
+- **The sandboxes' seccomp filters** (after the merge): built per architecture in
+  `zig/lib/seccomp.zig` (the audit architecture, the system call numbers, the x32 check on x86_64
+  alone), the same policy on aarch64, the x86_64 filter's bytes unchanged; the self-test on
+  aarch64 is the evidence ([hardware.md](hardware.md#arm64)) [VERIFY: Firefox and `vh-open` on an
+  ARM64 system].
 - **The machine UKI on ARM64** (the follow-up, 2026-10-28; [kernel.md](kernel.md#the-machine-uki-on-arm64)):
   `vh-kconf install` takes the arm64 `Image` of a `kernel-custom` run (its 64-byte header and
   its `Linux version` banner, which BUILD records, in place of the bzImage's setup header; no
@@ -291,10 +296,9 @@ Every piece has its test and its document; the numbers below are from the runs n
   `vh-kconf check` at `machine=same devices=0 firmware=0 lost=0`, the promotion, vh-audit,
   `--demote`, the removal). The x86_64 path is unchanged
   (`tests/kernel/run.sh` 48 unit tests, the x86 fixtures and golden files byte for byte).
-- **Not done**: the sandboxes' seccomp filters are x86_64's ([hardware.md](hardware.md#arm64));
-  Secure Boot enrolment on an ARM64 firmware (`enroll`, `sb` steps) [VERIFY under KVM with a
-  Secure Boot AAVMF]; a machine UKI on real ARM64 hardware; the Raspberry Pi altogether
-  ([rpi.md](rpi.md)).
+- **Not done**: Secure Boot enrolment on an ARM64 firmware (`enroll`, `sb` steps) [VERIFY under
+  KVM with a Secure Boot AAVMF]; a machine UKI on real ARM64 hardware; the Raspberry Pi
+  altogether ([rpi.md](rpi.md)).
 
 ### State (2026-10-26, evening): the three pieces on the VM rig
 

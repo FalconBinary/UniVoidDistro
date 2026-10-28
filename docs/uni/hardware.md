@@ -192,11 +192,15 @@ state with its numbers):
   `arch=aarch64` stops before the installation unless `accel=tcg`, and the verification ran on
   a Mac: an installation from the aarch64 image in `tiered` mode (2 min 52 s) and `check.py
   base` 26 of 26 on the installed system ([ROADMAP](ROADMAP.md#state-2026-10-28-u5-the-arm64-path-on-a-virtual-machine)).
-- **Not done**: the seccomp filters of the browser and viewer sandboxes (`zig/lib/seccomp.zig`,
-  `vh-seccomp`) are written with x86_64's system call numbers and architecture check: on an
-  ARM64 system the sandbox would kill its program at the first call. Firefox and `vh-open` do
-  not run there until the filters are built per architecture (the gaming session is x86_64's by
-  design). The base system, the installer, the desktop compositor and bar are not affected.
+- **The sandboxes**: the seccomp filters of the browser and viewer sandboxes
+  (`zig/lib/seccomp.zig`, `vh-seccomp`, `vh-open`) are built for the architecture the tools are
+  compiled for: the audit architecture, the system call numbers (aarch64 has the kernel's
+  generic table, x86_64 its own) and, on x86_64 alone, the x32 check follow `builtin.cpu.arch`,
+  with the same policy on both; the three x86-only calls (`modify_ldt`, `iopl`, `ioperm`) are
+  not in the aarch64 deny list, since no number reaches them there. `vh-seccomp --selftest`
+  runs the aarch64 filter through the built-in interpreter in `tests/zig/run.sh` on a Mac, and
+  the x86_64 filter is byte for byte what it was. [VERIFY: Firefox and `vh-open` under the
+  filter on an installed ARM64 system.] The gaming session stays x86_64's by design.
 - **Not verified on any real ARM64 machine**: the installation, Secure Boot key enrolment on a
   vendor's firmware, the TPM event log, the SMMU with `iommu.strict=1` on real devices, the
   Raspberry Pi altogether ([rpi.md](rpi.md)).
