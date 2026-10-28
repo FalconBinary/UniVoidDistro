@@ -1,7 +1,8 @@
 # A full installation on the QEMU rig under KVM (tests/vm/vhvm.py install), then check.py base,
 # then the installed rig's own hw.zon and plan (the real qemu-q35 fixture). With kernel_run, the
-# qemu-q35 kernel of that kernel-custom run is downloaded into build/kernel-custom, for the step
-# machine: vh-kconf install and the boot assessment of a real machine kernel (docs/uni/kernel.md).
+# rig's kernel of that kernel-custom run (qemu-q35; qemu-virt with arch=aarch64) is downloaded into
+# build/kernel-custom, for the step machine: vh-kconf install and the boot assessment of a real
+# machine kernel (docs/uni/kernel.md).
 # Hours long, so it runs on demand and weekly, not on every push. The live ISO is verified
 # against Void's signed sha256sum.txt (minisign key and ISO name pinned in tests/vm/void-live.pins).
 # With live_run, it is our own image of that live-image run instead (docs/uni/live-image.md):
@@ -30,7 +31,7 @@ on:
         description: "VH_MAC of the installation: apparmor, or selinux (the policy of selinux/ built here, permissive at boot; docs/uni/selinux.md)"
         default: apparmor
       kernel_run:
-        description: "the id of a kernel-custom run that built qemu-q35 (hw=all or hw=kernel/hw/qemu-q35.zon), for the step machine"
+        description: "the id of a kernel-custom run that built the rig's machine (hw=all, or hw=kernel/hw/qemu-q35.zon; with arch=aarch64 kernel/hw/qemu-virt.zon), for the step machine"
         default: ""
       kver:
         description: the kernel version of that run
@@ -84,14 +85,14 @@ jobs:
             aarch64)
               [ "$(uname -m)" = aarch64 ]
               [ -n "${{ github.event.inputs.live_run }}" ] || { echo "arch=aarch64 needs live_run: Void publishes no aarch64 live ISO, ours comes from a live-image run"; exit 1; }
-              [ -z "${{ github.event.inputs.kernel_run }}${{ github.event.inputs.game_kernel_run }}" ] || { echo "kernel_run and game_kernel_run are x86_64 (qemu-q35) only"; exit 1; } ;;
+              [ -z "${{ github.event.inputs.game_kernel_run }}" ] || { echo "game_kernel_run is x86_64's (qemu-q35): the gaming session is"; exit 1; } ;;
             *) echo "arch: x86_64 or aarch64"; exit 1 ;;
           esac
-      - name: the qemu-q35 machine kernel of kernel-custom run ${{ github.event.inputs.kernel_run }}
+      - name: the rig's machine kernel of kernel-custom run ${{ github.event.inputs.kernel_run }} (qemu-q35, or qemu-virt on aarch64)
         if: github.event.inputs.kernel_run != ''
         uses: actions/download-artifact@v4
         with:
-          name: kernel-custom-qemu-q35-${{ github.event.inputs.kver || '6.18.57' }}
+          name: kernel-custom-${{ (github.event.inputs.arch || 'x86_64') == 'aarch64' && 'qemu-virt' || 'qemu-q35' }}-${{ github.event.inputs.kver || '6.18.57' }}
           run-id: ${{ github.event.inputs.kernel_run }}
           github-token: ${{ github.token }}
           path: build/kernel-custom
@@ -193,7 +194,7 @@ jobs:
             --conf "VH_SECURITY=\"$VH_SECURITY\"" --conf "VH_MAC=\"$VH_MAC\"" --conf "VH_MIRROR=\"$VH_MIRROR\"" "$@"
       - name: check
         run: python3 tests/vm/check.py "${{ github.event.inputs.step || 'base' }}" --repo --mem "$VH_MEM"
-      - name: "the rig's hw.zon at installation (kernel/hw/qemu-q35.zon; on aarch64 the virt fixture to be), its probe now, the plan, vh-kconf check"
+      - name: "the rig's hw.zon at installation (kernel/hw/qemu-q35.zon; kernel/hw/qemu-virt.zon on aarch64), its probe now, the plan, vh-kconf check"
         run: |
           python3 tests/vm/vhvm.py boot --mem "$VH_MEM" --timeout 1800 \
             --run "doas cat /etc/vh/hw.zon" \

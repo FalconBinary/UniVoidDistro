@@ -152,8 +152,9 @@ the PBKDF at most half of the RAM; `tiered` below that gives it a quarter of the
 - **ARM64 (U5).** Done: the pins of Void's aarch64 `linux6.18` beside the x86_64 ones
   (`kernel/pins/aarch64-*`), the universal profiles freed of x86 symbols (`kernel/profiles/arch/`),
   the ARM64 classes, `-mcpu` by core; `tests/kernel/matrix.sh` and `run.sh` cover the aarch64
-  fixtures, `kernel-custom` cross-builds them ([kernel.md](kernel.md#the-ci-matrix)). Not done:
-  `vh-kconf install` of an arm64 `Image` (no bzImage header) and the boot assessment on ARM64.
+  fixtures, `kernel-custom` cross-builds them ([kernel.md](kernel.md#the-ci-matrix)).
+  `vh-kconf install` takes the arm64 `Image` (its header and banner in place of the bzImage's
+  setup header) and the boot assessment runs on ARM64 ([kernel.md](kernel.md#the-machine-uki-on-arm64)).
 
 ### U2. Runtime adaptation
 
@@ -281,9 +282,23 @@ Every piece has its test and its document; the numbers below are from the runs n
   alone), the same policy on aarch64, the x86_64 filter's bytes unchanged; the self-test on
   aarch64 is the evidence ([hardware.md](hardware.md#arm64)) [VERIFY: Firefox and `vh-open` on an
   ARM64 system].
-- **Not done**: `vh-kconf install` of an arm64 `Image` and the boot assessment of a machine UKI on
-  ARM64; Secure Boot enrolment on an ARM64 firmware (`enroll`, `sb` steps) [VERIFY under KVM with
-  a Secure Boot AAVMF]; the Raspberry Pi altogether ([rpi.md](rpi.md)).
+- **The machine UKI on ARM64** (the follow-up, 2026-10-28; [kernel.md](kernel.md#the-machine-uki-on-arm64)):
+  `vh-kconf install` takes the arm64 `Image` of a `kernel-custom` run (its 64-byte header and
+  its `Linux version` banner, which BUILD records, in place of the bzImage's setup header; no
+  early cpio: the microcode is x86's); the aarch64 rig's own probe is `kernel/hw/qemu-virt.zon`
+  (seven machines in the matrix now; `aarch64-virt.zon`, Apple's Virtualization platform, has
+  neither the rig's NVMe nor its TPM). Verified under hvf on the M1, on the installed system of
+  2026-10-28: `check.py assess` 17 of 17 in 6 min 27 s (the one-shot entries, the promotion,
+  `--demote`, `--retry`, a reset trial); `kernel-custom` builds `aarch64-virt` (run 40675427404,
+  24 min, 245 of 246 symbols, `DEBUG_FS` the one lost, not mandatory) and `qemu-virt` (run
+  40678082632, 25 min, 255 of 256); `check.py machine --repo` with the `qemu-virt` Image: 23 of 23 in 11 min 46 s (the
+  install, a 57 MiB UKI on `linuxaa64.efi.stub`, three trial boots of `6.18.59-vh` with
+  `vh-kconf check` at `machine=same devices=0 firmware=0 lost=0`, the promotion, vh-audit,
+  `--demote`, the removal). The x86_64 path is unchanged
+  (`tests/kernel/run.sh` 48 unit tests, the x86 fixtures and golden files byte for byte).
+- **Not done**: Secure Boot enrolment on an ARM64 firmware (`enroll`, `sb` steps) [VERIFY under
+  KVM with a Secure Boot AAVMF]; a machine UKI on real ARM64 hardware; the Raspberry Pi
+  altogether ([rpi.md](rpi.md)).
 
 ### State (2026-10-26, evening): the three pieces on the VM rig
 

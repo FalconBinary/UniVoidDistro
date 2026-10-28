@@ -1,8 +1,9 @@
-//! The binary formats vh-kconf install reads: the x86 boot header of a bzImage (the release the
-//! kernel reports), the sections of a PE image (a UKI: .linux, .initrd, .cmdline) and the names
-//! in a newc cpio archive (the early cpio of an initrd). A release's bzImage and a UKI on the
-//! ESP are untrusted data: every offset and size is checked before it is used, the ReleaseSafe
-//! bounds checks apply on top, and a malformed file is null, never a crash.
+//! The binary formats vh-kconf install reads: the x86 boot header of a bzImage and the arm64
+//! header of an Image (the release the kernel reports), the sections of a PE image (a UKI:
+//! .linux, .initrd, .cmdline) and the names in a newc cpio archive (the early cpio of an
+//! initrd). A release's kernel image and a UKI on the ESP are untrusted data: every offset and
+//! size is checked before it is used, the ReleaseSafe bounds checks apply on top, and a
+//! malformed file is null, never a crash.
 const std = @import("std");
 const vh = @import("vh");
 const linux = std.os.linux;
@@ -14,6 +15,10 @@ fn le16(p: []const u8) u16 {
 
 fn le32(p: []const u8) u32 {
     return mem.readInt(u32, p[0..4], .little);
+}
+
+fn le64(p: []const u8) u64 {
+    return mem.readInt(u64, p[0..8], .little);
 }
 
 /// The release a bzImage reports (uname -r): the first word of the kernel_version string of its
@@ -31,6 +36,74 @@ pub fn bzRelease(img: []const u8) ?[]const u8 {
     if (end == 0) return null;
     for (s[0..end]) |c| if (c < 0x21 or c > 0x7e) return null;
     return s[0..end];
+}
+
+/// The 64-byte header of an arm64 kernel Image (Documentation/arch/arm64/booting.rst): two
+/// instructions, then text_offset, image_size and flags as little-endian u64, four reserved
+/// words, the magic "ARM\x64" at offset 56 and, with CONFIG_EFI_STUB, the offset of a PE
+/// header at 60 (the kernel is then a PE image too, "MZ" first: the UKI's stub starts it
+/// through that header). The Image is uncompressed: it has no setup header and no version
+/// field of its own; its release is in the banner the kernel prints at boot (imageRelease).
+pub const ImageHeader = struct {
+    text_offset: u64,
+    /// the memory the image needs: the file and its BSS, so never less than the file
+    image_size: u64,
+    flags: u64,
+    /// a PE header where the arm64 header points: an EFI stub (CONFIG_EFI_STUB)
+    efi: bool,
+
+    /// the page size the kernel was built for (bits 1-2 of the flags); null when unspecified
+    pub fn pageSize(h: ImageHeader) ?u32 {
+        return switch ((h.flags >> 1) & 3) {
+            1 => 4096,
+            2 => 16384,
+            3 => 65536,
+            else => null,
+        };
+    }
+
+    /// bit 0: a big-endian kernel
+    pub fn bigEndian(h: ImageHeader) bool {
+        return h.flags & 1 == 1;
+    }
+
+    /// bit 3: the image may be loaded anywhere in memory (2 MiB aligned), not at the base of RAM
+    pub fn anywhere(h: ImageHeader) bool {
+        return h.flags & 8 != 0;
+    }
+};
+
+/// the arm64 header of an Image; null without the magic
+pub fn imageHeader(img: []const u8) ?ImageHeader {
+    if (img.len < 64 or !mem.eql(u8, img[56..60], "ARM\x64")) return null;
+    return .{
+        .text_offset = le64(img[8..]),
+        .image_size = le64(img[16..]),
+        .flags = le64(img[24..]),
+        .efi = img[0] == 'M' and img[1] == 'Z' and sectionTable(img, img.len) != null,
+    };
+}
+
+/// The release an arm64 Image reports (uname -r): the word after "Linux version " in the
+/// kernel's banner, "Linux version REL (user@host) (compiler) #1 SMP ...", the string of
+/// /proc/version, which the uncompressed Image carries as it is (the kernel-custom workflow
+/// records the same line in BUILD with `strings`). The banner is the first "Linux version "
+/// whose word starts with a digit (a version, not the "%s" of a format string) and is
+/// followed by " (" and the builder; null without the header or the banner.
+pub fn imageRelease(img: []const u8) ?[]const u8 {
+    if (imageHeader(img) == null) return null;
+    const key = "Linux version ";
+    var from: usize = 64;
+    while (mem.indexOfPos(u8, img, from, key)) |at| {
+        from = at + key.len;
+        const s = img[from..@min(img.len, from + 256)];
+        const end = mem.indexOfAny(u8, s, " \x00") orelse continue;
+        if (end == 0 or end + 2 > s.len or !mem.eql(u8, s[end .. end + 2], " (")) continue;
+        var printable = std.ascii.isDigit(s[0]);
+        for (s[0..end]) |c| printable = printable and c >= 0x21 and c <= 0x7e;
+        if (printable) return s[0..end];
+    }
+    return null;
 }
 
 pub const Section = struct {
@@ -147,6 +220,27 @@ pub fn testBzImage(version: []const u8, payload: []const u8) []const u8 {
     return b.items;
 }
 
+/// an arm64 Image as far as its header and banner go, reporting `version`: the 64-byte header
+/// (little-endian, 4 KiB pages, loadable anywhere) with the PE header of an EFI stub where it
+/// points, the banner among the strings, then `payload`
+pub fn testImage(version: []const u8, payload: []const u8) []const u8 {
+    var b: std.ArrayList(u8) = .empty;
+    b.appendNTimes(vh.gpa, 0, 64 + 24) catch vh.oom();
+    b.items[0] = 'M';
+    b.items[1] = 'Z';
+    mem.writeInt(u64, b.items[24..32], 0b1010, .little);
+    @memcpy(b.items[56..60], "ARM\x64");
+    mem.writeInt(u32, b.items[60..64], 64, .little);
+    @memcpy(b.items[64..68], "PE\x00\x00");
+    b.appendSlice(vh.gpa, "Linux version %s (\x00Decompressing\x00") catch vh.oom();
+    b.appendSlice(vh.gpa, "Linux version ") catch vh.oom();
+    b.appendSlice(vh.gpa, version) catch vh.oom();
+    b.appendSlice(vh.gpa, " (vh@ci) (clang version 18.1.3) #1 SMP PREEMPT_DYNAMIC Tue Oct 28 00:00:00 UTC 2026\n\x00") catch vh.oom();
+    b.appendSlice(vh.gpa, payload) catch vh.oom();
+    mem.writeInt(u64, b.items[16..24], @as(u64, b.items.len) + 4096, .little);
+    return b.items;
+}
+
 /// a PE image with these sections, as objcopy lays them out (each at a 512-byte boundary)
 pub fn testPe(sections: []const [2][]const u8) []const u8 {
     var b: std.ArrayList(u8) = .empty;
@@ -203,6 +297,42 @@ test "uki: the release of a bzImage" {
     try testing.expect(bzRelease(bad) == null); // the offset points past the end
     try testing.expect(bzRelease("short") == null);
     try testing.expect(bzRelease(testBzImage("", "")) == null);
+}
+
+test "uki: the header and the release of an arm64 Image" {
+    const pad = vh.gpa.alloc(u8, 1200) catch vh.oom();
+    @memset(pad, 'k');
+    const img = testImage("6.18.59-vh", pad);
+    try testing.expectEqualStrings("6.18.59-vh", imageRelease(img).?);
+    const h = imageHeader(img).?;
+    try testing.expect(h.efi and !h.bigEndian() and h.anywhere());
+    try testing.expectEqual(@as(?u32, 4096), h.pageSize());
+    try testing.expectEqual(@as(u64, 0), h.text_offset);
+    try testing.expect(h.image_size > img.len);
+    // the two formats do not pass for each other
+    try testing.expect(bzRelease(img) == null);
+    try testing.expect(imageHeader(testBzImage("6.18.57-vh", pad)) == null);
+    try testing.expect(imageRelease(testBzImage("6.18.57-vh", pad)) == null);
+    // cut off before the banner, the magic broken, the banner without a builder, no banner
+    try testing.expect(imageHeader(img[0..100]) != null and imageRelease(img[0..100]) == null);
+    var bad = vh.dupe(img);
+    bad[57] = 'X';
+    try testing.expect(imageHeader(bad) == null and imageRelease(bad) == null);
+    try testing.expect(imageRelease(testImage("", "")) == null);
+    const no_builder = mem.replaceOwned(u8, vh.gpa, img, "6.18.59-vh (vh@ci)", "6.18.59-vh\x00(vh@ci)") catch vh.oom();
+    try testing.expect(imageRelease(no_builder) == null);
+    // no EFI stub: the arm64 header is there, the PE header is not
+    bad = vh.dupe(img);
+    bad[0] = 0;
+    try testing.expect(!imageHeader(bad).?.efi);
+    bad = vh.dupe(img);
+    mem.writeInt(u32, bad[60..64], 0xfffffff0, .little);
+    try testing.expect(!imageHeader(bad).?.efi);
+    // a big-endian image, no page size given
+    bad = vh.dupe(img);
+    mem.writeInt(u64, bad[24..32], 1, .little);
+    try testing.expect(imageHeader(bad).?.bigEndian() and imageHeader(bad).?.pageSize() == null);
+    try testing.expect(imageHeader("short") == null);
 }
 
 test "uki: PE sections, in memory and from a file" {
