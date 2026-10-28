@@ -6,18 +6,21 @@
 //! DIR holds the files of one machine of a run (its release, or its artifact). In order:
 //!   1. verify: every file used is in DIR/SHA256SUMS and matches it; BUILD names the commit and
 //!      the hw.zon the kernel was resolved from, which must be this machine's /etc/vh/hw.zon byte
-//!      for byte; the bzImage reports the release of a machine kernel (A.B.C-vh);
+//!      for byte; the kernel image of the hw.zon's architecture (bzImage-vh-KVER on x86_64,
+//!      Image-vh-KVER on aarch64) reports the release of a machine kernel (A.B.C-vh): the
+//!      bzImage in its setup header, the arm64 Image in its banner, which BUILD records too;
 //!   2. the final .config (config-vh-KVER) has what the UKI needs: the EFI stub, an initrd in
 //!      dracut's compression, the firmware loader for the files' compression (dracut checks
 //!      none of it with --no-kernel);
 //!   3. the firmware of the initrd: the files on disk that a firmware pattern of the plan keeps
 //!      (the image's plan and the installation's), and regulatory.db with a built-in cfg80211;
-//!      the CPU's microcode goes into dracut's early cpio, as for the stock UKI;
+//!      on x86_64 the CPU's microcode goes into dracut's early cpio, as for the stock UKI (the
+//!      early cpio is x86's: an arm64 UKI has none);
 //!   4. the command line: the newest stock UKI's, without module_blacklist= and module.* when the
 //!      kernel has no loadable modules, without the parameters of modules it does not have (its
 //!      modules.builtin), with the modprobe.d options of its built-in modules;
-//!   5. dracut --no-kernel --kver A.B.C-vh --kernel-image bzImage --uefi into a temporary file,
-//!      checked (.linux is the verified bzImage, .cmdline the command line of 4), then
+//!   5. dracut --no-kernel --kver A.B.C-vh --kernel-image FILE --uefi into a temporary file,
+//!      checked (.linux is the verified kernel image, .cmdline the command line of 4), then
 //!      /boot/efi/EFI/void/linux-A.B.C-vh_N.efi, N counting the installs of A.B.C-vh;
 //!   6. vh-limine-update --new A.B.C-vh_N signs it as every UKI of the menu (after vh-uki-verify
 //!      with offline keys), adds it after the stock entries and puts it on trial.
@@ -38,7 +41,7 @@ const linux = std.os.linux;
 const mem = std.mem;
 
 pub const Opts = struct {
-    /// the files of the run: SHA256SUMS, BUILD, bzImage-vh-KVER, config-vh-KVER ...
+    /// the files of the run: SHA256SUMS, BUILD, bzImage-vh-KVER or Image-vh-KVER, config-vh-KVER ...
     dir: []const u8,
     /// the system's files under this directory (tests): /etc, /usr/lib, /boot/efi, /var/lib/vh,
     /// and the programs dracut and vh-limine-update; nothing is mounted then
@@ -65,7 +68,7 @@ pub const Diag = struct {
 
 const Refused = error{Refused};
 
-/// the kernel's COMMAND_LINE_SIZE on x86 (2048 with the NUL)
+/// the kernel's COMMAND_LINE_SIZE on x86 and on arm64 (2048 with the NUL)
 const cmdline_max = 2047;
 
 // ---------------------------------------------------------------- 1. verify
@@ -104,7 +107,11 @@ pub fn sha256Hex(data: []const u8) []const u8 {
 /// BUILD of the kernel-custom workflow:
 ///   kernel-custom NAME: linux-KVER, features FEATURES, commit SHA, run N
 ///   hw.zon: kernel/hw/NAME.zon sha256 HEX
-/// (the second line since vh-kconf install; without it the hw.zon is NAME.zon)
+///   KBUILD_BUILD_TIMESTAMP=... KCFLAGS=... LLVM=1 clang version ...
+///   Linux version A.B.C-vh (vh@ci) (clang ...) #1 SMP ...
+/// (the second line since vh-kconf install; without it the hw.zon is NAME.zon; the last one,
+/// the banner `strings` finds in the image, where there is one: the uncompressed arm64 Image
+/// carries it, a bzImage's is compressed)
 pub const Build = struct {
     name: []const u8 = "",
     kver: []const u8 = "",
@@ -113,6 +120,8 @@ pub const Build = struct {
     run: []const u8 = "",
     hw_path: []const u8 = "",
     hw_sha: []const u8 = "",
+    /// the release of the banner line, "" without one
+    linux_version: []const u8 = "",
 
     /// the hw.zon's name in the run's files
     pub fn hwFile(b: Build) []const u8 {
@@ -146,9 +155,18 @@ pub fn parseBuild(text: []const u8) Build {
             if (!vh.eql(kw, "sha256")) continue;
             b.hw_path = vh.dupe(path);
             b.hw_sha = vh.dupe(hex);
+        } else if (vh.startsWith(line, "Linux version ") and b.linux_version.len == 0) {
+            var it = mem.tokenizeScalar(u8, line["Linux version ".len..], ' ');
+            if (it.next()) |rel| b.linux_version = vh.dupe(rel);
         }
     }
     return b;
+}
+
+/// the kernel image of an architecture, as the kernel-custom workflow names the file
+/// (KIMG-vh-KVER): the x86_64 bzImage, the arm64 Image (uncompressed, with an EFI stub)
+pub fn kernelImage(arch: []const u8) []const u8 {
+    return if (vh.eql(arch, "aarch64")) "Image" else "bzImage";
 }
 
 /// a file name the run may give: letters, digits, "._-", not starting with a dot
@@ -173,10 +191,16 @@ fn isVersion(s: []const u8) bool {
 pub const Image = struct {
     dir: []const u8,
     build: Build,
-    /// the file names in DIR
-    bzimage: []const u8,
-    bz: []const u8,
-    bz_sha: []const u8,
+    /// the architecture of the run's hw.zon: x86_64, aarch64
+    arch: []const u8,
+    /// what the kernel image is called: bzImage, Image (kernelImage)
+    kind: []const u8,
+    /// the kernel image: its file name in DIR, its bytes, their SHA-256
+    kernel_file: []const u8,
+    kernel: []const u8,
+    kernel_sha: []const u8,
+    /// the arm64 Image's header; null for a bzImage
+    header: ?uki.ImageHeader,
     /// uname -r of the kernel: A.B.C-vh, or A.B.C-vh-game for the gaming kernel
     release: []const u8,
     /// the gaming kernel (vh-game kernel build): its release ends in -vh-game
@@ -206,7 +230,7 @@ fn readVerified(dir: []const u8, name: []const u8, sums: []const Sum, d: *Diag) 
 /// The run's files in DIR against its SHA256SUMS and against this machine's probe.
 pub fn verify(dir: []const u8, my_hw: []const u8, d: *Diag) Refused!Image {
     const sums_path = vh.fmt("{s}/SHA256SUMS", .{dir});
-    const sums_text = vh.readFile(sums_path) catch return d.refuse("{s}: {s}: DIR is the directory of the run's files (bzImage-vh-KVER, BUILD, SHA256SUMS ...)", .{ sums_path, vh.serr() });
+    const sums_text = vh.readFile(sums_path) catch return d.refuse("{s}: {s}: DIR is the directory of the run's files (bzImage-vh-KVER or Image-vh-KVER, BUILD, SHA256SUMS ...)", .{ sums_path, vh.serr() });
     const sums = parseSums(sums_text) orelse return d.refuse("{s}: not the output of sha256sum", .{sums_path});
     var verified: vh.Strv = .{};
     const build_text = try readVerified(dir, "BUILD", sums, d);
@@ -217,40 +241,60 @@ pub fn verify(dir: []const u8, my_hw: []const u8, d: *Diag) Refused!Image {
     if (!safeName(b.name) or !isVersion(b.kver)) return d.refuse("{s}/BUILD: machine {s}, kernel {s}: not a name and an A.B.C version", .{ dir, b.name, b.kver });
     const hw_file = b.hwFile();
     if (!safeName(hw_file)) return d.refuse("{s}/BUILD names the hw.zon {s}: not a file name", .{ dir, hw_file });
+    // the hw.zon first: its architecture names the kernel image of the run
+    const hw_text = try readVerified(dir, hw_file, sums, d);
+    if (b.hw_sha.len > 0 and !vh.eql(sha256Hex(hw_text), std.ascii.allocLowerString(vh.gpa, b.hw_sha) catch vh.oom()))
+        return d.refuse("{s}/{s} is not the hw.zon BUILD names (sha256 {s})", .{ dir, hw_file, b.hw_sha });
+    const arch = vh.dupe(hw.parse(hw_text, vh.fmt("{s}/{s}", .{ dir, hw_file })).archName());
+    const arm64 = vh.eql(arch, "aarch64");
+    const kind = kernelImage(arch);
 
     var files: [8][]const u8 = undefined;
-    const names = [_][]const u8{ "bzImage-vh-", "config-vh-", "modules.builtin-vh-", "modules.builtin.modinfo-vh-" };
-    for (names, 0..) |n, i| files[i] = vh.fmt("{s}{s}", .{ n, b.kver });
+    const names = [_][]const u8{ "-vh-", "config-vh-", "modules.builtin-vh-", "modules.builtin.modinfo-vh-" };
+    for (names, 0..) |n, i| files[i] = vh.fmt("{s}{s}{s}", .{ if (i == 0) kind else "", n, b.kver });
     files[4] = "lsmod";
     files[5] = "resolve-report.txt";
     files[6] = "plan.zon";
     files[7] = hw_file;
     var data: [8][]const u8 = undefined;
     for (files, 0..) |f, i| {
-        data[i] = readVerified(dir, f, sums, d) catch |e| {
+        data[i] = if (i == 7) hw_text else readVerified(dir, f, sums, d) catch |e| {
             if (i == 2 or i == 3) if (sumOf(sums, f) == null)
                 return d.refuse("{s} is not among the run's files: the run is older than vh-kconf install (the kernel-custom workflow uploads the kernel's modules.builtin since); build the kernel again", .{f});
             return e;
         };
         verified.add(f);
     }
-    if (b.hw_sha.len > 0 and !vh.eql(sha256Hex(data[7]), std.ascii.allocLowerString(vh.gpa, b.hw_sha) catch vh.oom()))
-        return d.refuse("{s}/{s} is not the hw.zon BUILD names (sha256 {s})", .{ dir, hw_file, b.hw_sha });
 
     // the kernel itself: the release it reports
-    const release = uki.bzRelease(data[0]) orelse return d.refuse("{s}/{s}: not a bzImage (no setup header with a kernel version)", .{ dir, files[0] });
+    var header: ?uki.ImageHeader = null;
+    const release = if (arm64) blk: {
+        const h = uki.imageHeader(data[0]) orelse return d.refuse("{s}/{s}: not an arm64 Image (no ARM\\x64 magic at offset 56): the hw.zon is an aarch64 machine's, the file is not the kernel-custom workflow's Image", .{ dir, files[0] });
+        if (h.bigEndian()) return d.refuse("{s}/{s}: a big-endian kernel; this system is little-endian", .{ dir, files[0] });
+        if (!h.efi) return d.refuse("{s}/{s}: no PE header behind the arm64 header: the kernel has no EFI stub (CONFIG_EFI_STUB), which the UKI's stub starts it through", .{ dir, files[0] });
+        if (h.image_size < data[0].len) return d.refuse("{s}/{s}: the header's image_size ({d} bytes) is less than the file ({d} bytes): not a whole Image", .{ dir, files[0], h.image_size, data[0].len });
+        header = h;
+        break :blk uki.imageRelease(data[0]) orelse return d.refuse("{s}/{s}: no \"Linux version\" banner in the Image: not an uncompressed kernel image", .{ dir, files[0] });
+    } else uki.bzRelease(data[0]) orelse return d.refuse("{s}/{s}: not a bzImage (no setup header with a kernel version)", .{ dir, files[0] });
     const game = vh.eql(release, vh.fmt("{s}-vh-game", .{b.kver}));
     if (!game and !vh.eql(release, vh.fmt("{s}-vh", .{b.kver})))
         return d.refuse("{s}/{s} reports the kernel {s}, not {s}-vh (or the gaming kernel's {s}-vh-game): not the machine kernel BUILD names (CONFIG_LOCALVERSION=\"-vh\", kernel/profiles/base)", .{ dir, files[0], release, b.kver, b.kver });
+    // the banner BUILD recorded from the image the run built, where it did: the same kernel
+    if (b.linux_version.len > 0 and !vh.eql(b.linux_version, release))
+        return d.refuse("{s}/BUILD records Linux version {s}, {s} reports {s}: not the kernel of this run", .{ dir, b.linux_version, files[0], release });
+    if (game and arm64) return d.refuse("{s}/{s} reports the gaming kernel {s}: the gaming session is x86_64's (docs/uni/game.md)", .{ dir, files[0], release });
 
     try checkHw(data[7], vh.fmt("{s}/{s}", .{ dir, hw_file }), my_hw, d);
 
     var img: Image = .{
         .dir = dir,
         .build = b,
-        .bzimage = files[0],
-        .bz = data[0],
-        .bz_sha = sha256Hex(data[0]),
+        .arch = arch,
+        .kind = kind,
+        .kernel_file = files[0],
+        .kernel = data[0],
+        .kernel_sha = sha256Hex(data[0]),
+        .header = header,
         .release = vh.dupe(release),
         .game = game,
         .config = .{},
@@ -647,8 +691,8 @@ pub fn compressOption(words: []const []const u8) ?[]const u8 {
 /// check_kernel_compress_support, which --no-kernel skips); "" for none, null when unknown
 pub fn rdSymbol(comp: []const u8) ?[]const u8 {
     const table = [_][2][]const u8{
-        .{ "zstd", "RD_ZSTD" }, .{ "lz4", "RD_LZ4" },     .{ "xz", "RD_XZ" },       .{ "lzma", "RD_LZMA" },
-        .{ "gzip", "RD_GZIP" }, .{ "pigz", "RD_GZIP" },   .{ "bzip2", "RD_BZIP2" }, .{ "lbzip2", "RD_BZIP2" },
+        .{ "zstd", "RD_ZSTD" }, .{ "lz4", "RD_LZ4" },   .{ "xz", "RD_XZ" },       .{ "lzma", "RD_LZMA" },
+        .{ "gzip", "RD_GZIP" }, .{ "pigz", "RD_GZIP" }, .{ "bzip2", "RD_BZIP2" }, .{ "lbzip2", "RD_BZIP2" },
         .{ "lzop", "RD_LZO" },  .{ "cat", "" },
     };
     for (table) |t| if (vh.eql(t[0], comp)) return t[1];
@@ -656,8 +700,8 @@ pub fn rdSymbol(comp: []const u8) ?[]const u8 {
 }
 
 /// What a UKI needs of its kernel, against the final .config: problems stop the install, notes
-/// are said in the report.
-pub fn checkConfig(cfg: *const kconfig.DotConfig, comp: []const u8, firmware: []const []const u8, problems: *vh.Strv, notes: *vh.Strv) void {
+/// are said in the report. The same on both architectures but for the microcode, x86's.
+pub fn checkConfig(cfg: *const kconfig.DotConfig, comp: []const u8, firmware: []const []const u8, arch: []const u8, problems: *vh.Strv, notes: *vh.Strv) void {
     if (cfg.tri("EFI_STUB") != 2) problems.add("CONFIG_EFI_STUB is not set: systemd-stub cannot start this kernel");
     if (cfg.tri("BLK_DEV_INITRD") != 2) problems.add("CONFIG_BLK_DEV_INITRD is not set: the kernel would not unpack the initrd (LUKS, the firmware)");
     const c = if (comp.len > 0) comp else "zstd"; // dracut's first choice when nothing sets it
@@ -673,7 +717,7 @@ pub fn checkConfig(cfg: *const kconfig.DotConfig, comp: []const u8, firmware: []
     if (firmware.len > 0 and cfg.tri("FW_LOADER") != 2) problems.add("CONFIG_FW_LOADER is not set: no built-in driver can load its firmware");
     if (zst and cfg.tri("FW_LOADER_COMPRESS_ZSTD") != 2) problems.add("firmware files are zstd-compressed and CONFIG_FW_LOADER_COMPRESS_ZSTD is not set");
     if (xz and cfg.tri("FW_LOADER_COMPRESS_XZ") != 2) problems.add("firmware files are xz-compressed and CONFIG_FW_LOADER_COMPRESS_XZ is not set");
-    if (cfg.tri("MICROCODE") != 2) notes.add("CONFIG_MICROCODE is not set: the early microcode of the initrd is not loaded");
+    if (vh.eql(arch, "x86_64") and cfg.tri("MICROCODE") != 2) notes.add("CONFIG_MICROCODE is not set: the early microcode of the initrd is not loaded");
 }
 
 // ---------------------------------------------------------------- 3. the firmware
@@ -914,12 +958,13 @@ fn writeNew(path: []const u8, data: []const u8, d: *Diag) Refused!void {
 
 // ---------------------------------------------------------------- the install
 
-/// what the UKI of the build must be: the verified kernel and the computed command line
-pub fn checkUki(efi: []const u8, bz: []const u8, cmdline: []const u8, d: *Diag) Refused!bool {
+/// what the UKI of the build must be: the verified kernel image (`kind` names it) and the
+/// computed command line; true when an early cpio with x86 microcode is in the initrd
+pub fn checkUki(efi: []const u8, kernel: []const u8, kind: []const u8, cmdline: []const u8, d: *Diag) Refused!bool {
     const s = uki.peSections(efi) orelse return d.refuse("dracut wrote no PE image", .{});
     const linux_sec = uki.section(s, ".linux") orelse return d.refuse("the UKI has no .linux section", .{});
-    if (linux_sec.len < bz.len or !mem.eql(u8, linux_sec[0..bz.len], bz)) return d.refuse("the UKI's .linux section is not the verified bzImage", .{});
-    for (linux_sec[bz.len..]) |c| if (c != 0) return d.refuse("the UKI's .linux section is not the verified bzImage", .{});
+    if (linux_sec.len < kernel.len or !mem.eql(u8, linux_sec[0..kernel.len], kernel)) return d.refuse("the UKI's .linux section is not the verified {s}", .{kind});
+    for (linux_sec[kernel.len..]) |c| if (c != 0) return d.refuse("the UKI's .linux section is not the verified {s}", .{kind});
     const c = uki.section(s, ".cmdline") orelse return d.refuse("the UKI has no .cmdline section", .{});
     const got = vh.strip(mem.trimEnd(u8, c, "\x00"));
     if (!vh.eql(got, cmdline)) return d.refuse("the UKI's command line is not the one checked (a kernel_cmdline= of dracut's configuration adds to it?):\n  checked: {s}\n  UKI:     {s}", .{ cmdline, got });
@@ -958,7 +1003,10 @@ fn report(img: *const Image, p: *const Plan, my_hw: []const u8) []const u8 {
     w(&t, "vh-kconf install: the machine kernel of {s}", .{img.dir});
     w(&t, "image: kernel-custom {s}, linux-{s}, features {s}, commit {s}, run {s}", .{ b.name, b.kver, if (b.features.len > 0) b.features else "?", b.commit, if (b.run.len > 0) b.run else "?" });
     w(&t, "verified: {d} files against SHA256SUMS ({s}); {s} is this machine's {s}", .{ img.verified.len, mem.join(vh.gpa, " ", img.verified) catch vh.oom(), b.hwFile(), my_hw });
-    w(&t, "kernel: {s} ({s}, sha256 {s}); CONFIG_MODULES={s}; initrd {s}", .{ img.release, img.bzimage, img.bz_sha, kconfig.show(img.config.get("MODULES")), if (p.compress.len > 0) p.compress else "zstd (dracut's default)" });
+    w(&t, "kernel: {s} ({s}, sha256 {s}); CONFIG_MODULES={s}; initrd {s}", .{ img.release, img.kernel_file, img.kernel_sha, kconfig.show(img.config.get("MODULES")), if (p.compress.len > 0) p.compress else "zstd (dracut's default)" });
+    if (img.header) |h| w(&t, "  arm64 Image: {d} KiB, image_size {d} KiB, text_offset 0x{x}, {s}, little-endian, loadable anywhere: {s}, EFI stub: yes", .{
+        img.kernel.len >> 10, h.image_size >> 10, h.text_offset, if (h.pageSize()) |ps| vh.fmt("{d} KiB pages", .{ps >> 10}) else "page size unspecified", if (h.anywhere()) "yes" else "no",
+    });
     for (p.notes) |n| w(&t, "  note: {s}", .{n});
     w(&t, "firmware for the initrd: {d} file(s), {d} KiB, by the plan's patterns: {s}", .{ p.firmware.len, p.firmware_bytes >> 10, if (p.patterns.len > 0) mem.join(vh.gpa, " ", p.patterns) catch vh.oom() else "-" });
     if (p.left_out.len > 0) w(&t, "  left out: {s} (the microcode: dracut's early cpio carries this CPU's)", .{mem.join(vh.gpa, " ", p.left_out) catch vh.oom()});
@@ -1047,8 +1095,7 @@ fn install(o: Opts, d: *Diag) Refused!u8 {
     var patterns: vh.Strv = .{};
     var left_out: vh.Strv = .{};
     initrdPatterns(planFirmware(img.plan, vh.fmt("{s}/plan.zon", .{dir})), &patterns, &left_out);
-    if (vh.readFile(plan_path)) |t| initrdPatterns(planFirmware(t, plan_path), &patterns, &left_out) else |_|
-        notes.add(vh.fmt("{s}: no plan of the installation: the image's plan alone names the firmware", .{plan_path}));
+    if (vh.readFile(plan_path)) |t| initrdPatterns(planFirmware(t, plan_path), &patterns, &left_out) else |_| notes.add(vh.fmt("{s}: no plan of the installation: the image's plan alone names the firmware", .{plan_path}));
     const fwdir = vh.fmt("{s}/usr/lib/firmware", .{root});
     const on_disk = listTree(fwdir);
     // a built-in cfg80211 reads the regulatory database from the initrd: without it, it stays in
@@ -1078,7 +1125,7 @@ fn install(o: Opts, d: *Diag) Refused!u8 {
     hook.read(vh.fmt("{s}/etc/default/dracut-uefi-hook", .{root}), false);
     const dracut_opts = splitArgs(hook.get("DRACUT_OPTIONS", ""));
     const comp = compressOption(dracut_opts) orelse dracutCompress(root);
-    checkConfig(&img.config, comp, firmware, &problems, &notes);
+    checkConfig(&img.config, comp, firmware, img.arch, &problems, &notes);
     const gaps: ?[]const []const u8 = if (vh.readFile(vh.fmt("{s}/kernel/pins/modules.firmware", .{repo}))) |table| blk: {
         var drivers: vh.Strv = .{};
         for (img.lsmod) |m| drivers.add(m);
@@ -1126,11 +1173,11 @@ fn install(o: Opts, d: *Diag) Refused!u8 {
     if (!o.dry_run) if (keysProblem(root)) |why| return d.refuse("{s}", .{why});
 
     // 5. dracut: into a temporary directory first, then checked
-    const bz_path = vh.fmt("{s}/{s}", .{ dir, img.bzimage });
+    const kernel_path = vh.fmt("{s}/{s}", .{ dir, img.kernel_file });
     var argv: std.ArrayList([]const u8) = .empty;
     argv.appendSlice(vh.gpa, &.{ vh.fmt("{s}/usr/bin/dracut", .{root}), "--force" }) catch vh.oom();
     argv.appendSlice(vh.gpa, dracut_opts) catch vh.oom();
-    argv.appendSlice(vh.gpa, &.{ "--no-kernel", "--kver", img.release, "--kernel-image", bz_path, "--uefi", vh.fmt("--kernel-cmdline={s}", .{cl.text}) }) catch vh.oom();
+    argv.appendSlice(vh.gpa, &.{ "--no-kernel", "--kver", img.release, "--kernel-image", kernel_path, "--uefi", vh.fmt("--kernel-cmdline={s}", .{cl.text}) }) catch vh.oom();
     const shown = argv.items.len;
     for (firmware) |f| argv.appendSlice(vh.gpa, &.{ "--include", vh.fmt("{s}/{s}", .{ fwdir, f }), vh.fmt("/usr/lib/firmware/{s}", .{f}) }) catch vh.oom();
     if (o.dry_run) {
@@ -1147,12 +1194,14 @@ fn install(o: Opts, d: *Diag) Refused!u8 {
         _ = linux.rmdir(vh.z(td).ptr);
     }
     argv.append(vh.gpa, out_tmp) catch vh.oom();
-    vh.out("  + dracut --no-kernel --kver {s} --kernel-image {s} --uefi ({d} firmware files) {s}\n", .{ img.release, bz_path, firmware.len, out_tmp });
+    vh.out("  + dracut --no-kernel --kver {s} --kernel-image {s} --uefi ({d} firmware files) {s}\n", .{ img.release, kernel_path, firmware.len, out_tmp });
     const drc = vh.run(argv.items);
     if (drc != 0) return d.refuse("dracut failed ({d}): no UKI was installed", .{drc});
     const efi = vh.readFile(out_tmp) catch return d.refuse("{s}: {s}: dracut wrote no UKI", .{ out_tmp, vh.serr() });
-    const microcode = try checkUki(efi, img.bz, cl.text, d);
-    vh.out("  the UKI: {d} MiB; .linux is the verified bzImage, .cmdline the command line above; early microcode: {s}\n", .{ efi.len >> 20, if (microcode) "yes" else "none (no microcode for this CPU on disk, or early_microcode=no)" });
+    const microcode = try checkUki(efi, img.kernel, img.kind, cl.text, d);
+    vh.out("  the UKI: {d} MiB; .linux is the verified {s}, .cmdline the command line above; early microcode: {s}\n", .{
+        efi.len >> 20, img.kind, if (microcode) "yes" else if (vh.eql(img.arch, "x86_64")) "none (no microcode for this CPU on disk, or early_microcode=no)" else "none (the early cpio is x86's)",
+    });
 
     // onto the ESP, into the menu: a machine kernel on trial, the gaming kernel as the gaming entry
     const name = vh.fmt("linux-{s}.efi", .{version});
@@ -1207,6 +1256,9 @@ test "install: SHA256SUMS and BUILD" {
         \\
     );
     try testing.expectEqualStrings("gf63", b.name);
+    try testing.expectEqualStrings("", b.linux_version);
+    const arm = parseBuild("kernel-custom qemu-virt: linux-6.18.59, features auto, commit ff, run 3\nhw.zon: kernel/hw/qemu-virt.zon sha256 00\nKCFLAGS=-march=armv8-a\nLinux version 6.18.59-vh (vh@ci) (clang version 18.1.3) #1 SMP PREEMPT_DYNAMIC Tue Oct 28 00:00:00 UTC 2026\n");
+    try testing.expectEqualStrings("6.18.59-vh", arm.linux_version);
     try testing.expectEqualStrings("6.18.57", b.kver);
     try testing.expectEqualStrings("usb-common,bluetooth", b.features);
     try testing.expectEqualStrings("0123abc", b.commit);
@@ -1273,13 +1325,25 @@ test "install: dracut's compressor and the final .config" {
     cfg.parse("CONFIG_EFI_STUB=y\nCONFIG_BLK_DEV_INITRD=y\nCONFIG_RD_ZSTD=y\nCONFIG_FW_LOADER=y\nCONFIG_FW_LOADER_COMPRESS_ZSTD=y\nCONFIG_MICROCODE=y\n# CONFIG_MODULES is not set\n");
     var problems: vh.Strv = .{};
     var notes: vh.Strv = .{};
-    checkConfig(&cfg, "zstd", &.{ "a/b.bin.zst", "regulatory.db" }, &problems, &notes);
+    checkConfig(&cfg, "zstd", &.{ "a/b.bin.zst", "regulatory.db" }, "x86_64", &problems, &notes);
     try testing.expectEqual(@as(usize, 0), problems.len());
     try testing.expectEqual(@as(usize, 0), notes.len());
-    checkConfig(&cfg, "lz4", &.{"a/b.bin.xz"}, &problems, &notes);
+    checkConfig(&cfg, "lz4", &.{"a/b.bin.xz"}, "x86_64", &problems, &notes);
     try testing.expectEqual(@as(usize, 2), problems.len());
     try testing.expect(mem.indexOf(u8, problems.slice()[0], "CONFIG_RD_LZ4 is not set") != null);
     try testing.expect(mem.indexOf(u8, problems.slice()[1], "CONFIG_FW_LOADER_COMPRESS_XZ") != null);
+    // the microcode is x86's: on arm64 a kernel without CONFIG_MICROCODE gets no note
+    var arm: kconfig.DotConfig = .{};
+    arm.parse("CONFIG_EFI_STUB=y\nCONFIG_BLK_DEV_INITRD=y\nCONFIG_RD_ZSTD=y\nCONFIG_FW_LOADER=y\n# CONFIG_MODULES is not set\n");
+    var p2: vh.Strv = .{};
+    var n2: vh.Strv = .{};
+    checkConfig(&arm, "zstd", &.{}, "aarch64", &p2, &n2);
+    try testing.expectEqual(@as(usize, 0), p2.len());
+    try testing.expectEqual(@as(usize, 0), n2.len());
+    checkConfig(&arm, "zstd", &.{}, "x86_64", &p2, &n2);
+    try testing.expectEqual(@as(usize, 1), n2.len());
+    try testing.expectEqualStrings("bzImage", kernelImage("x86_64"));
+    try testing.expectEqualStrings("Image", kernelImage("aarch64"));
 }
 
 test "install: the firmware of the initrd" {
@@ -1325,7 +1389,8 @@ test "install: the number of an install and the stock UKIs" {
 const Fixture = struct {
     root: []const u8,
     run: []const u8,
-    bz: []const u8,
+    /// the run's kernel image: the bzImage, or the arm64 Image
+    kernel: []const u8,
     want_cmdline: []const u8,
 
     fn put(path: []const u8, data: []const u8) void {
@@ -1336,6 +1401,81 @@ const Fixture = struct {
     fn exe(path: []const u8, script: []const u8) void {
         vh.mkdirs(probe.dirname(path), 0o755);
         vh.writeAtomic(path, script, 0o755);
+    }
+
+    /// a file of the run replaced, with its line of SHA256SUMS
+    fn replace(run_dir: []const u8, name: []const u8, data: []const u8) void {
+        put(vh.fmt("{s}/{s}", .{ run_dir, name }), data);
+        const sums_path = vh.fmt("{s}/SHA256SUMS", .{run_dir});
+        const sums = vh.readFile(sums_path) catch vh.die("{s}: {s}", .{ sums_path, vh.serr() });
+        var out: std.ArrayList(u8) = .empty;
+        var lines = mem.tokenizeScalar(u8, sums, '\n');
+        while (lines.next()) |l| {
+            if (vh.endsWith(l, vh.fmt("  {s}", .{name}))) out.print(vh.gpa, "{s}  {s}\n", .{ sha256Hex(data), name }) catch vh.oom() else out.print(vh.gpa, "{s}\n", .{l}) catch vh.oom();
+        }
+        put(sums_path, out.items);
+    }
+
+    /// the fakes of dracut (records its arguments, writes the UKI it would build: expected.efi)
+    /// and of vh-limine-update (records its arguments, exits VH_TEST_LIMINE_RC)
+    fn fakes(dir: []const u8, root: []const u8) void {
+        exe(vh.fmt("{s}/usr/bin/dracut", .{root}), vh.fmt("#!/bin/sh\nprintf '%s\\n' \"$@\" > {s}/dracut.args\nfor a; do out=$a; done\ncp {s}/expected.efi \"$out\"\n", .{ dir, dir }));
+        exe(vh.fmt("{s}/usr/local/sbin/vh-limine-update", .{root}), vh.fmt("#!/bin/sh\necho \"$@\" > {s}/limine.args\nexit ${{VH_TEST_LIMINE_RC:-0}}\n", .{dir}));
+    }
+
+    /// the aarch64 rig (kernel/hw/qemu-virt.zon, its tiered plan: no firmware pattern, no
+    /// cfg80211) and a run's arm64 Image: nvme, virtio_net and tpm_tis built in, the stock
+    /// kernel's efi_pstore not, modprobe.d options of two built-in modules
+    fn makeArm64(dir: []const u8) ?Fixture {
+        const hwf = probe.repoPath("kernel/hw/qemu-virt.zon") orelse return null;
+        const plan = probe.repoPath("tests/adapt/golden/qemu-virt/tiered/plan.zon") orelse return null;
+        const hw_text = vh.readFile(hwf) catch return null;
+        const plan_text = vh.readFile(plan) catch return null;
+        const root = vh.fmt("{s}/root", .{dir});
+        const run_dir = vh.fmt("{s}/run", .{dir});
+        put(vh.fmt("{s}/etc/vh/hw.zon", .{root}), hw_text);
+        put(vh.fmt("{s}/etc/vh/plan.zon", .{root}), plan_text);
+        const stock_cmdline = "rd.luks.uuid=L root=UUID=R rootfstype=xfs ro rd.shell=0 rd.emergency=poweroff panic=10 lockdown=confidentiality module.sig_enforce=1 " ++
+            "iommu.strict=1 efi_pstore.pstore_disable=1 module_blacklist=sctp,uvcvideo console=tty0 console=ttyAMA0,115200";
+        put(vh.fmt("{s}/boot/efi/EFI/void/linux-6.18.59_1.efi", .{root}), uki.testPe(&.{ .{ ".cmdline", " " ++ stock_cmdline ++ " \x00" }, .{ ".linux", "stock" } }));
+        put(vh.fmt("{s}/etc/default/dracut-uefi-hook", .{root}), "KERNEL_CMDLINE=\"" ++ stock_cmdline ++ "\"\n");
+        put(vh.fmt("{s}/usr/lib/modules/6.18.59_1/modules.dep", .{root}), "kernel/drivers/nvme/host/nvme.ko.zst: kernel/drivers/nvme/host/nvme-core.ko.zst\nkernel/drivers/nvme/host/nvme-core.ko.zst:\n" ++
+            "kernel/drivers/net/virtio_net.ko.zst:\nkernel/drivers/char/tpm/tpm_tis.ko.zst:\n");
+        put(vh.fmt("{s}/usr/lib/modules/6.18.59_1/modules.builtin", .{root}), "kernel/drivers/firmware/efi/efi-pstore.ko\n");
+        put(vh.fmt("{s}/etc/modprobe.d/vh-nvme.conf", .{root}), "options nvme_core default_ps_max_latency_us=0\noptions tpm_tis interrupts=0\n");
+        put(vh.fmt("{s}/etc/dracut.conf.d/10-vh.conf", .{root}), "hostonly=\"yes\"\ncompress=\"zstd\"\nearly_microcode=\"yes\"\n");
+        for ([_][]const u8{ "regulatory.db", "regulatory.db.p7s", "intel/ibt-19-0-4.sfi.zst" }) |f|
+            put(vh.fmt("{s}/usr/lib/firmware/{s}", .{ root, f }), f);
+        const kernel = uki.testImage("6.18.59-vh", "the machine kernel");
+        const files = [_][2][]const u8{
+            .{ "BUILD", vh.fmt("kernel-custom qemu-virt: linux-6.18.59, features auto, commit 0123abc, run 7\nhw.zon: kernel/hw/qemu-virt.zon sha256 {s}\n" ++
+                "KBUILD_BUILD_TIMESTAMP=2026-10-28T00:00:00+00:00 KCFLAGS=-march=armv8-a LLVM=1 clang version 18\n" ++
+                "Linux version 6.18.59-vh (vh@ci) (clang version 18.1.3) #1 SMP PREEMPT_DYNAMIC Tue Oct 28 00:00:00 UTC 2026\n", .{sha256Hex(hw_text)}) },
+            .{ "Image-vh-6.18.59", kernel },
+            .{ "config-vh-6.18.59", "CONFIG_LOCALVERSION=\"-vh\"\n# CONFIG_MODULES is not set\nCONFIG_EFI_STUB=y\nCONFIG_BLK_DEV_INITRD=y\nCONFIG_RD_ZSTD=y\nCONFIG_FW_LOADER=y\nCONFIG_FW_LOADER_COMPRESS=y\nCONFIG_FW_LOADER_COMPRESS_ZSTD=y\nCONFIG_ARM64_4K_PAGES=y\n" },
+            .{ "modules.builtin-vh-6.18.59", "kernel/drivers/nvme/host/nvme.ko\nkernel/drivers/nvme/host/nvme-core.ko\nkernel/drivers/net/virtio_net.ko\nkernel/drivers/char/tpm/tpm_tis.ko\n" },
+            .{ "modules.builtin.modinfo-vh-6.18.59", "nvme_core.parmtype=default_ps_max_latency_us:ulong\x00tpm_tis.parmtype=interrupts:bool\x00" },
+            .{ "lsmod", "nvme\nvirtio_net\ntpm_tis\n" },
+            .{ "resolve-report.txt", "vh-kconf resolve report\n\nDrivers already built into the stock kernel (1): xhci_pci\n" },
+            .{ "plan.zon", plan_text },
+            .{ "qemu-virt.zon", hw_text },
+        };
+        var sums: std.ArrayList(u8) = .empty;
+        for (files) |f| {
+            put(vh.fmt("{s}/{s}", .{ run_dir, f[0] }), f[1]);
+            sums.print(vh.gpa, "{s}  {s}\n", .{ sha256Hex(f[1]), f[0] }) catch vh.oom();
+        }
+        put(vh.fmt("{s}/SHA256SUMS", .{run_dir}), sums.items);
+        const want = "rd.luks.uuid=L root=UUID=R rootfstype=xfs ro rd.shell=0 rd.emergency=poweroff panic=10 lockdown=confidentiality iommu.strict=1 " ++
+            "console=tty0 console=ttyAMA0,115200 nvme_core.default_ps_max_latency_us=0 tpm_tis.interrupts=0";
+        // the UKI dracut would build on aarch64: no early cpio (the microcode is x86's)
+        put(vh.fmt("{s}/expected.efi", .{dir}), uki.testPe(&.{
+            .{ ".cmdline", vh.fmt(" {s} \x00", .{want}) },
+            .{ ".linux", kernel },
+            .{ ".initrd", "\x28\xb5\x2f\xfdmain" },
+        }));
+        fakes(dir, root);
+        return .{ .root = root, .run = run_dir, .kernel = kernel, .want_cmdline = want };
     }
 
     fn make(dir: []const u8) ?Fixture {
@@ -1408,9 +1548,8 @@ const Fixture = struct {
             .{ ".linux", bz },
             .{ ".initrd", vh.fmt("{s}\x28\xb5\x2f\xfdmain", .{uki.testCpio(&.{ "kernel", "kernel/x86", "kernel/x86/microcode", "kernel/x86/microcode/CPU.bin" })}) },
         }));
-        exe(vh.fmt("{s}/usr/bin/dracut", .{root}), vh.fmt("#!/bin/sh\nprintf '%s\\n' \"$@\" > {s}/dracut.args\nfor a; do out=$a; done\ncp {s}/expected.efi \"$out\"\n", .{ dir, dir }));
-        exe(vh.fmt("{s}/usr/local/sbin/vh-limine-update", .{root}), vh.fmt("#!/bin/sh\necho \"$@\" > {s}/limine.args\nexit ${{VH_TEST_LIMINE_RC:-0}}\n", .{dir}));
-        return .{ .root = root, .run = run_dir, .bz = bz, .want_cmdline = want };
+        fakes(dir, root);
+        return .{ .root = root, .run = run_dir, .kernel = bz, .want_cmdline = want };
     }
 };
 
@@ -1449,7 +1588,7 @@ test "install: a run's machine kernel becomes a machine UKI on trial" {
     Fixture.put(vh.fmt("{s}{s}", .{ f.root, init_mark }), "# vh-init --install\n");
     Fixture.put(vh.fmt("{s}/expected.efi", .{dir}), uki.testPe(&.{
         .{ ".cmdline", vh.fmt(" {s} {s} \x00", .{ f.want_cmdline, init_param }) },
-        .{ ".linux", f.bz },
+        .{ ".linux", f.kernel },
         .{ ".initrd", vh.fmt("{s}\x28\xb5\x2f\xfdmain", .{uki.testCpio(&.{ "kernel", "kernel/x86", "kernel/x86/microcode", "kernel/x86/microcode/CPU.bin" })}) },
     }));
     try testing.expectEqual(@as(u8, 0), try install(.{ .dir = f.run, .root = f.root, .repo = repo }, &d));
@@ -1459,7 +1598,7 @@ test "install: a run's machine kernel becomes a machine UKI on trial" {
     vh.unlink(vh.fmt("{s}{s}", .{ f.root, init_mark })) catch {};
     Fixture.put(vh.fmt("{s}/expected.efi", .{dir}), uki.testPe(&.{
         .{ ".cmdline", vh.fmt(" {s} \x00", .{f.want_cmdline}) },
-        .{ ".linux", f.bz },
+        .{ ".linux", f.kernel },
         .{ ".initrd", vh.fmt("{s}\x28\xb5\x2f\xfdmain", .{uki.testCpio(&.{ "kernel", "kernel/x86", "kernel/x86/microcode", "kernel/x86/microcode/CPU.bin" })}) },
     }));
     try testing.expectEqualStrings("a b init=/usr/local/sbin/vh-init -- c", withInit(.{ .text = "a init=/old b -- c" }).text);
@@ -1501,6 +1640,59 @@ test "install: the gaming kernel becomes the gaming entry, with ia32 on" {
     try testing.expectEqualStrings("root=x ro ia32_emulation=1", gameCmdline("root=x ro"));
 }
 
+test "install: an arm64 Image of a run becomes the machine UKI" {
+    const dir = vh.fmt("/tmp/vh-kconf-install-arm64-{d}", .{linux.getpid()});
+    _ = vh.runOpts(&.{ "rm", "-rf", dir }, .{});
+    defer _ = vh.runOpts(&.{ "rm", "-rf", dir }, .{});
+    const f = Fixture.makeArm64(dir) orelse return error.SkipZigTest;
+    const repo = probe.repoRoot() orelse return error.SkipZigTest;
+    var d: Diag = .{};
+    try testing.expectEqual(@as(u8, 0), try install(.{ .dir = f.run, .root = f.root, .repo = repo, .dry_run = true }, &d));
+    try testing.expect(!vh.pathExists(vh.fmt("{s}/dracut.args", .{dir})));
+    try testing.expectEqual(@as(u8, 0), try install(.{ .dir = f.run, .root = f.root, .repo = repo }, &d));
+    const args = try vh.readFile(vh.fmt("{s}/dracut.args", .{dir}));
+    for ([_][]const u8{ "--no-kernel\n", "--kver\n6.18.59-vh\n", vh.fmt("--kernel-image\n{s}/Image-vh-6.18.59\n", .{f.run}), "--uefi\n", vh.fmt("--kernel-cmdline={s}\n", .{f.want_cmdline}) }) |want|
+        try testing.expect(mem.indexOf(u8, args, want) != null);
+    // the plan names no firmware and cfg80211 is not built in: nothing goes into the initrd
+    try testing.expect(mem.indexOf(u8, args, "--include") == null);
+    const esp = vh.fmt("{s}/boot/efi/EFI/void", .{f.root});
+    try testing.expect(vh.pathExists(vh.fmt("{s}/linux-6.18.59-vh_1.efi", .{esp})));
+    try testing.expectEqualStrings("--new 6.18.59-vh_1\n", try vh.readFile(vh.fmt("{s}/limine.args", .{dir})));
+    const rep = try vh.readFile(vh.fmt("{s}/var/lib/vh/kernels/6.18.59-vh_1/report.txt", .{f.root}));
+    try testing.expect(mem.indexOf(u8, rep, "kernel: 6.18.59-vh (Image-vh-6.18.59, sha256 ") != null);
+    try testing.expect(mem.indexOf(u8, rep, "arm64 Image: ") != null and mem.indexOf(u8, rep, "4 KiB pages, little-endian, loadable anywhere: yes, EFI stub: yes") != null);
+    try testing.expect(mem.indexOf(u8, rep, "firmware for the initrd: 0 file(s)") != null);
+    // no note about the microcode on arm64; the stock kernel's module parameter went, the
+    // built-in modules' options came
+    try testing.expect(mem.indexOf(u8, rep, "CONFIG_MICROCODE") == null);
+    try testing.expect(mem.indexOf(u8, rep, "- efi_pstore.pstore_disable=1: efi_pstore is not in this kernel") != null);
+    try testing.expect(mem.indexOf(u8, rep, "+ tpm_tis.interrupts=0") != null);
+
+    // what is refused on arm64, each on a run whose SHA256SUMS agrees with the file
+    const o: Opts = .{ .dir = f.run, .root = f.root, .repo = repo, .dry_run = true };
+    Fixture.replace(f.run, "Image-vh-6.18.59", uki.testBzImage("6.18.59-vh", "an x86 kernel"));
+    try testing.expectError(error.Refused, install(o, &d));
+    try testing.expect(mem.indexOf(u8, d.msg, "not an arm64 Image") != null);
+    var no_stub = vh.dupe(f.kernel);
+    no_stub[0] = 0;
+    Fixture.replace(f.run, "Image-vh-6.18.59", no_stub);
+    try testing.expectError(error.Refused, install(o, &d));
+    try testing.expect(mem.indexOf(u8, d.msg, "CONFIG_EFI_STUB") != null);
+    // a gaming kernel (the run's Image and BUILD's banner agree on it): x86_64's
+    const build = try vh.readFile(vh.fmt("{s}/BUILD", .{f.run}));
+    Fixture.replace(f.run, "Image-vh-6.18.59", uki.testImage("6.18.59-vh-game", "a gaming kernel"));
+    Fixture.replace(f.run, "BUILD", mem.replaceOwned(u8, vh.gpa, build, "Linux version 6.18.59-vh ", "Linux version 6.18.59-vh-game ") catch vh.oom());
+    try testing.expectError(error.Refused, install(o, &d));
+    try testing.expect(mem.indexOf(u8, d.msg, "x86_64's") != null);
+    Fixture.replace(f.run, "Image-vh-6.18.59", f.kernel);
+    // BUILD's banner of another kernel than the Image
+    Fixture.replace(f.run, "BUILD", mem.replaceOwned(u8, vh.gpa, build, "Linux version 6.18.59-vh ", "Linux version 6.18.59-vh+ ") catch vh.oom());
+    try testing.expectError(error.Refused, install(o, &d));
+    try testing.expect(mem.indexOf(u8, d.msg, "not the kernel of this run") != null);
+    Fixture.replace(f.run, "BUILD", build);
+    try testing.expectEqual(@as(u8, 0), try install(o, &d));
+}
+
 test "install: what is refused" {
     const dir = vh.fmt("/tmp/vh-kconf-refuse-{d}", .{linux.getpid()});
     _ = vh.runOpts(&.{ "rm", "-rf", dir }, .{});
@@ -1523,10 +1715,10 @@ test "install: what is refused" {
     try testing.expect(mem.indexOf(u8, d.msg, "another probe of this machine") != null);
     // a damaged file
     const bz = vh.fmt("{s}/bzImage-vh-6.18.57", .{f.run});
-    vh.writeAtomic(bz, vh.fmt("{s}x", .{f.bz}), 0o644);
+    vh.writeAtomic(bz, vh.fmt("{s}x", .{f.kernel}), 0o644);
     try testing.expectError(error.Refused, install(o, &d));
     try testing.expect(mem.indexOf(u8, d.msg, "a damaged or replaced file") != null);
-    vh.writeAtomic(bz, f.bz, 0o644);
+    vh.writeAtomic(bz, f.kernel, 0o644);
     // a run of the workflow before vh-kconf install: no modules.builtin
     const sums_path = vh.fmt("{s}/SHA256SUMS", .{f.run});
     const sums = try vh.readFile(sums_path);
