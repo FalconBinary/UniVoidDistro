@@ -23,7 +23,8 @@ kernel/
                        modules.firmware, for x86_64 and (aarch64-*) for aarch64, with the
                        void-packages commit and hashes; kernel.org PGP fingerprints
   hw/                  hw.zon files of the known machines, which CI builds from (gf63,
-                       amd-desktop, intel-hybrid-laptop, qemu-q35, aarch64-virt, rpi5)
+                       amd-desktop, intel-hybrid-laptop, qemu-q35, aarch64-virt, rpi5,
+                       qemu-virt: the aarch64 rig)
 tests/kernel/          the fixtures (mkfixture.py writes them), run.sh, matrix.sh, oracle.sh,
                        dracut_test.sh (install against Void's dracut)
 .github/workflows/kernel-custom.yml   the build

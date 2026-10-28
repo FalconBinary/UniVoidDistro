@@ -9,7 +9,7 @@ not only of the laptop void-hardperf-light was written for. `vh-plan` decides fr
 ## The CI matrix
 
 Every machine of `kernel/hw` (gf63, amd-desktop, intel-hybrid-laptop, qemu-q35 on x86_64;
-aarch64-virt and rpi5 on aarch64 since U5) gets its kernel resolved on every push and built on
+aarch64-virt, rpi5 and qemu-virt, the aarch64 rig, on aarch64 since U5) gets its kernel resolved on every push and built on
 request, against the pins of its architecture (`kernel/pins/README.md`: Void's `.config` and
 module tables for x86_64 and for aarch64) and with the fragment of its architecture
 (`kernel/profiles/arch/x86_64`, `arch/aarch64`: what only one of them has, the RTC driver, the
@@ -79,6 +79,7 @@ top of the CPU's, so `-march` chooses the integer instructions and the tuning.
 | intel-hybrid-laptop | Intel, 6, 0x9A: i7-1260P, Alder Lake-P | `cpu.intel.march.alderlake` | `alderlake` |
 | qemu-q35 | QEMU's TCG CPU (AMD, 6, 6), a virtual machine | `x86.march.v3` | `x86-64-v3` |
 | aarch64-virt | Apple's cores under the Virtualization framework (implementer 0x61), a virtual machine | `arm.mcpu.generic` | `-march=armv8-a` |
+| qemu-virt | the aarch64 rig: Apple's cores under hvf (implementer 0x61, part 0x000), a virtual machine | `arm.mcpu.generic` | `-march=armv8-a` |
 | rpi5 | Cortex-A76 (0x41, 0xd0b) | `arm.mcpu.cortex-a76` | `-mcpu=cortex-a76` |
 
 The golden plans pin each value (`VH_PLAN_MARCH` in `tests/adapt/golden/*/strict/plan.env`); the
