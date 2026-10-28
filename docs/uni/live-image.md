@@ -169,9 +169,14 @@ no KVM, so the aarch64 rig cannot run there with hardware virtualisation (`kvm-s
 hours long); the verification of U5 ran under Apple's hvf on a Mac instead
 ([hardware.md](hardware.md#arm64), [ROADMAP](ROADMAP.md)).
 
-The rig (`tests/vm/vhvm.py --arch aarch64`) boots the image's `/boot/vmlinux` and
+The rig (`VH_ARCH=aarch64 tests/vm/vhvm.py`) boots the image's `/boot/vmlinux` and
 `/boot/initrd` on QEMU's `virt` machine with AAVMF, as the x86_64 rig boots `vmlinuz` on q35
-with OVMF ([hardware.md](hardware.md#virtual-machines)).
+with OVMF ([hardware.md](hardware.md#virtual-machines)). The live system logs the rig in on
+`ttyAMA0`: void-mklive's getty hook (`dracut/vmklive/getty-serial.sh`) enables a getty for
+`console=ttyS0`, `hvc0` and `hvsi0` only, so the image carries
+`/etc/runit/core-services/98-vh-live-serial.sh`, which does the same for `ttyAMA0`. Verified
+on 2026-10-28 with the image of run 40617102027 under hvf: the installation took 2 min 52 s
+and `check.py base` passed 26 of 26 ([ROADMAP](ROADMAP.md#state-2026-10-28-u5-the-arm64-path-on-a-virtual-machine)).
 
 ## Decisions (2026-10-20)
 

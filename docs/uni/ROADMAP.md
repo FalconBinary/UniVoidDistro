@@ -226,6 +226,46 @@ hardware enters: N shows the plan and the tier and runs the gate; G is GPU-vendo
 | **U6: live image** | x86_64 and aarch64 images | U1 |
 | **V (continuous)** | the VM matrix, the fixture corpus from real snapshots, runbooks per vendor | — |
 
+### State (2026-10-28): U5, the ARM64 path, on a virtual machine
+
+U5 is done as far as a virtual machine can show it; nothing has run on real ARM64 hardware.
+Every piece has its test and its document; the numbers below are from the runs named.
+
+- **The arm64 kernel pins and profiles**: `tests/kernel/matrix.sh` plans and resolves all six
+  machines (four x86_64, `aarch64-virt` and `rpi5` against the arm64 pins): deterministic, the
+  class symbols known to the pinned config of the architecture, `-march=armv8-a` for the
+  virtual machine and `-mcpu=cortex-a76` for the Pi 5; `tests/kernel/run.sh` (46 unit tests, the
+  two fixtures through the binary), the GF63 oracle unchanged, the x86_64 golden plans and
+  `tests/install/golden` unchanged; `kernel-custom` cross-builds an arm64 machine
+  (`ARCH=arm64`; not run yet [VERIFY: a run with `hw=kernel/hw/aarch64-virt.zon`]).
+- **The aarch64 live image** ([live-image.md](live-image.md#aarch64)): built natively on
+  `ubuntu-24.04-arm` (runs 40596256568, 40609186449, 40617102027: 17 minutes for the programs,
+  4.4 for mklive, 1.30 GB, attested). The x86_64 image built unchanged beside it (run
+  40593873482). Found on the way: the arm64 runner has **no `/dev/kvm`**; Void's aarch64
+  repository is `current/aarch64` (the installer, the xbps.d templates and the dev image take
+  the path by architecture now); void-mklive's live getty hook knows ttyS0 only (our image
+  enables `agetty-ttyAMA0` itself); a program built on the arm64 runner without `-mcpu=baseline`
+  (thor) dies of SIGILL on an Apple M1.
+- **The installation and the boot, under hvf on an Apple M1** (2026-10-28, image of run
+  40617102027, commit 09be91c; QEMU 11.1.2, `virt` with GICv3 and `iommu=smmuv3`, `-cpu host`,
+  4 vCPUs, 2560 MiB, NVMe, swtpm on the MMIO TIS interface, QEMU's own AAVMF): the plan sees
+  aarch64, class vm, the TPM, the SMMU through IORT and AES, and misses Secure Boot alone
+  (QEMU's AAVMF build has none; Ubuntu's Secure Boot build stops after its banner under hvf), so
+  the installation ran in `tiered` mode with that one risk acknowledged: **2 min 52 s**, the
+  lowest MemAvailable 1355 MiB (Argon2id with 1 GiB), 82 packages and the kernel from
+  `current/aarch64` through the image's thor, the UKI `linux-6.18.59_1.efi` on
+  `linuxaa64.efi.stub`, Limine's `BOOTAA64.EFI` with the enrolled config hash, the NVRAM entry.
+  The installed system booted to the LUKS prompt and the login on ttyAMA0, and `check.py base`
+  passed **26 of 26** in 4 min 53 s: the UKI's command line, lockdown, AppArmor, every service,
+  DNS over DoT, NTS, `vh-kconf check` with `machine=same devices=0 firmware=0 lost=0`, vh-audit,
+  the desktop programs, nftables, vh-bench, the power button. The installer crashed once on the
+  way, on the firmware without a SecureBoot variable at all (a `pipefail` on the variable's read:
+  fixed in `10-install.sh` and `20-firstboot.sh`, no change where the variable exists).
+- **Not done**: `vh-kconf install` of an arm64 `Image` and the boot assessment of a machine UKI on
+  ARM64; the sandboxes' seccomp filters are x86_64's ([hardware.md](hardware.md#arm64)); Secure
+  Boot enrolment on an ARM64 firmware (`enroll`, `sb` steps) [VERIFY under KVM with a Secure Boot
+  AAVMF]; the Raspberry Pi altogether ([rpi.md](rpi.md)).
+
 ### State (2026-10-26, evening): the three pieces on the VM rig
 
 The first runs of track I, track S and track E on GitHub's KVM rig (`kvm-smoke`, EPYC-Milan ×4,

@@ -183,11 +183,13 @@ state with its numbers):
   substitute was needed. The x86_64 path is byte for byte what it was (`tests/install/run.sh`,
   the GF63 golden files, `limine_diff.sh`).
 - **The rig**: `VH_ARCH=aarch64` turns `tests/vm/vhvm.py` into QEMU's `virt` machine
-  (GICv3, `iommu=smmuv3`, AAVMF, swtpm on `tpm-tis-device`, NVMe, virtio network and display, a
-  USB keyboard, the CDs on virtio-scsi, the live kernel as `/boot/vmlinux`), under KVM where a
-  host has it, under Apple's hvf on a Mac. GitHub's arm64 runner (`ubuntu-24.04-arm`): see
-  the ROADMAP's U5 state for whether it exposes `/dev/kvm`; `kvm-smoke` takes `arch=aarch64`
-  and stops before the installation without it unless `accel=tcg`.
+  (GICv3, `iommu=smmuv3`, AAVMF, swtpm on `tpm-tis-device` with `ppi=off`, NVMe, virtio network
+  and display, a USB keyboard, the CDs on virtio-scsi, the live kernel as `/boot/vmlinux`),
+  under KVM where a host has it, under Apple's hvf on a Mac. GitHub's arm64 runner
+  (`ubuntu-24.04-arm`) has no `/dev/kvm` (live-image run 40593873482), so `kvm-smoke` with
+  `arch=aarch64` stops before the installation unless `accel=tcg`, and the verification ran on
+  a Mac: an installation from the aarch64 image in `tiered` mode (2 min 52 s) and `check.py
+  base` 26 of 26 on the installed system ([ROADMAP](ROADMAP.md#state-2026-10-28-u5-the-arm64-path-on-a-virtual-machine)).
 - **Not done**: the seccomp filters of the browser and viewer sandboxes (`zig/lib/seccomp.zig`,
   `vh-seccomp`) are written with x86_64's system call numbers and architecture check: on an
   ARM64 system the sandbox would kill its program at the first call. Firefox and `vh-open` do
