@@ -12,15 +12,16 @@
 # docs/uni/kernel.md): a symbol of mandatory, a class or the machine fragment that olddefconfig
 # lost fails that machine's job (vh-kconf diff exits 2), the others go on. An aarch64 machine
 # (U5) is cross-built on the same runner with ARCH=arm64: clang and lld need no other toolchain,
-# the result is the uncompressed Image (vh-kconf install takes a bzImage: the machine UKI on
-# arm64 is still to come, docs/uni/ROADMAP.md). The cheap half, plan and resolve on every push,
-# is tests/kernel/matrix.sh in the adapt workflow.
+# the result is the uncompressed Image (Image-vh-KVER, with its EFI stub), which vh-kconf install
+# takes as it takes a bzImage; BUILD's last line is the kernel's "Linux version" banner, which
+# install compares with the image's. The cheap half, plan and resolve on every push, is
+# tests/kernel/matrix.sh in the adapt workflow.
 name: kernel-custom
 on:
   workflow_dispatch:
     inputs:
       hw:
-        description: "hw.zon committed under kernel/hw/, or all: every machine there, x86_64 and aarch64 (no release)"
+        description: "hw.zon committed under kernel/hw/, or all: every machine there, x86_64 and aarch64 (no release); the rigs are qemu-q35 (x86_64) and qemu-virt (aarch64)"
         default: kernel/hw/gf63.zon
       kver:
         description: kernel version (6.18.y)
@@ -219,6 +220,8 @@ jobs:
             # the probe the kernel was resolved from: vh-kconf install refuses it on another machine
             echo "hw.zon: $HW sha256 $(sha256sum "$GITHUB_WORKSPACE/$HW" | cut -d' ' -f1)"
             echo "KBUILD_BUILD_TIMESTAMP=$KBUILD_BUILD_TIMESTAMP KCFLAGS=$KCFLAGS LLVM=1 $(clang --version | head -1)"
+            # the kernel's banner, as the uncompressed arm64 Image carries it (a bzImage's is
+            # compressed: no line then); vh-kconf install compares it with the image's
             strings "$KIMG_PATH" | grep -m1 -E '^Linux version ' || true
           } > "$out/BUILD"
           (cd "$out" && sha256sum * > SHA256SUMS)
