@@ -74,13 +74,18 @@ def find_firmware():
 
 
 def cd_devices(drives):
-    """CD drives for the VM, [(id, path)]: on q35 the IDE ones of the x86 rig; the virt
-    machine has no IDE, so there they sit on one virtio-scsi controller in the order given
-    (sr0, sr1 ... in the guest)."""
+    """CD drives for the VM, [(id, path)]. On q35 as the x86 rig always had them: the live ISO
+    as -cdrom (QEMU puts it on its own AHCI port) and the repository's CD as an ide-cd on
+    another (two ide-cd devices without a bus would share one port, which takes one unit:
+    kvm-smoke run 40628964347). The virt machine has no IDE: there they sit on one virtio-scsi
+    controller in the order given (sr0, sr1 ... in the guest)."""
     out = []
     if ARCH == "aarch64":
         out += ["-device", "virtio-scsi-pci,id=scsi0"]
     for i, (name, path) in enumerate(drives):
+        if ARCH != "aarch64" and name == "live":
+            out += ["-cdrom", path]
+            continue
         out += ["-drive", f"file={path},if=none,id={name},media=cdrom,readonly=on"]
         if ARCH == "aarch64":
             out += ["-device", f"scsi-cd,drive={name},bus=scsi0.0,channel=0,scsi-id={i},lun=0"]
