@@ -258,7 +258,15 @@ Every piece has its test and its document; the numbers below are from the runs n
   The installed system booted to the LUKS prompt and the login on ttyAMA0, and `check.py base`
   passed **26 of 26** in 4 min 53 s: the UKI's command line, lockdown, AppArmor, every service,
   DNS over DoT, NTS, `vh-kconf check` with `machine=same devices=0 firmware=0 lost=0`, vh-audit,
-  the desktop programs, nftables, vh-bench, the power button. The installer crashed once on the
+  the desktop programs, nftables, vh-bench, the power button. On the installed system (QEMU's
+  EDK II edk2-stable202408, `fw_platform_size` 64): `efibootmgr` boots `\EFI\BOOT\BOOTAA64.EFI`
+  first, Limine 12.9.4 started `Void-Linux-6.18.59_1` and `vh-limine-update --status` reads its
+  Boot Loader Interface variables ("one-shot entries: yes"), so the boot assessment would work on
+  this firmware; the TPM is `tpm_tis` on `MSFT0101`, the SMMUv3 probed (`arm-smmu-v3.0.auto`),
+  the plan's tags carry `iommu iommu-active tpm2`; the probe reads the virt machine as QEMU's
+  "QEMU Virtual Machine" with the IORT, GTDT, PPTT and TPM2 tables. `sbctl status` says
+  "system is not booted with UEFI" on a firmware without the SecureBoot variable: sbctl's own
+  test, not the system's. The installer crashed once on the
   way, on the firmware without a SecureBoot variable at all (a `pipefail` on the variable's read:
   fixed in `10-install.sh` and `20-firstboot.sh`, no change where the variable exists).
 - **Not done**: `vh-kconf install` of an arm64 `Image` and the boot assessment of a machine UKI on
