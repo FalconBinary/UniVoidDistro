@@ -145,7 +145,7 @@ USB device built in (`fixed`): a built-in keyboard on USB or SPI becomes the phy
 | Hypervisor | Effect |
 |---|---|
 | QEMU/KVM (q35, OVMF with Secure Boot, swtpm, `intel-iommu` or `virtio-iommu`) | **full** level possible; the test rig `tests/vm/` is such a machine |
-| QEMU's `virt` machine on aarch64 (AAVMF with its Secure Boot build, swtpm on the MMIO TIS interface, `iommu=smmuv3`, under KVM or Apple's hvf) | **full** level possible: the aarch64 rig, `VH_ARCH=aarch64 tests/vm/vhvm.py` ([below](#arm64)); with QEMU's own `edk2-aarch64-code.fd` (no Secure Boot build) **reduced** |
+| QEMU's `virt` machine on aarch64 (AAVMF, swtpm on the MMIO TIS interface, `iommu=smmuv3`, under KVM or Apple's hvf) | the aarch64 rig, `VH_ARCH=aarch64 tests/vm/vhvm.py` ([below](#arm64)). **full** level possible with a Secure Boot build of AAVMF (Debian's and Ubuntu's `qemu-efi-aarch64`) [VERIFY under KVM: under hvf that build stops after its banner]; with QEMU's own `edk2-aarch64-code.fd`, which has no Secure Boot, **reduced**: `tiered` with one risk acknowledged, which is what ran on the Mac |
 | QEMU without a vTPM or an IOMMU, VirtualBox, VMware, Hyper-V | **reduced**: `tiered` only; the host can read the guest's memory anyway (a residual risk named in the report) |
 
 ## Known not supported
