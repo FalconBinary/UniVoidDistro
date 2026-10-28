@@ -48,8 +48,16 @@ if [ -n "$TARGET" ]; then
 	export PKG_CONFIG_LIBDIR="$SYSROOT/usr/lib/pkgconfig" PKG_CONFIG_SYSROOT_DIR="$SYSROOT"
 fi
 arch=${TARGET%%-*}
+# the architecture's baseline CPU, never the build host's: the live image is built on GitHub's
+# runners and runs on any machine of the architecture (an aarch64 thor built for the arm64
+# runner's own cores died of SIGILL on an Apple M1, live-image run 40609186449); and the
+# control-flow protection of each architecture: CET on x86_64, PAC and BTI on aarch64 (hint
+# instructions, no-ops on a core without them)
 cet=""
-case ${arch:-$(uname -m)} in x86_64) cet="-fcf-protection=full -mcpu=baseline" ;; esac
+case ${arch:-$(uname -m)} in
+	x86_64) cet="-fcf-protection=full -mcpu=baseline" ;;
+	aarch64) cet="-mbranch-protection=standard -mcpu=baseline" ;;
+esac
 CFLAGS="-O2 -pipe -Wno-error -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=3 -fstack-protector-strong \
 -fstack-clash-protection $cet -ftrivial-auto-var-init=zero"
 

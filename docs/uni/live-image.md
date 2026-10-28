@@ -146,6 +146,12 @@ is. A cross-build on `ubuntu-latest` was not tried: it would need `qemu-user-sta
 binfmt in the privileged container, and the result would run every package hook under
 emulation [not measured]. The `arch` input of the workflow builds one image or both.
 
+Every program of an image is built for the architecture's baseline CPU (`-Dcpu=baseline`,
+`-mcpu=baseline`: x86-64-v1, ARMv8-A), never for the runner's own cores: the arm64 runner's
+Neoverse cores have instructions an Apple M1 or a Cortex-A72 lack, and thor built for them died
+of SIGILL at the first installation from the image (run 40609186449; `thor/build.sh` passed
+`-mcpu=baseline` on x86_64 only).
+
 The first aarch64 image (live-image run 40596256568, commit 4b529ae, 2026-10-27): the programs
 took 17 minutes on the arm64 runner (4 CPUs), mklive 4.4 minutes; the ISO is 1.30 GB (the
 x86_64 one 1.3 GB), with `linux6.18-6.18.59_1` and the firmware packages of Void's aarch64

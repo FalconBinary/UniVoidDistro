@@ -225,8 +225,10 @@ if [ "$VH_FIRMWARE_TRIM" = yes ]; then
 		vh_firmware_files "$REPO" "$NONFREE" > /tmp/vh-firmware-files.txt
 		if [ -s /tmp/vh-firmware-files.txt ]; then
 			ok "firmware: $(grep -c . /tmp/vh-firmware-files.txt) entries of the firmware packages, $(grep -c ' -> ' /tmp/vh-firmware-files.txt) of them links"
-		else
+		elif vh_packages | grep -qE "$VH_FIRMWARE_PKGS"; then
 			warn "the firmware packages' file lists did not come: firmware the plan names through links under another name may be cut (vh-kconf check names it at the first boot)"
+		else
+			ok "firmware: the plan names no firmware package (a virtual machine without devices that need one)"
 		fi
 		vh_firmware_noextract /tmp/vh-firmware-files.txt > "$MNT/etc/xbps.d/40-vh-firmware.conf"
 	fi
