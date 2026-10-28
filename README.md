@@ -30,14 +30,21 @@ verify   the stock signed UKI always stays in Limine; vh-audit shows the protect
 | speed | built-in drivers, a stage 1 without a shell, no waiting for hardware that is not there |
 | optimisation per machine | every decision is a rule in `hwdb/` with its reason; `vh-plan explain ITEM` says why |
 
-**Current state: M0, U1, U2, U3 and U6 for x86_64 are done** (detect and decide; the runtime
-rules; the machine kernel; our own live image), verified on a KVM rig, not yet on real hardware.
-Since 2026-10-26 three more pieces exist and are verified in containers and on a QEMU rig, not
-on the VM rig: `vh-init` v0.2 as PID 1 with its service manager ([init/README.md](init/README.md)),
-`vh-sched` v1, the scheduler of any topology, U4 ([sched/README.md](sched/README.md)), and an
-SELinux policy of this system, opt-in with `VH_MAC=selinux` ([docs/uni/selinux.md](docs/uni/selinux.md)).
-Next: the first real machine (the GF63), then U5 (ARM64). What is verified and what is not:
-[docs/uni/ROADMAP.md](docs/uni/ROADMAP.md#state-2026-10-26-init-scheduler-selinux-the-desktop-configuration). Track G, the gaming session on tty3, is under way
+**Current state: M0, U1, U2, U3, U4 and U6 are done for x86_64, and U5, the ARM64 path, on a
+virtual machine** (detect and decide; the runtime rules; the machine kernel; the scheduler; our
+own live images for x86_64 and aarch64; the ARM64 installation path), all verified on virtual
+machines, not yet on real hardware. On GitHub's KVM rig `vh-init` v0.2 runs as PID 1 with its
+service manager, runit the fallback of every trial boot ([init/README.md](init/README.md)),
+`vh-sched` v1, the scheduler of any topology, runs under it on the machine kernel
+([sched/README.md](sched/README.md)), and the SELinux policy of this system, opt-in with
+`VH_MAC=selinux` and permissive, boots through the login and the desktop without a denial
+([docs/uni/selinux.md](docs/uni/selinux.md)). The ARM64 path (U5) followed on 2026-10-28: the
+arm64 pins and profiles, the aarch64 live image, the UEFI ARM boot path and the machine UKI,
+installed and checked on QEMU's `virt` machine under hvf ([docs/uni/hardware.md](docs/uni/hardware.md#arm64)).
+Releases carry both images since v0.2.0. Next: the first real machine (the GF63), then the
+Raspberry Pi. What is verified and what is not:
+[docs/uni/ROADMAP.md](docs/uni/ROADMAP.md#state-2026-10-28-u5-the-arm64-path-on-a-virtual-machine).
+Track G, the gaming session on tty3, is under way
 ([docs/uni/game.md](docs/uni/game.md)): a root of its own with the GPU's Vulkan driver, the login
 of `game` in namespaces and its own sound server are built, and the gaming boot, in which only the
 gaming session reaches the kernel's 32-bit code. How to install it on a machine:
