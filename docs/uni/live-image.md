@@ -65,7 +65,8 @@ On Void's official image nothing changes: the installer builds as it does now.
 
 ## Building it: `.github/workflows/live-image.yml`
 
-On demand and on `v*` tags, on `ubuntu-latest`. `live/prebuilt.sh` builds the programs: the
+On demand and on `v*` tags, the x86_64 image on `ubuntu-latest` and the aarch64 one on
+`ubuntu-24.04-arm` ([below](#aarch64)). `live/prebuilt.sh` builds the programs: the
 static ones with Zig on the runner, those linked with the C library in the vh-dev image (Void,
 the Zig of `zig/ZIG_VERSION`). `live/build-image.sh` then runs as root in a privileged Void
 container (mklive needs `chroot` and loop devices): it fetches `void-mklive` at its commit, runs
@@ -123,7 +124,59 @@ directly and would not see a broken UEFI boot.
 
 ## aarch64
 
-With U5: the same workflow with `-a aarch64` once the arm64 pins exist.
+Since U5 the workflow builds two images, one per architecture, from the same scripts:
+`live/prebuilt.sh` builds the programs for the host it runs on (`uname -m`: the static ones
+with `-Dtarget=ARCH-linux -Dcpu=baseline`, the C-library ones, thor and the desktop in the
+vh-dev image of that architecture), `live/build-image.sh` runs `mklive.sh -a ARCH` with the
+GRUB of that architecture (`live/mklive.pins`: `grub-i386-efi grub-x86_64-efi` or
+`grub-arm64-efi`) and checks `EFI/BOOT/BOOTAA64.EFI` and `/boot/vmlinux` (mklive's name for the
+uncompressed arm64 `Image`) where the x86_64 image has `BOOTX64.EFI` and `/boot/vmlinuz`. The
+ISO is `univoiddistro-live-aarch64-COMMIT.iso`, with the same `SHA256SUMS`, `BUILD` (`ARCH=`
+added) and `live-packages.txt`, the repository at the commit in `/root/vh`, the prebuilt programs
+for aarch64 in `/usr/local/lib/vh/prebuilt` (the desktop as `desktop/aarch64-plain` and
+`desktop/aarch64-btmenu`, one build for every ARMv8 core: there is no x86-64 level to pick by),
+and its own build provenance attestation; the artifact is `univoiddistro-live-aarch64`.
+
+**Where it is built: natively, on GitHub's arm64 runner** (`ubuntu-24.04-arm`, the Void
+aarch64 container, which `ghcr.io/void-linux/void-glibc-full` provides). mklive chroots into
+the image's root to configure it and to build its initramfs, and `register_binfmt` in its
+`lib.sh` would run a foreign root through QEMU user emulation; on a host of the image's own
+architecture nothing is emulated, and the desktop is compiled for the host as the x86_64 one
+is. A cross-build on `ubuntu-latest` was not tried: it would need `qemu-user-static` and
+binfmt in the privileged container, and the result would run every package hook under
+emulation [not measured]. The `arch` input of the workflow builds one image or both.
+
+Every program of an image is built for the architecture's baseline CPU (`-Dcpu=baseline`,
+`-mcpu=baseline`: x86-64-v1, ARMv8-A), never for the runner's own cores: the arm64 runner's
+Neoverse cores have instructions an Apple M1 or a Cortex-A72 lack, and thor built for them died
+of SIGILL at the first installation from the image (run 40609186449; `thor/build.sh` passed
+`-mcpu=baseline` on x86_64 only).
+
+The first aarch64 image (live-image run 40596256568, commit 4b529ae, 2026-10-27): the programs
+took 17 minutes on the arm64 runner (4 CPUs), mklive 4.4 minutes; the ISO is 1.30 GB (the
+x86_64 one 1.3 GB), with `linux6.18-6.18.59_1` and the firmware packages of Void's aarch64
+base (`linux-firmware-network`, `-broadcom`, `-qualcomm`); the prebuilt programs are 180 files,
+21 MB; the attestation was issued. What the first attempt found (run 40593873482): the dev
+image's Dockerfile wrote the x86_64 repository path into an aarch64 container; Void keeps the
+aarch64 packages under `current/aarch64`, and the installer, the xbps.d templates and the
+Dockerfile now take the path by architecture (`install/lib.sh`, `vh_repo_sub`).
+
+**`/dev/kvm` on the arm64 runner: none.** The aarch64 job prints `ls -l /dev/kvm` or "no
+/dev/kvm on this runner" as its first step. Run 40593873482 (2026-10-27, `ubuntu-24.04-arm`:
+4 CPUs, 15947 MiB) printed "no /dev/kvm on this runner": GitHub's hosted arm64 runners expose
+no KVM, so the aarch64 rig cannot run there with hardware virtualisation (`kvm-smoke` with
+`arch=aarch64` stops before the installation unless `accel=tcg` asks for the emulated run,
+hours long); the verification of U5 ran under Apple's hvf on a Mac instead
+([hardware.md](hardware.md#arm64), [ROADMAP](ROADMAP.md)).
+
+The rig (`VH_ARCH=aarch64 tests/vm/vhvm.py`) boots the image's `/boot/vmlinux` and
+`/boot/initrd` on QEMU's `virt` machine with AAVMF, as the x86_64 rig boots `vmlinuz` on q35
+with OVMF ([hardware.md](hardware.md#virtual-machines)). The live system logs the rig in on
+`ttyAMA0`: void-mklive's getty hook (`dracut/vmklive/getty-serial.sh`) enables a getty for
+`console=ttyS0`, `hvc0` and `hvsi0` only, so the image carries
+`/etc/runit/core-services/98-vh-live-serial.sh`, which does the same for `ttyAMA0`. Verified
+on 2026-10-28 with the image of run 40617102027 under hvf: the installation took 2 min 52 s
+and `check.py base` passed 26 of 26 ([ROADMAP](ROADMAP.md#state-2026-10-28-u5-the-arm64-path-on-a-virtual-machine)).
 
 ## Decisions (2026-10-20)
 
@@ -135,4 +188,4 @@ With U5: the same workflow with `-a aarch64` once the arm64 pins exist.
 3. **Trust**: the sha256 and GitHub's build provenance attestation now; a project minisign key
    later (it needs a CI secret).
 4. **Firmware**: what the official base image carries.
-5. **aarch64**: with U5.
+5. **aarch64**: with U5; built natively on the arm64 runner (above).

@@ -4,7 +4,8 @@ hostonly_cmdline="no"
 compress="@VH_INITRD_COMPRESS@"
 early_microcode="yes"
 reproducible="yes"
-uefi_stub="/usr/lib/systemd/boot/efi/linuxx64.efi.stub"
+# the EFI stub of this architecture: linuxx64 on x86_64, linuxaa64 on aarch64 (install/lib.sh)
+uefi_stub="/usr/lib/systemd/boot/efi/linux@VH_EFI_ARCH@.efi.stub"
 # Needed for the LUKS passphrase: a USB keyboard on any machine, and every driver on the way
 # from this machine's keyboards to their controller (the plan: i8042/atkbd, I2C-HID, VMD for
 # the disk ...).

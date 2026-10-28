@@ -1,19 +1,21 @@
 #!/bin/sh
-# The machine kernel of every x86_64 machine in kernel/hw, without a kernel tree
+# The machine kernel of every machine in kernel/hw, x86_64 and aarch64, without a kernel tree
 # (docs/uni/kernel.md, "The CI matrix"). Each machine is planned in tiered mode (a kernel can be
-# built for a machine the strict gate would refuse to install on) and resolved with its plan,
-# twice; then the checks that need no kernel source:
+# built for a machine the strict gate would refuse to install on) and resolved with its plan
+# against the pins of its architecture (kernel/pins/README.md), twice; then the checks that need
+# no kernel source:
 #   - the two runs give the same bytes;
-#   - every symbol a class of the plan sets to a value is known to the pinned config (a symbol
-#     the kernel does not have would be lost by olddefconfig, and a lost class symbol fails the
-#     build);
+#   - every symbol a class of the plan sets to a value is known to the pinned config of that
+#     architecture (a symbol the kernel does not have would be lost by olddefconfig, and a lost
+#     class symbol fails the build);
 #   - no fragment conflict involves a class or the machine fragment;
 #   - the invariants of the kernel-custom build hold in the requested .config already;
-#   - NR_CPUS is the plan's and within the pinned config's range;
-#   - kcflags carries the plan's -march, and clang accepts it (skipped without clang).
-# The aarch64 fixtures wait for the arm64 pins (U5). The rest, which needs the kernel source
-# (localyesconfig, olddefconfig, vh-kconf diff, bzImage), is the kernel-custom workflow with
-# hw=all.
+#   - NR_CPUS is the plan's and within the range the architecture allows (x86_64: the pinned
+#     config's CONFIG_NR_CPUS_RANGE_*; arm64: 2..4096, arch/arm64/Kconfig);
+#   - kcflags carries the plan's -march (aarch64: -mcpu for a core, -march for armv8-a), and
+#     clang accepts it for that target (skipped without clang).
+# The rest, which needs the kernel source (localyesconfig, olddefconfig, vh-kconf diff, the
+# image), is the kernel-custom workflow with hw=all.
 #   sh tests/kernel/matrix.sh
 # Like run.sh: Zig cross-builds for Linux of the host's architecture, a throwaway container runs
 # the binaries, the inputs are streamed in with tar. The results stay in build/km/MACHINE.
@@ -37,7 +39,6 @@ tar -C "$repo" -cf - kernel/pins kernel/profiles kernel/hw hwdb vh.conf.example 
 		a=$(sed -n "s/^    \.arch = \"\(.*\)\",\$/\1/p" "$hwf")
 		mkdir -p "/tmp/m/$m"
 		echo "$a" > "/tmp/m/$m/arch"
-		[ "$a" = x86_64 ] || continue
 		for run in 1 2; do
 			# both runs in the same directory: the reports name the paths they read
 			d=/tmp/w
@@ -56,9 +57,6 @@ tar -C "$repo" -cf - kernel/pins kernel/profiles kernel/hw hwdb vh.conf.example 
 	cd /tmp/m && tar -cf - .
 ' | tar -C "$out" -xf -
 
-pinned=$repo/kernel/pins/x86_64-dotconfig
-range_begin=$(sed -n 's/^CONFIG_NR_CPUS_RANGE_BEGIN=//p' "$pinned")
-range_end=$(sed -n 's/^CONFIG_NR_CPUS_RANGE_END=//p' "$pinned")
 clang_ok=0
 if command -v clang >/dev/null 2>&1; then
 	clang_ok=1
@@ -74,10 +72,20 @@ for dir in "$out"/*/; do
 	m=$(basename "$dir")
 	[ -f "$dir/arch" ] || continue
 	a=$(cat "$dir/arch")
-	if [ "$a" != x86_64 ]; then
-		echo "$m: $a, not built before the arm64 pins (U5)"
-		continue
-	fi
+	# the pins and the limits of this architecture (kernel/pins/README.md, kernel/src/alias.zig)
+	case $a in
+		x86_64)
+			pinned=$repo/kernel/pins/x86_64-dotconfig
+			range_begin=$(sed -n 's/^CONFIG_NR_CPUS_RANGE_BEGIN=//p' "$pinned")
+			range_end=$(sed -n 's/^CONFIG_NR_CPUS_RANGE_END=//p' "$pinned")
+			target=x86_64-linux-gnu ;;
+		aarch64)
+			pinned=$repo/kernel/pins/aarch64-dotconfig
+			# arch/arm64/Kconfig: NR_CPUS "range 2 4096" (no CONFIG_NR_CPUS_RANGE_* symbols there)
+			range_begin=2 range_end=4096
+			target=aarch64-linux-gnu ;;
+		*) echo "FAIL $m: no pins for the architecture $a"; rc=1; continue ;;
+	esac
 	machines=$((machines + 1))
 	bad=""
 	fail() { bad="$bad
@@ -134,22 +142,26 @@ for dir in "$out"/*/; do
 			fail "NR_CPUS=$got_nr is outside the pinned config's range $range_begin..$range_end: olddefconfig would reset it"
 		fi
 		got_flags=$(cat "$d/resolve/kcflags")
-		[ -n "$march" ] && [ "$got_flags" = "-march=$march" ] || fail "kcflags \"$got_flags\", the plan's -march \"$march\""
+		# the plan's march as the compiler takes it: -march on x86_64; on aarch64 a core is -mcpu,
+		# the armv8-a of a virtual machine -march (docs/uni/kernel.md, "-march")
+		want_flags="-march=$march"
+		case $a:$march in aarch64:armv*) ;; aarch64:*) want_flags="-mcpu=$march" ;; esac
+		[ -n "$march" ] && [ "$got_flags" = "$want_flags" ] || fail "kcflags \"$got_flags\", the plan's march \"$march\" ($want_flags)"
 		if [ "$clang_ok" = 1 ] && [ -n "$march" ]; then
-			printf 'int x;\n' | clang --target=x86_64-linux-gnu -march="$march" -x c -fsyntax-only - 2> "$d/clang.err" \
-				|| fail "clang does not know -march=$march: $(head -1 "$d/clang.err")"
+			printf 'int x;\n' | clang --target="$target" "$want_flags" -x c -fsyntax-only - 2> "$d/clang.err" \
+				|| fail "clang does not know $want_flags for $target: $(head -1 "$d/clang.err")"
 		fi
 	fi
 	if [ -n "$bad" ]; then
 		echo "FAIL $m:$bad"
 		rc=1
 	else
-		printf '%-22s tier %s; %s; %s LSMOD modules, %s fragment symbols; NR_CPUS %s; %s\n' "$m" \
+		printf '%-22s %-8s tier %s; %s; %s LSMOD modules, %s fragment symbols; NR_CPUS %s; %s\n' "$m" "$a" \
 			"$(penv "$d" TIER)" "$(echo "$classes" | wc -w | tr -d ' ') classes" \
 			"$(grep -c . "$d/resolve/lsmod")" "$(grep -c -e '^CONFIG_' -e '^# CONFIG_.* is not set$' "$d/resolve/fragment.config")" \
 			"$got_nr" "$got_flags"
 	fi
 done
-[ "$machines" -gt 0 ] || { echo "no x86_64 machine in kernel/hw"; exit 1; }
-[ "$rc" = 0 ] && echo "every x86_64 machine of kernel/hw plans and resolves ($machines): deterministic, the class symbols known to the pinned config, no conflict with a class, the invariants, NR_CPUS and -march"
+[ "$machines" -gt 0 ] || { echo "no machine in kernel/hw"; exit 1; }
+[ "$rc" = 0 ] && echo "every machine of kernel/hw plans and resolves ($machines, x86_64 and aarch64): deterministic, the class symbols known to the pinned config of its architecture, no conflict with a class, the invariants, NR_CPUS and the compiler's -march or -mcpu"
 exit "$rc"

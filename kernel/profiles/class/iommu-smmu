@@ -1,0 +1,13 @@
+# kernel/profiles/class/iommu-smmu: the ARM SMMU described by the IORT table (arm.iommu.iort).
+#
+# A class fragment: vh-kconf resolve applies it when the machine's plan names it
+# (vh-plan, hwdb/); a symbol of it that does not survive olddefconfig is an error, as for
+# mandatory.
+
+# The system MMU of ARM servers and laptops, v3 (ACPI machines, QEMU's virt with
+# iommu=smmuv3) and v2 (older boards); the page-table format they share. The DMA protection
+# itself (iommu.strict=1, the default of IOMMU_DEFAULT_DMA_STRICT) is in hardening, as for
+# class/iommu-vtd and class/iommu-amd.
+CONFIG_ARM_SMMU=y
+CONFIG_ARM_SMMU_V3=y
+CONFIG_IOMMU_IO_PGTABLE_LPAE=y

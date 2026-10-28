@@ -24,9 +24,9 @@
     .missing = .{
         .{
             .id = "uefi",
-            .why = "On ARM64 the verified boot chain of this system needs UEFI (servers, laptops); a Raspberry Pi boots from its own firmware.",
+            .why = "On ARM64 the verified boot chain of this system needs UEFI (servers, laptops: Limine, the signed UKI, Secure Boot with our keys); a Raspberry Pi boots from its own firmware.",
             .risk = "The board's firmware boots the kernel unverified: whoever holds the board for a while can replace it and read what is typed.",
-            .fix = "A UEFI firmware for the board where one exists [VERIFY], or the Raspberry Pi's own secure boot (milestone U5: its key is burnt into OTP, irreversibly).",
+            .fix = "A UEFI firmware for the board where one exists [VERIFY], or the Raspberry Pi's own secure boot, which the installer never sets up: its key goes into the board's OTP memory irreversibly (docs/uni/rpi.md).",
             .floor = false,
         },
         .{
@@ -93,6 +93,7 @@
         .{ .value = "cpu-arm64", .rules = .{"arm.kernel"} },
         .{ .value = "cpu-arm64-aes", .rules = .{"arm.aes"} },
         .{ .value = "gpu-vc4", .rules = .{"gpu.vc4"} },
+        .{ .value = "platform-rpi", .rules = .{"board.rpi"} },
         .{ .value = "storage-mmc", .rules = .{"storage.mmc"} },
     },
     .features = .{
@@ -127,17 +128,54 @@
         .{ .value = "xhci_plat_hcd", .rules = .{"keyboard usb"} },
     },
     .modules = .{
+        .{ .value = "aes_ce_blk", .rules = .{
+            "device cpu cpu0",
+            "device cpu cpu1",
+            "device cpu cpu2",
+            "device cpu cpu3",
+        } },
+        .{ .value = "aes_ce_cipher", .rules = .{
+            "device cpu cpu0",
+            "device cpu cpu1",
+            "device cpu cpu2",
+            "device cpu cpu3",
+        } },
         .{ .value = "bcm2835_wdt", .rules = .{"device platform 107d200000.watchdog"} },
         .{ .value = "brcmfmac", .rules = .{"device sdio mmc1:0001:1"} },
         .{ .value = "dwc3", .rules = .{"device platform 1f00200000.usb"} },
+        .{ .value = "ghash_ce", .rules = .{
+            "device cpu cpu0",
+            "device cpu cpu1",
+            "device cpu cpu2",
+            "device cpu cpu3",
+        } },
         .{ .value = "hci_uart", .rules = .{"device serial serial0-0"} },
         .{ .value = "hid_generic", .rules = .{"device hid 0003:046D:C31C.0001"} },
         .{ .value = "macb", .rules = .{"device platform 1f00100000.ethernet"} },
         .{ .value = "mmc_block", .rules = .{"device mmc mmc0:aaaa"} },
         .{ .value = "pcie_brcmstb", .rules = .{"device platform 1000120000.pcie"} },
+        .{ .value = "polyval_ce", .rules = .{
+            "device cpu cpu0",
+            "device cpu cpu1",
+            "device cpu cpu2",
+            "device cpu cpu3",
+        } },
         .{ .value = "rp1", .rules = .{"device pci 0001:01:00.0"} },
         .{ .value = "rtc_rpi", .rules = .{"device platform 107d004000.rtc"} },
         .{ .value = "sdhci_brcmstb", .rules = .{ "device platform 1000fff000.mmc", "device platform 1001100000.mmc" } },
+        .{ .value = "sha3_ce", .rules = .{
+            "device cpu cpu0",
+            "device cpu cpu1",
+            "device cpu cpu2",
+            "device cpu cpu3",
+        } },
+        .{ .value = "shpchp", .rules = .{"device pci 0001:00:00.0"} },
+        .{ .value = "sm4_ce_gcm", .rules = .{
+            "device cpu cpu0",
+            "device cpu cpu1",
+            "device cpu cpu2",
+            "device cpu cpu3",
+        } },
         .{ .value = "usbcore", .rules = .{ "device usb 1-1", "device usb usb1" } },
         .{ .value = "usbhid", .rules = .{"device usb 1-1:1.0"} },
         .{ .value = "v3d", .rules = .{"device platform 1002000000.v3d"} },
@@ -146,7 +184,7 @@
     },
     .internal_input = .{},
     .exports = .{},
-    .notes = .{},
+    .notes = .{.{ .value = "A Raspberry Pi has no UEFI, so VH_SECURITY=strict refuses it (the uefi requirement): nothing verifies the kernel it boots. VH_SECURITY=tiered installs it with that risk confirmed. The Pi's own secure boot would close the gap, but its key goes into the board's OTP memory once and for all: the installer never writes it; the runbook docs/uni/rpi.md says what it means [VERIFY].", .rules = .{"board.rpi"} }},
     .luks = .{
         .cipher = "aes-xts-plain64",
         .key_size = 512,

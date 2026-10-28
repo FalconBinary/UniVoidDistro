@@ -8,9 +8,12 @@ not only of the laptop void-hardperf-light was written for. `vh-plan` decides fr
 
 ## The CI matrix
 
-Every x86_64 machine of `kernel/hw` (today gf63, amd-desktop, intel-hybrid-laptop, qemu-q35)
-gets its kernel resolved on every push and built on request. The aarch64 fixtures stay out
-until U5: there are no arm64 pins (Void's arm64 `.config` and module tables) to resolve against.
+Every machine of `kernel/hw` (gf63, amd-desktop, intel-hybrid-laptop, qemu-q35 on x86_64;
+aarch64-virt and rpi5 on aarch64 since U5) gets its kernel resolved on every push and built on
+request, against the pins of its architecture (`kernel/pins/README.md`: Void's `.config` and
+module tables for x86_64 and for aarch64) and with the fragment of its architecture
+(`kernel/profiles/arch/x86_64`, `arch/aarch64`: what only one of them has, the RTC driver, the
+32-bit ABI, the compressed image; the universal fragments name nothing of one architecture).
 
 **On every push** (the `adapt` workflow, `sh tests/kernel/matrix.sh`, a few seconds; it runs on
 the Mac as well): each machine is planned in tiered mode (a kernel can be built for a machine
@@ -23,16 +26,18 @@ no kernel source:
 | every symbol a class of the plan sets is known to the pinned config | a class symbol olddefconfig would drop: the build would fail on it |
 | no fragment conflict involves a class or the machine fragment | two classes that disagree, a later fragment overriding a driver |
 | the invariants of the build hold in the requested `.config` | a profile that lost `MODULES=n`, sched_ext, BTF, lockdown or the io_uring ban |
-| `NR_CPUS` is the plan's and within the pinned range (2..512) | a machine with more CPUs than the config allows |
-| `kcflags` is the plan's `-march`, and clang accepts it | a CPU the compiler does not know: `znver5` needs clang 19 or newer [VERIFY], and the build takes the clang of `ubuntu-latest` |
+| `NR_CPUS` is the plan's and within the range of its architecture (x86_64: the pinned config's 2..512; arm64: 2..4096 of `arch/arm64/Kconfig`) | a machine with more CPUs than the config allows |
+| `kcflags` is the plan's `-march` (aarch64: `-mcpu` for a core), and clang accepts it for that target | a CPU the compiler does not know: `znver5` needs clang 19 or newer [VERIFY], and the build takes the clang of `ubuntu-latest` |
 
 Before this, `tests/kernel/run.sh` resolved the GF63 only and `tests/adapt/run.sh` planned every
 machine without resolving.
 
 **On request** (the `kernel-custom` workflow with `hw=all`): one job per machine, in parallel,
 each the whole build of [kernel/README.md](../../kernel/README.md): the PGP-verified tarball, the
-plan, resolve, localyesconfig, olddefconfig, `vh-kconf diff`, the invariants, bzImage with the
-plan's `-march`. A symbol of `mandatory`, of a class the plan names or of the machine fragment
+plan, resolve, localyesconfig, olddefconfig, `vh-kconf diff`, the invariants, the image with the
+plan's `-march` (a bzImage on x86_64; on aarch64 `ARCH=arm64` and the uncompressed `Image`,
+cross-built by the same clang and lld, which need no other toolchain for it). A symbol of
+`mandatory`, of a class the plan names or of the machine fragment
 that olddefconfig did not keep makes `diff` exit 2 and fails that machine's job; the others go on
 (`fail-fast: false`), and a failed job keeps its plan, its resolve output and its diff report
 as the artifact `kernel-custom-NAME-KVER-failed`. A run for all machines makes no release (a
@@ -55,7 +60,10 @@ top of the CPU's, so `-march` chooses the integer instructions and the tuning.
 
 - **A model table** in `hwdb/`: `cpu.intel.march.*` (Skylake to Comet Lake: `skylake`; Tiger
   Lake; Alder Lake and Raptor Lake: `alderlake`), `cpu.amd.march.*` (Zen 2 to Zen 5:
-  `znver2` .. `znver5`), and on ARM `-mcpu` by core (U5).
+  `znver2` .. `znver5`), and on ARM the core (`arm.mcpu.*`: Cortex-A72, Cortex-A76, Neoverse
+  N1). The scalar is `march` on both; on aarch64 clang's `-march` takes only architecture
+  names, so `resolve` writes a core as `-mcpu=cortex-a76` and the `armv8-a` of a virtual
+  machine as `-march=armv8-a` (`kcflags()` in `kernel/src/resolve.zig`).
 - **Else the x86-64 level** of the CPU flags (`x86.march.v2` .. `v4`, a lower priority): the
   instruction set the CPU has for sure, with no tuning for a model.
 - **A virtual machine always gets the level** (`armv8-a` on ARM): the model rules carry
@@ -70,6 +78,8 @@ top of the CPU's, so `-march` chooses the integer instructions and the tuning.
 | amd-desktop | AMD, 0x19, 0x61: Ryzen 9 7950X3D, Zen 4 | `cpu.amd.march.znver4` | `znver4` |
 | intel-hybrid-laptop | Intel, 6, 0x9A: i7-1260P, Alder Lake-P | `cpu.intel.march.alderlake` | `alderlake` |
 | qemu-q35 | QEMU's TCG CPU (AMD, 6, 6), a virtual machine | `x86.march.v3` | `x86-64-v3` |
+| aarch64-virt | Apple's cores under the Virtualization framework (implementer 0x61), a virtual machine | `arm.mcpu.generic` | `-march=armv8-a` |
+| rpi5 | Cortex-A76 (0x41, 0xd0b) | `arm.mcpu.cortex-a76` | `-mcpu=cortex-a76` |
 
 The golden plans pin each value (`VH_PLAN_MARCH` in `tests/adapt/golden/*/strict/plan.env`); the
 unit test "-march: the CPU model's on bare metal, the x86-64 level in a virtual machine" in

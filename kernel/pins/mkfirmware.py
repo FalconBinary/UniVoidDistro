@@ -6,9 +6,10 @@ are zstd-compressed ELF files) and the firmware records of modules.builtin.modin
 drivers built into the kernel. Nothing from the package is loaded or run.
 
     python3 -I kernel/pins/mkfirmware.py PACKAGE.xbps kernel/pins/modules.builtin.modinfo > kernel/pins/modules.firmware
+    python3 -I kernel/pins/mkfirmware.py PACKAGE.xbps kernel/pins/aarch64-modules.builtin.modinfo > kernel/pins/aarch64-modules.firmware
 
-The package must be the one kernel/pins/README.md pins (its SHA-256 is checked); zstd is the
-only tool it needs.
+The package must be one kernel/pins/README.md pins, named as Void names it (its SHA-256 is
+checked against PINNED, by file name); zstd is the only tool it needs.
 """
 import hashlib
 import struct
@@ -16,7 +17,11 @@ import subprocess
 import sys
 import tarfile
 
-PINNED_SHA256 = "5d4f1e5a600be214472b6ab80736d45078dd9cf0e31dd71f4be0ebf7d4ee22a5"
+# the pinned packages, one per architecture (kernel/pins/README.md)
+PINNED = {
+    "linux6.18-6.18.57_1.x86_64.xbps": "5d4f1e5a600be214472b6ab80736d45078dd9cf0e31dd71f4be0ebf7d4ee22a5",
+    "linux6.18-6.18.59_1.aarch64.xbps": "384f24feca187ed28af4f02b9807a3f7c6a42a7cd7f701dd40e0e0dbf51955b5",
+}
 
 
 def normalize(name):
@@ -47,12 +52,16 @@ def modinfo(elf):
 
 
 def main(package, builtin_modinfo):
+    pkg = package.rsplit("/", 1)[-1]
+    pinned = PINNED.get(pkg)
+    if pinned is None:
+        sys.exit(f"{package}: not a pinned package (one of {', '.join(sorted(PINNED))})")
     h = hashlib.sha256()
     with open(package, "rb") as f:
         for chunk in iter(lambda: f.read(1 << 20), b""):
             h.update(chunk)
-    if h.hexdigest() != PINNED_SHA256:
-        sys.exit(f"{package}: sha256 {h.hexdigest()}, the pin says {PINNED_SHA256}")
+    if h.hexdigest() != pinned:
+        sys.exit(f"{package}: sha256 {h.hexdigest()}, the pin says {pinned}")
     pairs = set()
     unpack = subprocess.Popen(["zstd", "-dc", package], stdout=subprocess.PIPE)
     modules = 0
@@ -81,7 +90,7 @@ def main(package, builtin_modinfo):
                 pairs.add((normalize(r[:dot]), r[dot + 1 + len("firmware="):]))
                 builtin += 1
     print("# kernel/pins/modules.firmware: MODULE FILE, one line per firmware file a module names")
-    print(f"# (MODULE_FIRMWARE) in linux6.18-6.18.57_1.x86_64.xbps: {modules} modules read, {builtin} built-in records;")
+    print(f"# (MODULE_FIRMWARE) in {pkg}: {modules} modules read, {builtin} built-in records;")
     print("# written by kernel/pins/mkfirmware.py, see kernel/pins/README.md. A FILE may hold a glob.")
     for mod, fw in sorted(pairs):
         print(f"{mod} {fw}")

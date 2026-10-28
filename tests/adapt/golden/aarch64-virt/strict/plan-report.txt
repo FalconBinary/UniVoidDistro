@@ -1,6 +1,6 @@
 vh-plan report
 machine: aarch64-virt (Apple Inc. Apple Virtualization Generic Platform; ), arch aarch64, 3904 MiB, 4 CPUs
-module tables: none for this architecture: only the drivers the running system bound
+module tables: the pinned stock kernel's
 security: strict; tier: reduced
 tags: acpi disk disk-discard disk-on-virtio_pci disk-virtio efi efi64 keyboard keyboard-usb power-button vm wired
 
@@ -82,13 +82,9 @@ scalars (4):
 
 LUKS: aes-xts-plain64, 512-bit key, Argon2id 1048576 KiB, 4 threads
 kernel: NR_CPUS 4, -march armv8-a
-modules of the devices (8): hid_generic usbcore usbhid virtio_pci virtio_rng virtiofs vmw_vsock_virtio_transport xhci_pci
+modules of the devices (17): button cppc_cpufreq efi_pstore hid_generic processor rtc_efi usbcore usbhid virtio_balloon virtio_blk virtio_console virtio_net virtio_pci virtio_rng virtiofs vmw_vsock_virtio_transport xhci_pci
 
-Devices no driver, table or rule knows (16):
-  acpi ACPI0007:00 acpi:ACPI0007:
-  acpi ACPI0007:01 acpi:ACPI0007:
-  acpi ACPI0007:02 acpi:ACPI0007:
-  acpi ACPI0007:03 acpi:ACPI0007:
+Devices no driver, table or rule knows (11):
   acpi ARMH0061:00 acpi:ARMH0061:
   acpi LNXSYBUS:00 acpi:LNXSYBUS:
   acpi LNXSYBUS:01 acpi:LNXSYBUS:
@@ -98,6 +94,5 @@ Devices no driver, table or rule knows (16):
   dmi id dmi:bvnAppleInc.:bvr2075.140.4.0.0:bd07/20/2025:svnAppleInc.:pnAppleVirtualizationGenericPlatform:pvr1:cvnAppleInc.:ct3:cvr1:sku:
   pci 0000:00:00.0 pci:v0000106Bd00001A05sv00000000sd00000000bc06sc00i00
   platform Fixed MDIO bus.0 platform:Fixed MDIO bus
-  platform efivars.0 platform:efivars
   platform psci-cpuidle platform:psci-cpuidle
   platform regulatory.0 platform:regulatory

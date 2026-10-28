@@ -74,7 +74,8 @@ module), `firmware_none` (the matched devices' modules keep no firmware), `cmdli
 
 Scalars the system reads: `class` (laptop, desktop, server, vm, sbc), `march` (the kernel's
 `-march` when it is built elsewhere: the CPU model's on real hardware, the x86-64 level or
-`armv8-a` in a virtual machine, [docs/uni/kernel.md](../docs/uni/kernel.md#-march)),
+`armv8-a` in a virtual machine; on aarch64 a core name, which `resolve` writes as `-mcpu`,
+[docs/uni/kernel.md](../docs/uni/kernel.md#-march)),
 `renderer` (gles2, pixman), `watchdog`, `luks_cipher`, `luks_memory`.
 
 The modules of a device are what the running system bound, or, without a driver, what the

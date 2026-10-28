@@ -1,5 +1,5 @@
 #!/bin/bash
-# Stage 1: installation from the Void live USB (glibc, x86_64), as root.
+# Stage 1: installation from the live USB (glibc; x86_64, or aarch64 with UEFI since U5), as root.
 #
 #   cp vh.conf.example vh.conf && vi vh.conf      -- at minimum: VH_DISK
 #   ./install/10-install.sh --dry-run             -- show the plan without changing anything
@@ -47,8 +47,9 @@ if [ "$DRY_RUN" = 0 ] && [ -r /proc/meminfo ]; then
 	trap 'kill '"$!"' 2>/dev/null || true' EXIT
 fi
 MNT=/mnt
-REPO=$VH_MIRROR/current
-NONFREE=$VH_MIRROR/current/nonfree
+# the repository of this architecture: MIRROR/current on x86_64, MIRROR/current/aarch64 on aarch64
+REPO=$VH_MIRROR/current$(vh_repo_sub)
+NONFREE=$REPO/nonfree
 # the live environment's own xbps (the headers, Zig's dependencies, xbps itself) takes the same
 # mirror: /etc/xbps.d overrides the image's /usr/share/xbps.d file of this name (the default
 # mirror was unreachable for hours on 2026-10-26; the rig passes another through VH_MIRROR)
@@ -57,7 +58,9 @@ NONFREE=$VH_MIRROR/current/nonfree
 # ---------------------------------------------------------------- checks
 say "checks"
 [ -d /sys/firmware/efi/efivars ] || die "not booted in UEFI mode"
-[ "$(uname -m)" = x86_64 ] || die "x86_64 required: the ARM64 installation path is milestone U5 (docs/uni/ROADMAP.md); vh-plan already plans ARM64 machines"
+# x86_64 or aarch64, both through UEFI (checked above); the boot files by architecture (lib.sh)
+VH_ARCH=$(vh_arch)
+VH_EFI_BOOT=$(vh_efi_boot)
 [ -n "$VH_DISK" ] || die "VH_DISK is not set in vh.conf"
 [ -b "$VH_DISK" ] || die "$VH_DISK is not a block device"
 case $(lsblk -dno TYPE "$VH_DISK") in disk) ;; *) die "$VH_DISK is not a whole disk" ;; esac
@@ -66,7 +69,10 @@ if lsblk -no MOUNTPOINTS "$VH_DISK" 2>/dev/null | grep -q .; then
 fi
 size_gib=$(( $(blockdev --getsize64 "$VH_DISK") / 1073741824 ))
 [ "$size_gib" -ge 20 ] || die "disk smaller than 20 GiB"
-sb=$(od -An -t u1 -j4 -N1 /sys/firmware/efi/efivars/SecureBoot-* 2>/dev/null | tr -d ' ')
+# a firmware without Secure Boot support has no SecureBoot variable at all (QEMU's own AAVMF
+# build, the aarch64 rig under hvf): then od finds no file, which pipefail would turn into an
+# exit; the gate names the missing Secure Boot itself
+sb=$(od -An -t u1 -j4 -N1 /sys/firmware/efi/efivars/SecureBoot-* 2>/dev/null | tr -d ' ' || true)
 [ "${sb:-0}" = 0 ] || warn "Secure Boot is on: the live image could not have booted this way; check the firmware"
 ESP_PART=$(part "$VH_DISK" 1)
 LUKS_PART=$(part "$VH_DISK" 2)
@@ -219,8 +225,10 @@ if [ "$VH_FIRMWARE_TRIM" = yes ]; then
 		vh_firmware_files "$REPO" "$NONFREE" > /tmp/vh-firmware-files.txt
 		if [ -s /tmp/vh-firmware-files.txt ]; then
 			ok "firmware: $(grep -c . /tmp/vh-firmware-files.txt) entries of the firmware packages, $(grep -c ' -> ' /tmp/vh-firmware-files.txt) of them links"
-		else
+		elif vh_packages | grep -qE "$VH_FIRMWARE_PKGS"; then
 			warn "the firmware packages' file lists did not come: firmware the plan names through links under another name may be cut (vh-kconf check names it at the first boot)"
+		else
+			ok "firmware: the plan names no firmware package (a virtual machine without devices that need one)"
 		fi
 		vh_firmware_noextract /tmp/vh-firmware-files.txt > "$MNT/etc/xbps.d/40-vh-firmware.conf"
 	fi
@@ -242,7 +250,7 @@ if [ "$DRY_RUN" = 1 ]; then echo "   + /etc/thor/policy.conf: mode=learn"
 else printf '# thor (docs/18): enforce -- the policy applies; learn -- only while the system is being installed\nmode=learn\n' > "$MNT/etc/thor/policy.conf"; fi
 thor_install() {
 	# the programs take libxbps with the policy from their own tree (rpath $ORIGIN/../lib)
-	run env XBPS_ARCH=x86_64 "$THOR" install -y -r "$MNT" -R "$REPO" -R "$NONFREE" "$@"
+	run env XBPS_ARCH="$VH_ARCH" "$THOR" install -y -r "$MNT" -R "$REPO" -R "$NONFREE" "$@"
 }
 
 say "installing packages ($(vh_packages | wc -l) + dependencies), without the kernel: thor, in parallel"
@@ -336,7 +344,7 @@ say "kernel $VH_KERNEL: dracut-uefi -> UKI -> signature -> limine.conf -> Limine
 thor_install "$VH_KERNEL"
 if [ "$DRY_RUN" != 1 ]; then
 	ls "$MNT"/boot/efi/EFI/void/linux-*.efi >/dev/null 2>&1 || die "no UKI was created (see the dracut output above)"
-	[ -s "$MNT/boot/efi/EFI/BOOT/BOOTX64.EFI" ] && [ -s "$MNT/boot/efi/EFI/BOOT/limine.conf" ] \
+	[ -s "$MNT/boot/efi/EFI/BOOT/$VH_EFI_BOOT" ] && [ -s "$MNT/boot/efi/EFI/BOOT/limine.conf" ] \
 		|| die "Limine is not installed on the ESP (vh-limine-update)"
 	ok "$(ls "$MNT"/boot/efi/EFI/void/)"
 fi
@@ -347,7 +355,7 @@ if [ "$DRY_RUN" != 1 ]; then
 	chroot "$MNT" efibootmgr | sed -n 's/^Boot\([0-9A-F]\{4\}\)\*\? Void Linux (Limine).*/\1/p' \
 		| while read -r n; do chroot "$MNT" efibootmgr -q -b "$n" -B; done
 fi
-run chroot "$MNT" efibootmgr -q -c -d "$VH_DISK" -p 1 -L "Void Linux (Limine)" -l '\EFI\BOOT\BOOTX64.EFI'
+run chroot "$MNT" efibootmgr -q -c -d "$VH_DISK" -p 1 -L "Void Linux (Limine)" -l "\\EFI\\BOOT\\$VH_EFI_BOOT"
 
 # The package cache (~1.5 GB) is not needed on the target system.
 run rm -rf "$MNT/var/cache/xbps"

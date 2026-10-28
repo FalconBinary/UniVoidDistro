@@ -1,0 +1,37 @@
+# kernel/profiles/arch/aarch64: what only ARM64 has, the counterparts of arch/x86_64. vh-kconf
+# resolve applies it after perf and before the plan's classes for a machine whose hw.zon says
+# .arch = "aarch64" (milestone U5, docs/uni/ROADMAP.md); the pinned config is Void's arm64 one
+# (kernel/pins/aarch64-dotconfig). A symbol here that does not survive olddefconfig is
+# reported by vh-kconf diff like one of base or hardening.
+
+# The hardware clock (mandatory: RTC_CLASS, hctosys): the UEFI runtime clock of servers and
+# laptops, the PL031 of QEMU's virt machine; a board's own RTC comes with its probed modules
+# (the Raspberry Pi 5: rtc_rpi).
+CONFIG_RTC_DRV_EFI=y
+CONFIG_RTC_DRV_PL031=y
+
+# hardening: the protection the architecture has, as Void builds it, named so that the diff
+# report shows it: the kernel unmapped at EL0 (Meltdown), privileged-access-never and its
+# extension, E0PD (no timing of kernel addresses from EL0), pointer authentication and BTI for
+# the kernel where the CPU has them (ARMv8.3, ARMv8.5; BTI_KERNEL needs clang or a recent GCC,
+# the CI build is clang), the memory tagging extension for user space. The shadow call stack
+# (SHADOW_CALL_STACK) stays as the pinned config has it, off: a cost without a measurement
+# [VERIFY by bench/ on ARM64 hardware].
+CONFIG_UNMAP_KERNEL_AT_EL0=y
+CONFIG_ARM64_PAN=y
+CONFIG_ARM64_EPAN=y
+CONFIG_ARM64_E0PD=y
+CONFIG_ARM64_PTR_AUTH=y
+CONFIG_ARM64_PTR_AUTH_KERNEL=y
+CONFIG_ARM64_BTI=y
+CONFIG_ARM64_BTI_KERNEL=y
+CONFIG_ARM64_MTE=y
+CONFIG_RANDOMIZE_MODULE_REGION_FULL=y
+# No 32-bit ABI (the ia32 of x86): the AArch32 compat layer is not built; nothing of this
+# system runs 32-bit code, and the gaming session is x86_64's (session/).
+# CONFIG_COMPAT is not set
+
+# perf: the scheduler sees the clusters of big.LITTLE and DynamIQ parts. The kernel Image is
+# not compressed on ARM64 (the x86 KERNEL_ZSTD has no counterpart): the UKI's stub loads it as
+# it is, and the firmware's EFI loader does the rest.
+CONFIG_SCHED_CLUSTER=y

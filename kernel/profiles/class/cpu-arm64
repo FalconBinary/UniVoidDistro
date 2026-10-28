@@ -4,5 +4,15 @@
 # (vh-plan, hwdb/); a symbol of it that does not survive olddefconfig is an error, as for
 # mandatory.
 
-# Milestone U5: the arm64 pins (Void's arm64 linux6.18 .config and tables) and the symbols of
-# this class arrive together. The x86_64 pinned config has none of them, so the class is empty.
+# The generic timer and the PSCI firmware interface (CPU bring-up, power off, reboot); the
+# frequency drivers of the two ways an ARM64 machine describes its clocks, CPPC through ACPI
+# (servers, laptops) and SCMI through the device tree, built in: a kernel without modules
+# cannot load them on demand (Void has them as modules). A board's own driver (the Raspberry
+# Pi's) comes with its board class. The errata of the cores stay as the pinned config has them.
+CONFIG_ARM_ARCH_TIMER=y
+CONFIG_ARM_PSCI_FW=y
+CONFIG_ACPI_CPPC_CPUFREQ=y
+CONFIG_ARM_SCMI_PROTOCOL=y
+CONFIG_ARM_SCMI_CPUFREQ=y
+# The GICv3 interrupt controller of every ARMv8 machine this system targets.
+CONFIG_ARM_GIC_V3=y

@@ -50,8 +50,18 @@ pub fn loadPlan(path: []const u8) PlanView {
     };
 }
 
-/// the fragments in the order they are applied; the features follow
+/// the fragments in the order they are applied; the architecture's, the classes and the
+/// features follow
 const fixed_fragments = [_][]const u8{ "base", "mandatory", "hardening", "perf" };
+
+/// The compiler flag of the plan's march for a kernel built elsewhere (docs/uni/kernel.md,
+/// "-march"): -march=VALUE on x86_64 (a model or an x86-64 level). On aarch64 the scalar names
+/// the core (cortex-a76, neoverse-n1: hwdb/cpu-arm.zon) or the architecture (armv8-a, a virtual
+/// machine): clang's -march takes only architecture names there, a core is -mcpu.
+pub fn kcflags(arch: []const u8, march: []const u8) []const u8 {
+    if (vh.eql(arch, "aarch64") and !vh.startsWith(march, "armv")) return vh.fmt("-mcpu={s}", .{march});
+    return vh.fmt("-march={s}", .{march});
+}
 pub const all_features = [_][]const u8{ "usb-common", "bluetooth", "wifi", "camera", "virt", "game", "selinux" };
 
 const Conflict = struct { name: []const u8, first_src: []const u8, first: []const u8, src: []const u8, value: []const u8 };
@@ -95,10 +105,14 @@ fn pathOf(o: Opts, explicit: ?[]const u8, under_repo: []const u8, under_modules:
 pub fn resolve(h: hw.Hw, o: Opts) Result {
     var r: Result = .{};
     const rep = &r.report;
-    const alias_path = pathOf(o, o.alias, "kernel/pins/modules.alias", "modules.alias", h.probe.kernel);
-    const builtin_path = pathOf(o, o.builtin, "kernel/pins/modules.builtin.modinfo", "modules.builtin.modinfo", h.probe.kernel);
-    const builtin_list_path = pathOf(o, o.builtin_list, "kernel/pins/modules.builtin", "modules.builtin", h.probe.kernel);
-    const base_path = pathOf(o, o.base, "kernel/pins/x86_64-dotconfig", null, "");
+    // the pins of the machine's architecture (kernel/pins/README.md): the x86_64 tables under
+    // their plain names, the others under names that say the architecture
+    const arch = h.archName();
+    const pins = alias.pinNames(arch) orelse vh.die("{s}: no pins for this architecture in kernel/pins (x86_64, aarch64)", .{arch});
+    const alias_path = pathOf(o, o.alias, vh.fmt("kernel/pins/{s}", .{pins.alias}), "modules.alias", h.probe.kernel);
+    const builtin_path = pathOf(o, o.builtin, vh.fmt("kernel/pins/{s}", .{pins.builtin_modinfo}), "modules.builtin.modinfo", h.probe.kernel);
+    const builtin_list_path = pathOf(o, o.builtin_list, vh.fmt("kernel/pins/{s}", .{pins.builtin}), "modules.builtin", h.probe.kernel);
+    const base_path = pathOf(o, o.base, vh.fmt("kernel/pins/{s}", .{pins.dotconfig}), null, "");
     const profiles = pathOf(o, o.profiles, "kernel/profiles", null, "");
 
     var table: alias.Table = .{};
@@ -245,12 +259,15 @@ pub fn resolve(h: hw.Hw, o: Opts) Result {
     // 5. the fragments in order; a later value wins and the conflict is recorded
     rep.print(vh.gpa, "\nFragments:\n", .{}) catch vh.oom();
     for (fixed_fragments) |f| applyFragment(&r, vh.fmt("{s}/{s}", .{ profiles, f }), f);
+    // the architecture's own fragment after the universal ones: what one architecture has and
+    // the other has not (the RTC, the 32-bit ABI, the compressed image), kernel/profiles/arch/
+    applyFragment(&r, vh.fmt("{s}/arch/{s}", .{ profiles, arch }), vh.fmt("arch/{s}", .{arch}));
     for (plan.kconfig) |c| applyFragment(&r, vh.fmt("{s}/class/{s}", .{ profiles, c.value }), vh.fmt("class/{s}", .{c.value}));
     for (r.features.slice()) |f| applyFragment(&r, vh.fmt("{s}/features/{s}", .{ profiles, f }), vh.fmt("features/{s}", .{f}));
     // the machine: its possible CPUs (hotplug included), from the plan, else the probe
     const nr_cpus = if (plan.kernel.nr_cpus > 0) plan.kernel.nr_cpus else if (h.cpu.possible > 0) h.cpu.possible else h.cpu.threads;
     if (nr_cpus > 0) applyText(&r, vh.fmt("CONFIG_NR_CPUS={d}\n", .{@max(nr_cpus, 2)}), "machine");
-    if (plan.kernel.march.len > 0) r.kcflags = vh.fmt("-march={s}", .{plan.kernel.march});
+    if (plan.kernel.march.len > 0) r.kcflags = kcflags(arch, plan.kernel.march);
     rep.print(vh.gpa, "Fragment conflicts ({d}): the later fragment wins\n", .{r.conflicts.items.len}) catch vh.oom();
     for (r.conflicts.items) |c| rep.print(vh.gpa, "  CONFIG_{s}: {s}={s}, {s}={s}\n", .{ c.name, c.first_src, c.first, c.src, c.value }) catch vh.oom();
 
@@ -324,7 +341,7 @@ fn applyText(r: *Result, text: []const u8, src: []const u8) void {
 /// the merged fragment with the origin of every symbol ("# from: NAME" before each line)
 pub fn renderFragment(r: *const Result) []u8 {
     var out: std.ArrayList(u8) = .empty;
-    out.appendSlice(vh.gpa, "# merged by vh-kconf resolve: base, mandatory, hardening, perf, the plan's classes, the features, the machine\n") catch vh.oom();
+    out.appendSlice(vh.gpa, "# merged by vh-kconf resolve: base, mandatory, hardening, perf, the architecture, the plan's classes, the features, the machine\n") catch vh.oom();
     for (r.fragment.map.keys(), r.fragment.map.values()) |k, v| {
         out.print(vh.gpa, "# from: {s}\n", .{r.sources.get(k) orelse "?"}) catch vh.oom();
         if (vh.eql(v, "n")) out.print(vh.gpa, "# CONFIG_{s} is not set\n", .{k}) catch vh.oom() else out.print(vh.gpa, "CONFIG_{s}={s}\n", .{ k, v }) catch vh.oom();
@@ -446,4 +463,53 @@ test "resolve: the GF63 fixture against the pinned tables and its plan" {
     // "auto" takes the plan's features
     const a = resolve(h, .{ .hw = "fixture", .out = "", .repo = repo, .plan = plan_path });
     try std.testing.expect(a.features.has("bluetooth") and a.features.has("usb-common") and a.features.has("wifi") and !a.features.has("game") and !a.features.has("camera"));
+}
+
+test "resolve: the aarch64 fixtures against the arm64 pins, the arch fragment and -mcpu (U5)" {
+    const probe = @import("probe.zig");
+    const repo = probe.repoRoot() orelse return error.SkipZigTest;
+    // the virtual machine: the generic armv8-a, the PL031 and EFI clocks, no 32-bit ABI
+    const vdir = probe.repoPath("tests/kernel/fixtures/aarch64-virt") orelse return error.SkipZigTest;
+    const vplan = probe.repoPath("tests/adapt/golden/aarch64-virt/tiered/plan.zon") orelse return error.SkipZigTest;
+    const vsrc: probe.Src = .{ .root = vdir };
+    const v = probe.run(&vsrc);
+    try std.testing.expectEqualStrings("aarch64", v.archName());
+    const r = resolve(v, .{ .hw = "fixture", .out = "", .repo = repo, .plan = vplan });
+    try std.testing.expect(mem.indexOf(u8, r.report.items, "kernel/pins/aarch64-modules.alias") != null);
+    try std.testing.expectEqualStrings("y", r.config.get("ARM64").?);
+    try std.testing.expect(r.config.get("X86_64") == null);
+    try std.testing.expectEqualStrings("-march=armv8-a", r.kcflags);
+    try std.testing.expectEqualStrings("arch/aarch64", r.sources.get("RTC_DRV_PL031").?);
+    try std.testing.expectEqualStrings("n", r.fragment.get("COMPAT").?);
+    try std.testing.expect(r.fragment.get("RTC_DRV_CMOS") == null);
+    try std.testing.expect(r.fragment.get("IA32_EMULATION") == null);
+    try std.testing.expectEqualStrings("mandatory", r.sources.get("RTC_HCTOSYS").?);
+    try std.testing.expectEqualStrings("class/cpu-arm64", r.sources.get("ARM_PSCI_FW").?);
+    try std.testing.expectEqualStrings("class/cpu-arm64-aes", r.sources.get("CRYPTO_AES_ARM64_CE_BLK").?);
+    try std.testing.expectEqualStrings("\"-vh\"", r.config.get("LOCALVERSION").?);
+    // the Crypto Extensions' AES was loaded on the probed system: a module of the arm64 kernel
+    try std.testing.expect(r.lsmod.has("aes_ce_blk"));
+    try std.testing.expect(!r.lsmod.has("virtio_pci")); // built into Void's arm64 kernel
+    try std.testing.expectEqual(@as(usize, 0), r.conflicts.items.len);
+    // the Raspberry Pi 5: -mcpu of its cores, the VideoCore class, the Pi's modules
+    const pdir = probe.repoPath("tests/kernel/fixtures/rpi5") orelse return error.SkipZigTest;
+    const pplan = probe.repoPath("tests/adapt/golden/rpi5/tiered/plan.zon") orelse return error.SkipZigTest;
+    const psrc: probe.Src = .{ .root = pdir };
+    const pi = probe.run(&psrc);
+    const p = resolve(pi, .{ .hw = "fixture", .out = "", .repo = repo, .plan = pplan });
+    try std.testing.expectEqualStrings("-mcpu=cortex-a76", p.kcflags);
+    try std.testing.expectEqualStrings("class/gpu-vc4", p.sources.get("DRM_VC4").?);
+    for ([_][]const u8{ "brcmfmac", "vc4", "v3d", "sdhci_brcmstb", "bcm2835_wdt" }) |m| try std.testing.expect(p.lsmod.has(m));
+    try std.testing.expectEqualStrings("4", p.fragment.get("NR_CPUS").?);
+}
+
+test "resolve: the plan's march as the compiler's flag" {
+    try std.testing.expectEqualStrings("-march=skylake", kcflags("x86_64", "skylake"));
+    try std.testing.expectEqualStrings("-march=x86-64-v3", kcflags("x86_64", "x86-64-v3"));
+    try std.testing.expectEqualStrings("-mcpu=cortex-a76", kcflags("aarch64", "cortex-a76"));
+    try std.testing.expectEqualStrings("-mcpu=neoverse-n1", kcflags("aarch64", "neoverse-n1"));
+    try std.testing.expectEqualStrings("-march=armv8-a", kcflags("aarch64", "armv8-a"));
+    try std.testing.expect(alias.pinNames("riscv64") == null);
+    try std.testing.expectEqualStrings("aarch64-dotconfig", alias.pinNames("aarch64").?.dotconfig);
+    try std.testing.expectEqualStrings("modules.firmware", alias.pinNames("x86_64").?.firmware);
 }

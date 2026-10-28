@@ -16,7 +16,7 @@ machine of that class.
 | **full** | x86_64 with UEFI 64-bit, Secure Boot, TPM 2.0, an IOMMU, AES-NI, at least 2 GiB: every protection of void-hardperf-light | installs in `strict` (the default) |
 | **reduced** | one or more of these properties missing ([the table](principles.md#the-protective-properties-per-architecture)) | installs only with `VH_SECURITY=tiered` and a typed confirmation of every residual risk |
 | **refused** | x86_64 without UEFI 64-bit (legacy BIOS, CSM, 32-bit UEFI), less than 1.5 GiB of memory (3 GiB from Void's own live image, on which the installer builds in RAM) | never |
-| **ARM64** | UEFI machines (servers, laptops) and the Raspberry Pi 4/5 | probe and plan now; installation in U5 |
+| **ARM64** | UEFI machines (servers, laptops): the same path as x86_64 (Limine for aa64, the UKI on `linuxaa64.efi.stub`, Secure Boot with our keys, the TPM and the SMMU where present); the Raspberry Pi 4/5 is *reduced* (no UEFI: [rpi.md](rpi.md)) | U5: installs from the aarch64 live image; verified on QEMU's virt machine only ([below](#arm64)) |
 
 ## Machine classes
 
@@ -42,7 +42,7 @@ machine of that class.
 | AES | the `aes` flag (ARM: `aes` in `Features`) | LUKS2 AES-XTS; without it Adiantum (`tiered` only) |
 | CET | `user_shstk`, `ibt` | the kernel enables shadow stacks and IBT where the CPU has them (built into every kernel) |
 | SMT vulnerabilities | `/sys/devices/system/cpu/vulnerabilities/*` | `mitigations=auto` as upstream; `nosmt` only as an explicit option with its cost |
-| ARM cores | `CPU implementer`, `CPU part` (Cortex-A72 in the Pi 4, A76 in the Pi 5, Neoverse in servers) | `-mcpu` of the kernel (U5) |
+| ARM cores | `CPU implementer`, `CPU part` (Cortex-A72 in the Pi 4, A76 in the Pi 5, Neoverse in servers) | `-mcpu` of the kernel built in CI (`arm.mcpu.*`; `-march=armv8-a` in a virtual machine), the ARM64 class (`cpu-arm64`: the generic timer, PSCI, CPPC and SCMI frequency control), the Crypto Extensions class with `aes` |
 
 ## Graphics
 
@@ -59,7 +59,7 @@ unless the gaming session needs it.
 | NVIDIA before Turing | vendor 10de | nouveau without reclocking: slow, named in the report; the open modules do not support it |
 | virtual: virtio-gpu, bochs, QXL, VMware, Hyper-V | vendor 1af4, 1234, 1b36, 15ad, 1414 | the matching DRM driver; RefursWM with the pixman renderer where there is no GL |
 | no GPU (server, serial console) | no PCI class 0x03 | no desktop stack |
-| Raspberry Pi VideoCore VI/VII | device tree `brcm,bcm2711-v3d` / `brcm,2712-v3d` | v3d + vc4 (U5) |
+| Raspberry Pi VideoCore VI/VII | device tree `brcm,bcm2711-v3d` / `brcm,2712-v3d` | class `gpu-vc4`: v3d + vc4 built in [VERIFY on a board] |
 
 The gaming session ([game.md](game.md)) gets the Vulkan driver of the machine's GPU in its own
 root, never in the system: ANV for Intel, RADV for AMD, NVK where nouveau drives an NVIDIA GPU,
@@ -135,7 +135,7 @@ USB device built in (`fixed`): a built-in keyboard on USB or SPI becomes the phy
 | Super I/O sensors (Nuvoton, ITE) | not visible to a probe (ISA ports); DMI board vendor and name | the hwmon driver of `hwdb/board.zon` where the board is known [VERIFY] |
 | WMI and EC platform drivers (ASUS, MSI, Lenovo, Dell, HP, Gigabyte) | the WMI GUID and DMI aliases | the vendor's driver (fan and power modes) |
 | TPM | `/sys/class/tpm/tpm0`: firmware TPM through CRB, discrete through TIS/SPI | class `tpm-crb` or `tpm-tis`; a firmware TPM gets a note naming the firmware it trusts (Intel PTT in the ME, the AMD fTPM in the PSP) |
-| IOMMU | the ACPI tables DMAR (Intel) and IVRS (AMD); IORT on ARM | `intel_iommu=on`, `iommu.strict=1`, `iommu.passthrough=0` everywhere |
+| IOMMU | the ACPI tables DMAR (Intel) and IVRS (AMD); IORT on ARM | `intel_iommu=on`, `iommu.strict=1`, `iommu.passthrough=0` everywhere; on ARM the class `iommu-smmu` (the SMMU v2 and v3 drivers built in) |
 | Thunderbolt / USB4 | the thunderbolt alias | the driver stays denied (DMA); USB and DisplayPort over these ports work without it |
 | Option ROMs (a discrete GPU, a network card) | the TPM event log (`EV_EFI_BOOT_SERVICES_DRIVER`) | Secure Boot key enrolment keeps their hashes (`sbctl enroll-keys --tpm-eventlog`, `install/20-firstboot.sh`) so the display and the disks still initialise |
 | Secure Boot setup menus | DMI vendor | `hwdb/board.zon` names the menu items ("Key Management", "Secure Boot Mode: Custom", "Reset to Setup Mode") in the report |
@@ -145,6 +145,7 @@ USB device built in (`fixed`): a built-in keyboard on USB or SPI becomes the phy
 | Hypervisor | Effect |
 |---|---|
 | QEMU/KVM (q35, OVMF with Secure Boot, swtpm, `intel-iommu` or `virtio-iommu`) | **full** level possible; the test rig `tests/vm/` is such a machine |
+| QEMU's `virt` machine on aarch64 (AAVMF, swtpm on the MMIO TIS interface, `iommu=smmuv3`, under KVM or Apple's hvf) | the aarch64 rig, `VH_ARCH=aarch64 tests/vm/vhvm.py` ([below](#arm64)). **full** level possible with a Secure Boot build of AAVMF (Debian's and Ubuntu's `qemu-efi-aarch64`) [VERIFY under KVM: under hvf that build stops after its banner]; with QEMU's own `edk2-aarch64-code.fd`, which has no Secure Boot, **reduced**: `tiered` with one risk acknowledged, which is what ran on the Mac |
 | QEMU without a vTPM or an IOMMU, VirtualBox, VMware, Hyper-V | **reduced**: `tiered` only; the host can read the guest's memory anyway (a residual risk named in the report) |
 
 ## Known not supported
@@ -156,6 +157,47 @@ USB device built in (`fixed`): a built-in keyboard on USB or SPI becomes the phy
 | Broadcom `wl` Wi-Fi | proprietary module, cannot load under lockdown | a supported card or a USB adapter |
 | NVIDIA before Turing with the proprietary driver | the open modules need Turing+; the closed ones cannot be signed into this chain | nouveau (slow) or a newer card |
 | Apple T2 Macs, Microsoft Surface | need out-of-tree kernel patches | — |
+
+## ARM64
+
+What U5 built, and how far it is verified ([ROADMAP](ROADMAP.md#u5-arm64-installation) has the
+state with its numbers):
+
+- **The machine kernel**: Void's aarch64 `linux6.18` pinned beside the x86_64 one
+  (`kernel/pins/aarch64-*`), the universal profiles split into what every architecture has and
+  `kernel/profiles/arch/{x86_64,aarch64}` (the RTC driver, the 32-bit ABI off, the compressed
+  image, pointer authentication and BTI), the ARM64 classes (`cpu-arm64`, `cpu-arm64-aes`,
+  `iommu-smmu`, `gpu-vc4`, `platform-rpi`), `-mcpu` of the core; `tests/kernel/matrix.sh` and
+  `tests/kernel/run.sh` cover `aarch64-virt` and `rpi5`, and `kernel-custom` cross-builds them
+  (`ARCH=arm64`, the uncompressed `Image`). Not done: `vh-kconf install` of such an image (it
+  reads a bzImage's setup header for the release; the arm64 `Image` has none) and the boot
+  assessment of a machine UKI on ARM64 [VERIFY: the stock UKI path is what the rig boots].
+- **The live image**: `univoiddistro-live-aarch64-COMMIT.iso`, built natively on GitHub's
+  arm64 runner ([live-image.md](live-image.md#aarch64)).
+- **The boot path**: the same scripts, the architecture read where it enters: the EFI stub
+  `linuxaa64.efi.stub` in dracut's configuration (`@VH_EFI_ARCH@`), Limine's `BOOTAA64.EFI`
+  from Void's `limine` package and on the ESP (`vh-limine-update`, by the build's
+  architecture), the NVRAM entry, `XBPS_ARCH`, the serial console `ttyAMA0` of the rig. Void
+  ships `systemd-boot-efistub` with `linuxaa64.efi.stub` (256.6_2), `limine` with
+  `BOOTAA64.EFI` (12.9.4_1), `sbctl` (0.18_2) and `dracut-uefi` (112_1) for aarch64: no
+  substitute was needed. The x86_64 path is byte for byte what it was (`tests/install/run.sh`,
+  the GF63 golden files, `limine_diff.sh`).
+- **The rig**: `VH_ARCH=aarch64` turns `tests/vm/vhvm.py` into QEMU's `virt` machine
+  (GICv3, `iommu=smmuv3`, AAVMF, swtpm on `tpm-tis-device` with `ppi=off`, NVMe, virtio network
+  and display, a USB keyboard, the CDs on virtio-scsi, the live kernel as `/boot/vmlinux`),
+  under KVM where a host has it, under Apple's hvf on a Mac. GitHub's arm64 runner
+  (`ubuntu-24.04-arm`) has no `/dev/kvm` (live-image run 40593873482), so `kvm-smoke` with
+  `arch=aarch64` stops before the installation unless `accel=tcg`, and the verification ran on
+  a Mac: an installation from the aarch64 image in `tiered` mode (2 min 52 s) and `check.py
+  base` 26 of 26 on the installed system ([ROADMAP](ROADMAP.md#state-2026-10-28-u5-the-arm64-path-on-a-virtual-machine)).
+- **Not done**: the seccomp filters of the browser and viewer sandboxes (`zig/lib/seccomp.zig`,
+  `vh-seccomp`) are written with x86_64's system call numbers and architecture check: on an
+  ARM64 system the sandbox would kill its program at the first call. Firefox and `vh-open` do
+  not run there until the filters are built per architecture (the gaming session is x86_64's by
+  design). The base system, the installer, the desktop compositor and bar are not affected.
+- **Not verified on any real ARM64 machine**: the installation, Secure Boot key enrolment on a
+  vendor's firmware, the TPM event log, the SMMU with `iommu.strict=1` on real devices, the
+  Raspberry Pi altogether ([rpi.md](rpi.md)).
 
 ## Adding a machine
 

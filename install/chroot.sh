@@ -147,9 +147,9 @@ for s in ${VH_PLAN_SERVICES:-}; do
 done
 [ "$VH_ETH" = static ] && enable_sv vh-eth-static
 if [ "${VH_TEST_SERIAL:-no}" = yes ]; then
-	# tests/vm bench: admin login on ttyS0 (never enable on real hardware)
-	enable_sv agetty-ttyS0
-	sed -i "/^- : ALL : ALL/i + : $VH_ADMIN : ttyS0" /etc/security/access.conf
+	# tests/vm bench: admin login on the serial console, ttyS0 or ttyAMA0 (never enable on real hardware)
+	enable_sv "agetty-$(vh_serial_tty)"
+	sed -i "/^- : ALL : ALL/i + : $VH_ADMIN : $(vh_serial_tty)" /etc/security/access.conf
 fi
 for s in sshd dhcpcd wpa_supplicant acpid; do rm -f "$SVDIR/$s"; done
 

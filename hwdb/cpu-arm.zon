@@ -4,8 +4,9 @@
     .rules = .{
         .{
             .id = "arm.iommu.iort",
-            .why = "An ACPI ARM machine describes its SMMU in the IORT table [VERIFY: IORT may describe the I/O topology without an SMMU].",
+            .why = "An ACPI ARM machine describes its SMMU in the IORT table [VERIFY: IORT may describe the I/O topology without an SMMU]; the machine kernel gets the SMMU drivers built in.",
             .when = .{ .arch = .{"aarch64"}, .acpi_table = .{"IORT"} },
+            .kconfig = .{"iommu-smmu"},
             .sets = .{"iommu"},
         },
         .{
@@ -15,7 +16,8 @@
             .kconfig = .{"cpu-arm64"},
         },
         // -mcpu by core on real hardware; a virtual machine gets armv8-a: its CPU is what the
-        // hypervisor shows today (docs/uni/kernel.md)
+        // hypervisor shows today (docs/uni/kernel.md). The scalar is march, as on x86_64: on
+        // aarch64 vh-kconf resolve writes a core as -mcpu=CORE and armv8-a as -march=armv8-a
         .{
             .id = "arm.mcpu.cortex-a76",
             .why = "Cortex-A76 (implementer 0x41, part 0xd0b), the cores of the Raspberry Pi 5: -mcpu=cortex-a76.",

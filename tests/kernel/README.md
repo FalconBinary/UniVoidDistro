@@ -3,7 +3,7 @@
 ```sh
 sh tests/kernel/run.sh              # the unit tests of kernel/ in an Alpine container, plus a smoke run
 sh tests/kernel/oracle.sh           # the GF63 oracle: resolve gives what void-hardperf-light gives
-sh tests/kernel/matrix.sh           # every x86_64 machine: plan (tiered) and resolve, the checks without a kernel tree
+sh tests/kernel/matrix.sh           # every machine, x86_64 and aarch64: plan (tiered) and resolve, the checks without a kernel tree
 sh tests/kernel/dracut_test.sh      # vh-kconf install with Void's dracut, in a container (network: Void's mirror)
 python3 tests/kernel/mkfixture.py   # rewrites the synthesised fixtures from tests/kernel/machines/
 ```
@@ -70,15 +70,17 @@ a damaged file, a run without `modules.builtin`, an initrd the kernel cannot unp
 `dracut_test.sh` runs the same install with Void's dracut (dracut, dracut-uefi,
 systemd-boot-efistub, binutils, cryptsetup from the mirror) and lists the UKI's initrd with
 lsinitrd: the firmware at `usr/lib/firmware`, `lib` a link to `usr/lib`, no module, the crypt
-module, `.linux` the bzImage byte for byte. On Apple Silicon the UKI is an aarch64 one (dracut
-takes `linuxaa64.efi.stub` when the configured x64 stub is missing, and there is no microcode).
+module, `.linux` the bzImage byte for byte. On Apple Silicon the UKI is an aarch64 one (the
+test renders the template's `@VH_EFI_ARCH@` as `aa64`, as the installer does there, and there
+is no microcode).
 
 `oracle.sh` holds the GF63 to void-hardperf-light: `tests/kernel/golden/gf63` is the LSMOD list,
 the fragment's symbols and the sorted `.config` that upstream's resolve and profiles give for
 `kernel/hw/gf63.zon`.
 
 `matrix.sh` is the cheap half of the CI matrix ([docs/uni/kernel.md](../../docs/uni/kernel.md#the-ci-matrix)):
-every x86_64 machine of `kernel/hw` planned in tiered mode and resolved with its plan, twice;
+every machine of `kernel/hw`, x86_64 and aarch64, planned in tiered mode and resolved with its
+plan against the pins of its architecture, twice;
 the same bytes both times, every symbol a class of the plan sets known to the pinned config,
 no fragment conflict with a class or the machine fragment, the build's invariants in the
 requested `.config`, `NR_CPUS` within the pinned range, and the plan's `-march` in `kcflags`,

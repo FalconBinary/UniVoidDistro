@@ -13,13 +13,15 @@ kernel/
                        UKI), hw (hw.zon), alias (modules.alias, fnmatch), kconfig (.config, the
                        Kconfig tree, Kbuild), uki (a bzImage's header, PE sections, cpio names)
   profiles/            Kconfig fragments, every option with its reason: base, mandatory,
-                       hardening, perf (what every machine gets), class/ (what a hardware
+                       hardening, perf (what every machine gets), arch/{x86_64,aarch64} (what
+                       only one architecture has: the RTC driver, the 32-bit ABI, the compressed
+                       image; applied by the machine's .arch), class/ (what a hardware
                        class needs: cpu-intel, gpu-amdgpu, storage-nvme, ...; the machine's plan
                        names them), features/{usb-common,bluetooth,wifi,camera,virt,game,selinux}
                        (+ NAME.modules: the stock modules a feature stands for), modules.deny
   pins/                the Void linux6.18 .config and its modules.alias / modules.builtin* /
-                       modules.firmware, with the void-packages commit and hashes; kernel.org
-                       PGP fingerprints
+                       modules.firmware, for x86_64 and (aarch64-*) for aarch64, with the
+                       void-packages commit and hashes; kernel.org PGP fingerprints
   hw/                  hw.zon files of the known machines, which CI builds from (gf63,
                        amd-desktop, intel-hybrid-laptop, qemu-q35, aarch64-virt, rpi5)
 tests/kernel/          the fixtures (mkfixture.py writes them), run.sh, matrix.sh, oracle.sh,
@@ -85,7 +87,8 @@ Tests: `sh tests/kernel/run.sh` builds the unit tests for Linux and runs them in
 (Zig cannot run Linux binaries on the Mac); `zig build test` does the same on a Linux host.
 The tests read `tests/kernel/fixtures/gf63` and `kernel/pins`. The fixture is synthesised from
 the hardware list of README.md and the pinned alias tables; `vh-kconf probe --save` on the
-laptop produces the real one [VERIFY].
+laptop produces the real one [VERIFY]. The aarch64 fixtures (`aarch64-virt`, `rpi5`) resolve
+against the arm64 pins, with `-march=armv8-a` and `-mcpu=cortex-a76` (U5).
 
 ## install
 

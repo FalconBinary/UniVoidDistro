@@ -1,16 +1,17 @@
 # UniVoidDistro: installation
 
-From UniVoidDistro's live image to a running system on any x86_64 machine with a 64-bit UEFI.
-The installer decides for each machine from its own probe and the rules of `hwdb/`, so the steps
-are the same everywhere: where a machine differs, its plan says so before anything is written.
-[The GF63](#example-the-gf63) at the end is a worked example. ARM64 machines are milestone U5
-([ROADMAP](ROADMAP.md)).
+From UniVoidDistro's live image to a running system on any x86_64 machine with a 64-bit UEFI,
+or on an ARM64 machine with UEFI (U5: the same steps from the aarch64 image; verified on a
+virtual machine only, [hardware.md](hardware.md#arm64)). The installer decides for each
+machine from its own probe and the rules of `hwdb/`, so the steps are the same everywhere:
+where a machine differs, its plan says so before anything is written. [The GF63](#example-the-gf63)
+at the end is a worked example. A Raspberry Pi has no UEFI: [rpi.md](rpi.md).
 
 ## 0. What the machine needs
 
 | | |
 |---|---|
-| firmware | a 64-bit UEFI. Legacy BIOS, CSM and 32-bit UEFI are refused in every mode |
+| firmware | a 64-bit UEFI. Legacy BIOS, CSM and 32-bit UEFI are refused in every mode; on ARM64 UEFI as well (a board that boots its own firmware, the Raspberry Pi, is *reduced*: [rpi.md](rpi.md)) |
 | memory | at least 1.5 GiB in either mode, the gate's floor; 2 GiB for every protection in `strict` (Argon2id with 1 GiB per guess). From Void's own live image instead of ours, 3 GiB: the installer then builds its programs in RAM |
 | disk | a whole disk of at least 20 GiB, wiped by the installation |
 | network | Ethernet or Wi-Fi while installing: the packages come from Void's mirror |
@@ -21,10 +22,12 @@ are the same everywhere: where a machine differs, its plan says so before anythi
 
 Take the project's address, `FalconBinary/UniVoidDistro`, from a source you trust, not from a
 link someone sent. Its images are the assets of its releases,
-<https://github.com/FalconBinary/UniVoidDistro/releases>: `univoiddistro-live-x86_64-COMMIT.iso`,
-`SHA256SUMS`, `BUILD` (the commit, the CI run, the kernel series) and `live-packages.txt`.
-Download the ISO and `SHA256SUMS` of the newest release; TAG below is its tag, for example
-`v0.1.0`. None of this needs a GitHub account.
+<https://github.com/FalconBinary/UniVoidDistro/releases>: `univoiddistro-live-x86_64-COMMIT.iso`
+(and, since U5, `univoiddistro-live-aarch64-COMMIT.iso` for ARM64), `SHA256SUMS`, `BUILD`
+(the commit, the CI run, the kernel series) and `live-packages.txt`; a release with both
+images names them per architecture, `x86_64-SHA256SUMS` and so on. Download the ISO and its
+`SHA256SUMS` of the newest release; TAG below is its tag, for example `v0.1.0`. None of this
+needs a GitHub account.
 
 **Is the download whole?** `SHA256SUMS` holds the ISO's sha256, SHA256 below. It shows that the
 file arrived whole, not who made it: it comes from the same page as the ISO.

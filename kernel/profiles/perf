@@ -16,26 +16,23 @@ CONFIG_PREEMPT_DYNAMIC=y
 # and bitmaps than the distribution's 8192).
 # Thin LTO with clang (LLVM=1 in CI): cross-module inlining; kCFI from hardening works with it.
 CONFIG_LTO_CLANG_THIN=y
-# CONFIG_X86_NATIVE_CPU only when building on the machine itself (clang's -march=native);
-# in CI the workflow passes the plan's -march as KCFLAGS (resolve writes it to kcflags).
-# CONFIG_X86_NATIVE_CPU is not set
+# (X86_NATIVE_CPU, the local build on the machine itself: x86's, arch/x86_64; in CI the
+# workflow passes the plan's -march or -mcpu as KCFLAGS, which resolve writes to kcflags)
 
 # The CPU: schedutil as the default governor (sched_ext's cpuperf hooks act only with
 # schedutil, docs/ROADMAP.md), SMT and multi-core aware scheduling; the frequency and idle
-# drivers of the CPU are in its class (class/cpu-intel, class/cpu-amd).
+# drivers of the CPU are in its class (class/cpu-intel, class/cpu-amd, class/cpu-arm64); the
+# core priorities of Intel's ITMT and the x2APIC are x86's (arch/x86_64).
 CONFIG_CPU_FREQ_DEFAULT_GOV_SCHEDUTIL=y
 CONFIG_SCHED_MC=y
-CONFIG_SCHED_MC_PRIO=y
 CONFIG_SCHED_SMT=y
-CONFIG_X86_X2APIC=y
 # Transparent huge pages in madvise mode (07-vh-mm.sh): the Void default, kept.
 CONFIG_TRANSPARENT_HUGEPAGE=y
 CONFIG_TRANSPARENT_HUGEPAGE_MADVISE=y
 
-# The kernel image compressed with zstd instead of gzip: faster decompression at boot
-# [VERIFY by measurement: bench/ boot time, firmware to login].
-CONFIG_KERNEL_ZSTD=y
-# CONFIG_KERNEL_GZIP is not set
+
+# (The compressed kernel image, zstd instead of gzip: x86's, arch/x86_64; an arm64 Image is
+# not compressed, the UKI's stub loads it as it is.)
 
 # Counters for bench/ and vh-session-usage; the CPU's own (uncore, RAPL, C-states) are in its class.
 CONFIG_PERF_EVENTS=y

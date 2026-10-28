@@ -10,7 +10,8 @@
 # What this file deliberately does not do: RANDSTRUCT (it breaks the BTF-based type
 # information vh-sched relies on), GCC plugins (the build is clang). CET comes from Void's
 # config (X86_USER_SHADOW_STACK and X86_KERNEL_IBT are y): the kernel enables it where the CPU
-# has it.
+# has it. What only one architecture has (the 32-bit ABI, port I/O, the memory layout
+# randomisation of x86, pointer authentication and BTI on ARM64) is in arch/.
 
 # lockdown=confidentiality: forced at build time; no cmdline can lower it.
 CONFIG_SECURITY_LOCKDOWN_LSM=y
@@ -47,7 +48,7 @@ CONFIG_SHUFFLE_PAGE_ALLOCATOR=y
 CONFIG_RANDOMIZE_KSTACK_OFFSET=y
 CONFIG_RANDOMIZE_KSTACK_OFFSET_DEFAULT=y
 CONFIG_RANDOMIZE_BASE=y
-CONFIG_RANDOMIZE_MEMORY=y
+# (RANDOMIZE_MEMORY, the physical memory layout: x86's, arch/x86_64)
 
 # Compiler and memory hardening that the Void kernel already has; named here so the diff
 # report shows them.
@@ -93,9 +94,6 @@ CONFIG_BPF_UNPRIV_DEFAULT_OFF=y
 # and an option whose prompt is hidden keeps its default (y) whatever the .config says. Every
 # other option keeps the value of the pinned config.
 CONFIG_EXPERT=y
-# X32 and ia32: no 32-bit ABI; features/game re-enables ia32 for Steam, guarded by the cmdline.
-# CONFIG_X86_X32_ABI is not set
-# CONFIG_IA32_EMULATION is not set
 # kexec: a signed-kernel bypass and a rootkit vector; kernel.kexec_load_disabled=1 today.
 # CONFIG_KEXEC is not set
 # CONFIG_KEXEC_FILE is not set
@@ -115,8 +113,6 @@ CONFIG_EXPERT=y
 # CONFIG_BINFMT_MISC is not set
 # io_uring: kernel.io_uring_disabled=2 today; a frequent source of privilege escalations.
 # CONFIG_IO_URING is not set
-# modify_ldt: 16-bit segments; features/game turns it on [VERIFY for Wine].
-# CONFIG_MODIFY_LDT_SYSCALL is not set
 # MPTCP: net.mptcp.enabled=0 today.
 # CONFIG_MPTCP is not set
 # userfaultfd: vm.unprivileged_userfaultfd=0 today; a race-condition tool in exploits.
@@ -126,8 +122,6 @@ CONFIG_EXPERT=y
 # Legacy terminals: TIOCSTI injects input into another terminal; legacy ptys predate /dev/pts.
 # CONFIG_LEGACY_TIOCSTI is not set
 # CONFIG_LEGACY_PTYS is not set
-# iopl/ioperm: user-space port I/O.
-# CONFIG_X86_IOPL_IOPERM is not set
 # ACPI table upgrades from the initrd: a firmware-level override from a file.
 # CONFIG_ACPI_TABLE_UPGRADE is not set
 
@@ -169,9 +163,8 @@ CONFIG_EXPERT=y
 # CONFIG_VXFS_FS is not set
 # CONFIG_FUSE_FS is not set
 # CONFIG_OVERLAY_FS is not set
-# Miscellaneous: uhid (features/game turns it on for Steam Input), the PC speaker, the
-# virtual video test driver, the ACPI button driver that bypasses vh-acpid.
+# Miscellaneous: uhid (features/game turns it on for Steam Input), the virtual video test
+# driver, the ACPI button driver that bypasses vh-acpid; the PC speaker is x86's (arch/x86_64).
 # CONFIG_UHID is not set
-# CONFIG_INPUT_PCSPKR is not set
 # CONFIG_VIDEO_VIVID is not set
 # (ACPI_TINY_POWER_BUTTON: the plan decides, class/acpi-tiny-power-button[-off], hwdb/platform.zon)

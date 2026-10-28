@@ -4,7 +4,9 @@
 FROM ghcr.io/void-linux/void-glibc-full:latest
 # the package mirror (tests/docker/build.sh: VH_MIRROR; the default one was down for hours on 2026-10-26)
 ARG VH_MIRROR=https://repo-default.voidlinux.org
-RUN mkdir -p /etc/xbps.d && echo "repository=${VH_MIRROR}/current" > /etc/xbps.d/00-repository-main.conf
+# the repository of the image's architecture: current for x86_64, current/aarch64 for aarch64
+RUN mkdir -p /etc/xbps.d && case "$(xbps-uhelper arch)" in aarch64*) sub=/aarch64 ;; *) sub= ;; esac \
+	&& echo "repository=${VH_MIRROR}/current$sub" > /etc/xbps.d/00-repository-main.conf
 RUN xbps-install -Syu xbps && xbps-install -Syu && xbps-install -Sy openssl-devel libarchive-devel \
 	zlib-devel pkgconf make xz patch libcap-progs gcc libxcrypt-devel python3 zstd lz4 bash openssl
 ARG ZIG_TARBALL

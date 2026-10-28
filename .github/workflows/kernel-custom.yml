@@ -8,17 +8,19 @@
 # without GitHub credentials (docs/runbook-gf63.md). Kernels from CI contain no firmware: vh-kconf
 # install on the machine puts it into the UKI's initrd; it reads BUILD (the commit and the hw.zon),
 # the final config and the kernel's modules.builtin* (kernel/README.md, "install").
-# hw=all builds every x86_64 machine of kernel/hw, one job each and no release (the U3 matrix,
+# hw=all builds every machine of kernel/hw, one job each and no release (the U3 matrix,
 # docs/uni/kernel.md): a symbol of mandatory, a class or the machine fragment that olddefconfig
-# lost fails that machine's job (vh-kconf diff exits 2), the others go on. The aarch64 fixtures
-# wait for the arm64 pins (U5). The cheap half, plan and resolve on every push, is
-# tests/kernel/matrix.sh in the adapt workflow.
+# lost fails that machine's job (vh-kconf diff exits 2), the others go on. An aarch64 machine
+# (U5) is cross-built on the same runner with ARCH=arm64: clang and lld need no other toolchain,
+# the result is the uncompressed Image (vh-kconf install takes a bzImage: the machine UKI on
+# arm64 is still to come, docs/uni/ROADMAP.md). The cheap half, plan and resolve on every push,
+# is tests/kernel/matrix.sh in the adapt workflow.
 name: kernel-custom
 on:
   workflow_dispatch:
     inputs:
       hw:
-        description: "hw.zon committed under kernel/hw/, or all: every x86_64 machine there (no release)"
+        description: "hw.zon committed under kernel/hw/, or all: every machine there, x86_64 and aarch64 (no release)"
         default: kernel/hw/gf63.zon
       kver:
         description: kernel version (6.18.y)
@@ -43,7 +45,7 @@ jobs:
       list: ${{ steps.list.outputs.list }}
     steps:
       - uses: actions/checkout@v4
-      - name: the machines to build (all = every x86_64 machine of kernel/hw)
+      - name: the machines to build (all = every machine of kernel/hw)
         id: list
         env:
           HW_INPUT: ${{ github.event.inputs.hw || 'kernel/hw/gf63.zon' }}
@@ -54,7 +56,7 @@ jobs:
             list=""
             for f in kernel/hw/*.zon; do
               a=$(sed -n 's/^    \.arch = "\(.*\)",$/\1/p' "$f")
-              if [ "$a" = x86_64 ]; then list="$list $f"; else echo "$f: $a, not built before the arm64 pins (U5)"; fi
+              case $a in x86_64|aarch64) list="$list $f" ;; *) echo "$f: $a, no pins for it (kernel/pins/README.md)" ;; esac
             done
             test -n "$list"
           fi
@@ -85,6 +87,13 @@ jobs:
           name=$(basename "$HW" .zon)
           echo "name=$name" >> "$GITHUB_OUTPUT"
           echo "NAME=$name" >> "$GITHUB_ENV"
+          # the kernel's ARCH and image from the machine's architecture (hw.zon .arch): the
+          # x86_64 bzImage, or the arm64 Image cross-built with LLVM=1 ARCH=arm64
+          case $(sed -n 's/^    \.arch = "\(.*\)",$/\1/p' "$HW") in
+            x86_64) echo "KARCH=x86_64" >> "$GITHUB_ENV"; echo "KIMG=bzImage" >> "$GITHUB_ENV"; echo "KIMG_PATH=arch/x86/boot/bzImage" >> "$GITHUB_ENV" ;;
+            aarch64) echo "KARCH=arm64" >> "$GITHUB_ENV"; echo "KIMG=Image" >> "$GITHUB_ENV"; echo "KIMG_PATH=arch/arm64/boot/Image" >> "$GITHUB_ENV" ;;
+            *) echo "$HW: an architecture without pins"; exit 1 ;;
+          esac
           head -12 "$HW"
       - uses: ./.github/actions/setup-zig
       - name: vh-kconf and vh-plan (static PIE, ReleaseSafe)
@@ -149,11 +158,11 @@ jobs:
           # the LSMOD list is in lsmod format; new prompts take their default (yes ""), and
           # yes dies of SIGPIPE when make is done, so the pipeline's status is make's alone
           set +o pipefail
-          yes "" | make LLVM=1 localyesconfig LSMOD="$GITHUB_WORKSPACE/dl/resolve/lsmod"
+          yes "" | make LLVM=1 ARCH="$KARCH" localyesconfig LSMOD="$GITHUB_WORKSPACE/dl/resolve/lsmod"
           rc=$?
           set -o pipefail
           test "$rc" = 0
-          make LLVM=1 olddefconfig
+          make LLVM=1 ARCH="$KARCH" olddefconfig
           grep -E '^(CONFIG_MODULES|# CONFIG_MODULES|CONFIG_LOCALVERSION|CONFIG_SCHED_CLASS_EXT|CONFIG_DEBUG_INFO_BTF|CONFIG_LTO_CLANG_THIN|CONFIG_CFI|CONFIG_PREEMPT|CONFIG_NR_CPUS|CONFIG_IWLWIFI|CONFIG_R8169|CONFIG_XFS_FS|CONFIG_DM_CRYPT|CONFIG_NF_TABLES)[= ]' .config
           echo "symbols =y: $(grep -c '=y$' .config), =m: $(grep -c '=m$' .config || true), not set: $(grep -c 'is not set$' .config)"
       - name: diff (what survived, and why not)
@@ -175,10 +184,11 @@ jobs:
           grep -q '^CONFIG_LOCK_DOWN_KERNEL_FORCE_CONFIDENTIALITY=y' .config
           grep -q '^# CONFIG_IO_URING is not set' .config
           echo "ok"
-      - name: build (clang, lld, the plan's -march, reproducible)
+      - name: build (clang, lld, the plan's -march or -mcpu, reproducible)
         run: |
           set -euo pipefail
-          # the plan's -march for this machine's CPU (hwdb: a model table, else its x86-64 level)
+          # the plan's -march for this machine's CPU (hwdb: a model table, else its x86-64 level;
+          # on aarch64 -mcpu of the core, or -march=armv8-a in a virtual machine)
           KCFLAGS=$(cat "$GITHUB_WORKSPACE/dl/resolve/kcflags")
           export KCFLAGS
           echo "KCFLAGS=$KCFLAGS"
@@ -188,9 +198,9 @@ jobs:
           # KCFLAGS come last on the compiler line: -march selects the ISA and tuning of the
           # machine's CPU; the kernel's own -mno-sse/-mno-avx stay in force (clang applies explicit
           # feature flags on top of the CPU's). On the machine itself CONFIG_X86_NATIVE_CPU would do (U3).
-          make LLVM=1 KCFLAGS="$KCFLAGS" -j"$(nproc)" bzImage
+          make LLVM=1 ARCH="$KARCH" KCFLAGS="$KCFLAGS" -j"$(nproc)" "$KIMG"
           out=../out
-          cp arch/x86/boot/bzImage "$out/bzImage-vh-$KVER"
+          cp "$KIMG_PATH" "$out/$KIMG-vh-$KVER"
           cp .config "$out/config-vh-$KVER"
           cp System.map "$out/System.map-vh-$KVER"
           # the built-in modules and their parameters, as the build wrote them from the final
@@ -209,7 +219,7 @@ jobs:
             # the probe the kernel was resolved from: vh-kconf install refuses it on another machine
             echo "hw.zon: $HW sha256 $(sha256sum "$GITHUB_WORKSPACE/$HW" | cut -d' ' -f1)"
             echo "KBUILD_BUILD_TIMESTAMP=$KBUILD_BUILD_TIMESTAMP KCFLAGS=$KCFLAGS LLVM=1 $(clang --version | head -1)"
-            strings arch/x86/boot/bzImage | grep -m1 -E '^Linux version ' || true
+            strings "$KIMG_PATH" | grep -m1 -E '^Linux version ' || true
           } > "$out/BUILD"
           (cd "$out" && sha256sum * > SHA256SUMS)
           ls -l "$out"

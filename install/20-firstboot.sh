@@ -13,7 +13,8 @@ load_config /root/vh/vh.conf
 FORCE_MS=0
 [ "${1:-}" = "--microsoft" ] && FORCE_MS=1
 
-efv() { od -An -t u1 -j4 -N1 /sys/firmware/efi/efivars/"$1"-* 2>/dev/null | tr -d ' '; }
+# empty when the firmware has no such variable (no Secure Boot support at all), not an exit
+efv() { od -An -t u1 -j4 -N1 /sys/firmware/efi/efivars/"$1"-* 2>/dev/null | tr -d ' ' || true; }
 SB=$(efv SecureBoot) SETUP=$(efv SetupMode)
 
 say "base layer check"
