@@ -11,7 +11,8 @@ kernel/
   build.zig            vh-kconf (static PIE, ReleaseSafe; shares ../zig/lib/vh.zig in place)
   src/                 main (the commands), probe, resolve, diff, check, install (the machine
                        UKI), hw (hw.zon), alias (modules.alias, fnmatch), kconfig (.config, the
-                       Kconfig tree, Kbuild), uki (a bzImage's header, PE sections, cpio names)
+                       Kconfig tree, Kbuild), uki (a bzImage's and an arm64 Image's header, PE
+                       sections, cpio names)
   profiles/            Kconfig fragments, every option with its reason: base, mandatory,
                        hardening, perf (what every machine gets), arch/{x86_64,aarch64} (what
                        only one architecture has: the RTC driver, the 32-bit ABI, the compressed
@@ -99,23 +100,31 @@ against the arm64 pins, with `-march=armv8-a` and `-mcpu=cortex-a76` (U5).
 the command it would run; nothing is written. What happens to the result at boot is
 [docs/uni/kernel.md](../docs/uni/kernel.md#the-boot-assessment).
 
-1. **Verify.** Every file used (`BUILD`, `bzImage-vh-KVER`, `config-vh-KVER`,
+1. **Verify.** Every file used (`BUILD`, the kernel image, `config-vh-KVER`,
    `modules.builtin-vh-KVER`, `modules.builtin.modinfo-vh-KVER`, `lsmod`, `resolve-report.txt`,
    `plan.zon`, the hw.zon) must be in `DIR/SHA256SUMS` and match it. `BUILD` names the machine,
    the version, the commit and, on the line `hw.zon: kernel/hw/NAME.zon sha256 HEX`, the hw.zon
    the kernel was resolved from, which must be this machine's `/etc/vh/hw.zon` byte for byte.
    Another machine is refused with what differs (the CPU model, the board: `vh-kconf check`'s
    comparison); another probe of this machine with the advice to commit it and build again.
-   `--hw FILE` names another probe as this machine's (the VM rig does, see below). The bzImage's
-   setup header must report `KVER-vh` (`CONFIG_LOCALVERSION="-vh"`). SHA256SUMS is not a
-   signature: it catches a damaged or incomplete download; the release itself is trusted as
-   GitHub serves it.
+   `--hw FILE` names another probe as this machine's (the VM rig does, see below). The hw.zon's
+   architecture names the kernel image of the run: `bzImage-vh-KVER` on x86_64, whose setup
+   header reports the release, or `Image-vh-KVER` on aarch64, the uncompressed arm64 Image
+   (`Documentation/arch/arm64/booting.rst`: the `ARM\x64` magic, little-endian, loadable
+   anywhere, with the PE header of its EFI stub, which the UKI's stub starts it through;
+   `image_size` not less than the file), whose release is the `Linux version` banner it
+   carries, the line `BUILD` records with `strings` and which must agree. Either must report
+   `KVER-vh` (`CONFIG_LOCALVERSION="-vh"`); the gaming kernel (`-vh-game`) is x86_64's.
+   SHA256SUMS is not a signature: it catches a damaged or incomplete download; the release
+   itself is trusted as GitHub serves it.
 2. **The final `.config`.** With `--no-kernel` dracut skips its own kernel checks
    (`check_kernel_config` returns true), so install checks `config-vh-KVER` itself: `EFI_STUB`,
    `BLK_DEV_INITRD`, the `RD_*` of dracut's compressor (`compress=` of the dracut configuration,
    or a compression option in the hook's `DRACUT_OPTIONS`), `FW_LOADER` and
    `FW_LOADER_COMPRESS_ZSTD`/`_XZ` for the firmware's compression. A missing one stops the
-   install before dracut runs; `MICROCODE` unset is a note (the early cpio would be ignored).
+   install before dracut runs; on x86_64 `MICROCODE` unset is a note (the early cpio would be
+   ignored). The same checks hold on aarch64 (the Image has an EFI stub, the initrd is dracut's
+   compression), where the microcode has no counterpart.
 3. **The firmware of the initrd.** Every file under `/usr/lib/firmware` that a firmware pattern
    of the image's plan or of the installation's (`/etc/vh/plan.zon`) keeps. vh-plan made those
    patterns from the same `kernel/pins/modules.firmware` (what each module names, narrowed to
@@ -124,7 +133,8 @@ the command it would run; nothing is written. What happens to the result at boot
    on disk. Plus `regulatory.db` and `regulatory.db.p7s` when cfg80211 is built in (the feature
    `wifi`; without them it stays in the world domain). The patterns of the `*.microcode` rules
    are left out ([hwdb/README.md](../hwdb/README.md)): dracut's `early_microcode` puts this CPU's file into
-   the early cpio, as for the stock UKI. The drivers of the LSMOD list and the stock built-ins
+   the early cpio, as for the stock UKI (on x86_64; on aarch64 dracut makes no early cpio, and
+   the UKI's initrd is the compressed archive alone). The drivers of the LSMOD list and the stock built-ins
    whose firmware (`/root/vh/kernel/pins/modules.firmware`) gets no file in the initrd are
    reported. The files go in as Void ships them (zstd). A built-in driver probed at boot finds
    them: the firmware loader waits for the initramfs (`fw_get_filesystem_firmware()` calls
@@ -154,11 +164,12 @@ the command it would run; nothing is written. What happens to the result at boot
 
    The result must be printable ASCII within the kernel's 2047 bytes.
 5. **The UKI.** `dracut --force [DRACUT_OPTIONS] --no-kernel --kver KVER-vh --kernel-image
-   bzImage --uefi --kernel-cmdline=LINE --include FILE FILE ...` (one `--include` per firmware
+   FILE --uefi --kernel-cmdline=LINE --include FILE FILE ...` (one `--include` per firmware
    file, so that names with spaces stay whole), with the system's dracut configuration, the
    stock UKI's (`rootfs/etc/dracut.conf.d/10-vh.conf.in`: crypt, early microcode, reproducible;
    the optional modules' `20-vh-totp.conf`, `21-vh-deadman.conf`), into `/var/tmp`. Then
-   checked: `.linux` is the verified bzImage byte for byte, `.cmdline` the line of step 4 (a
+   checked: `.linux` is the verified kernel image byte for byte (the bzImage, or the arm64
+   Image, which dracut puts behind `linuxaa64.efi.stub` there), `.cmdline` the line of step 4 (a
    `kernel_cmdline=` in dracut's configuration would add to it), and an early cpio holds the
    microcode where there is one. Written to `/boot/efi/EFI/void/linux-KVER-vh_N.efi` beside its
    name, synced and renamed into place: N counts the installs of `KVER-vh` and never comes back
@@ -181,9 +192,12 @@ unmounted after; one install runs at a time (`/var/lib/vh/kconf-install.lock`). 
 tests of `install.zig` and `uki.zig`, with an install end to end under `--root` (stand-ins for
 dracut and vh-limine-update) and what is refused; `tests/kernel/dracut_test.sh` with Void's
 dracut; the VM rig's step `machine` (`python3 tests/vm/check.py machine --repo` with a run's
-qemu-q35 files in `build/kernel-custom`, the kvm-smoke input `kernel_run`). That kernel is
-built from the synthesised `kernel/hw/qemu-q35.zon`, not from the rig's probe, so the step
-passes `--hw` that file, and the boot assessment judges the kernel against the rig's own probe.
+files in `build/kernel-custom`, the kvm-smoke input `kernel_run`): the x86 rig's qemu-q35
+bzImage, or with `VH_ARCH=aarch64` the qemu-virt Image of the aarch64 rig under hvf
+([docs/uni/kernel.md](../docs/uni/kernel.md#the-machine-uki-on-arm64)). Each kernel is built
+from the rig's own probe committed as `kernel/hw/qemu-q35.zon` (`qemu-virt.zon`); the step
+passes `--hw` that file, and the boot assessment judges the kernel against the installation's
+own probe.
 
 What install does not do: build the kernel (CI does it, from a committed hw.zon); carry a later
 change of modprobe.d or of the stock command line into a machine UKI already installed (install
