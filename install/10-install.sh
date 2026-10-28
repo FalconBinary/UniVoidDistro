@@ -69,7 +69,10 @@ if lsblk -no MOUNTPOINTS "$VH_DISK" 2>/dev/null | grep -q .; then
 fi
 size_gib=$(( $(blockdev --getsize64 "$VH_DISK") / 1073741824 ))
 [ "$size_gib" -ge 20 ] || die "disk smaller than 20 GiB"
-sb=$(od -An -t u1 -j4 -N1 /sys/firmware/efi/efivars/SecureBoot-* 2>/dev/null | tr -d ' ')
+# a firmware without Secure Boot support has no SecureBoot variable at all (QEMU's own AAVMF
+# build, the aarch64 rig under hvf): then od finds no file, which pipefail would turn into an
+# exit; the gate names the missing Secure Boot itself
+sb=$(od -An -t u1 -j4 -N1 /sys/firmware/efi/efivars/SecureBoot-* 2>/dev/null | tr -d ' ' || true)
 [ "${sb:-0}" = 0 ] || warn "Secure Boot is on: the live image could not have booted this way; check the firmware"
 ESP_PART=$(part "$VH_DISK" 1)
 LUKS_PART=$(part "$VH_DISK" 2)
