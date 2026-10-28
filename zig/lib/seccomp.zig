@@ -3,6 +3,11 @@
 //! The classic BPF program is assembled here and passed to bwrap --seccomp FD. The filter
 //! is applied after the sandbox is assembled, inherited by every descendant and never removed.
 //!
+//! The filter is built for the architecture the program is compiled for (builtin.cpu.arch:
+//! x86_64 or aarch64): the audit architecture and, on x86_64 alone, the x32 check come from
+//! the target; the policy (what is allowed, denied or checked by its arguments) is the same
+//! on both.
+//!
 //! The instruction order serves the kernel's seccomp cache: first the architecture and the
 //! x32 bit, then the calls with argument checks and the denied ones, and everything else is
 //! an unconditional ALLOW that reads no arguments: the kernel caches such calls and does not
@@ -10,6 +15,7 @@
 //! selftest() runs both filters through the built-in BPF interpreter on a set of calls with
 //! expected results.
 const std = @import("std");
+const builtin = @import("builtin");
 const vh = @import("vh");
 
 /// a classic BPF instruction in the kernel format (struct sock_filter)
@@ -17,8 +23,23 @@ pub const Ins = struct { code: u16, jt: u8, jf: u8, k: u32 };
 
 pub const max_ins = 256;
 
+/// AUDIT_ARCH_* (linux/audit.h): what the kernel puts into seccomp_data.arch
 const AUDIT_ARCH_X86_64: u32 = 0xC000003E;
+const AUDIT_ARCH_I386: u32 = 0x40000003;
+const AUDIT_ARCH_AARCH64: u32 = 0xC00000B7;
+const AUDIT_ARCH_ARM: u32 = 0x40000028;
+const audit_arches = [_]u32{ AUDIT_ARCH_X86_64, AUDIT_ARCH_I386, AUDIT_ARCH_AARCH64, AUDIT_ARCH_ARM };
+/// the target's architecture: a call of any other is killed, the 32-bit compat ABIs among them
+/// (i386 under an x86_64 kernel, arm under an arm64 one)
+const AUDIT_ARCH: u32 = switch (builtin.cpu.arch) {
+    .x86_64 => AUDIT_ARCH_X86_64,
+    .aarch64 => AUDIT_ARCH_AARCH64,
+    else => @compileError("seccomp: no filter for this architecture"),
+};
+/// the x32 ABI of x86_64: a system call number with this bit set reaches the kernel's x32 entry
+/// points under AUDIT_ARCH_X86_64, so the filter answers ENOSYS; no other architecture has it
 const X32_BIT: u32 = 0x40000000;
+const has_x32 = builtin.cpu.arch == .x86_64;
 const RET_ALLOW: u32 = 0x7FFF0000;
 const RET_KILL: u32 = 0x80000000;
 fn errnoRet(e: u32) u32 {
@@ -163,9 +184,9 @@ const As = struct {
 
 fn header(a: *As) void {
     a.ldArch();
-    a.jmp(JEQ, AUDIT_ARCH_X86_64, .next, .kill);
+    a.jmp(JEQ, AUDIT_ARCH, .next, .kill);
     a.ldNr();
-    a.jmp(JGE, X32_BIT, .enosys, .next);
+    if (has_x32) a.jmp(JGE, X32_BIT, .enosys, .next);
 }
 
 fn tail(a: *As, allow_ptrace: bool) void {
@@ -346,8 +367,12 @@ const browser_cases = [_]Case{
     .{ .name = "perf_event_open", .nr = NR.perf_event_open, .args = .{ 0, 0, 0 }, .want = P },
     .{ .name = "read", .nr = NR.read, .args = .{ 0, 0, 0 }, .want = A },
     .{ .name = "mmap", .nr = NR.mmap, .args = .{ 0, 0, 0 }, .want = A },
-    .{ .name = "x32 read", .nr = X32_BIT | NR.read, .args = .{ 0, 0, 0 }, .want = N },
 };
+
+/// what one architecture alone has: the x32 bit on x86_64
+const arch_cases: []const Case = if (has_x32) &.{
+    .{ .name = "x32 read", .nr = X32_BIT | NR.read, .args = .{ 0, 0, 0 }, .want = N },
+} else &.{};
 
 const viewer_cases = [_]Case{
     .{ .name = "socket(AF_UNIX)", .nr = NR.socket, .args = .{ AF_UNIX_, 1, 0 }, .want = A },
@@ -368,24 +393,33 @@ fn hexAlt(v: u32) []const u8 {
 
 /// check both filters with the built-in interpreter; returns the number of failures
 pub fn selftest() usize {
-    const Set = struct { kind: []const u8, cases: []const Case };
-    const sets = [_]Set{ .{ .kind = "browser", .cases = &browser_cases }, .{ .kind = "viewer", .cases = &viewer_cases } };
+    const Set = struct { kind: []const u8, cases: []const Case, arch: []const Case };
+    const sets = [_]Set{
+        .{ .kind = "browser", .cases = &browser_cases, .arch = arch_cases },
+        .{ .kind = "viewer", .cases = &viewer_cases, .arch = &.{} },
+    };
     var bad: usize = 0;
     for (sets) |s| {
         var buf: [max_ins]Ins = undefined;
         const prog = build(s.kind, &buf).?;
-        if (runBpf(prog, 0, @splat(0), 0x40000003) != RET_KILL) { // i386
-            vh.out("FAIL {s}: a foreign architecture is not killed\n", .{s.kind});
-            bad += 1;
+        var checks: usize = 0;
+        for (audit_arches) |arch| {
+            if (arch == AUDIT_ARCH) continue;
+            checks += 1;
+            if (runBpf(prog, NR.read, @splat(0), arch) != RET_KILL) {
+                vh.out("FAIL {s}: a foreign architecture (0x{x}) is not killed\n", .{ s.kind, arch });
+                bad += 1;
+            }
         }
-        for (s.cases) |c| {
-            const got = runBpf(prog, c.nr, .{ c.args[0], c.args[1], c.args[2], 0, 0, 0 }, AUDIT_ARCH_X86_64);
+        for ([_][]const Case{ s.cases, s.arch }) |cases| for (cases) |c| {
+            checks += 1;
+            const got = runBpf(prog, c.nr, .{ c.args[0], c.args[1], c.args[2], 0, 0, 0 }, AUDIT_ARCH);
             if (got != c.want) {
                 vh.out("FAIL {s}: {s}: {s}, expected {s}\n", .{ s.kind, c.name, hexAlt(got), hexAlt(c.want) });
                 bad += 1;
             }
-        }
-        vh.out("{s}: {d} instructions, {d} checks\n", .{ s.kind, prog.len, s.cases.len + 1 });
+        };
+        vh.out("{s}: {d} instructions, {d} checks\n", .{ s.kind, prog.len, checks });
     }
     if (bad > 0) vh.out("selftest: {d} failures\n", .{bad}) else vh.outs("selftest: OK\n");
     vh.flush();
