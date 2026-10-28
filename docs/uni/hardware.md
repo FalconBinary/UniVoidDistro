@@ -168,10 +168,12 @@ state with its numbers):
   `kernel/profiles/arch/{x86_64,aarch64}` (the RTC driver, the 32-bit ABI off, the compressed
   image, pointer authentication and BTI), the ARM64 classes (`cpu-arm64`, `cpu-arm64-aes`,
   `iommu-smmu`, `gpu-vc4`, `platform-rpi`), `-mcpu` of the core; `tests/kernel/matrix.sh` and
-  `tests/kernel/run.sh` cover `aarch64-virt` and `rpi5`, and `kernel-custom` cross-builds them
-  (`ARCH=arm64`, the uncompressed `Image`). Not done: `vh-kconf install` of such an image (it
-  reads a bzImage's setup header for the release; the arm64 `Image` has none) and the boot
-  assessment of a machine UKI on ARM64 [VERIFY: the stock UKI path is what the rig boots].
+  `tests/kernel/run.sh` cover `aarch64-virt`, `rpi5` and `qemu-virt` (the aarch64 rig's own
+  probe), and `kernel-custom` cross-builds them (`ARCH=arm64`, the uncompressed `Image`).
+  `vh-kconf install` takes that `Image` (its arm64 header and its `Linux version` banner in
+  place of the bzImage's setup header) and the boot assessment runs on ARM64 as on x86_64
+  ([kernel.md](kernel.md#the-machine-uki-on-arm64)): verified under hvf
+  on the U5 rig, 2026-10-28 (`check.py assess` 17 of 17; `check.py machine` 23 of 23 with the `qemu-virt` Image of kernel-custom run 40678082632).
 - **The live image**: `univoiddistro-live-aarch64-COMMIT.iso`, built natively on GitHub's
   arm64 runner ([live-image.md](live-image.md#aarch64)).
 - **The boot path**: the same scripts, the architecture read where it enters: the EFI stub

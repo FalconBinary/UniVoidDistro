@@ -302,12 +302,102 @@ The two follow-ups the machine series needed:
   `99-zz-vh-modlock.sh` skips the preload and the lock there. A machine kernel with modules (the
   game feature) keeps every check of the stock kernel.
 
+### The machine UKI on ARM64
+
+Since 2026-10-28 (the follow-up of U5) `vh-kconf install` takes the arm64 `Image` of a
+`kernel-custom` run as it takes the x86_64 bzImage, and the boot assessment above runs
+unchanged on an ARM64 UEFI machine: Limine 12.9.4 for aa64 sets the same Boot Loader Interface
+variables on AAVMF (`vh-limine-update --status` on the U5 rig: "one-shot entries: yes"). What
+the architecture changes, in `kernel/src/install.zig` and `uki.zig`
+([kernel/README.md](../../kernel/README.md#install)):
+
+- **The kernel image.** The run's hw.zon names the architecture, and with it the file:
+  `Image-vh-KVER`, the uncompressed arm64 `Image` the workflow builds with `ARCH=arm64` (no
+  bzImage exists on arm64, and `KERNEL_ZSTD` has no counterpart: `kernel/profiles/arch/aarch64`).
+  Its 64-byte header (`Documentation/arch/arm64/booting.rst`) is checked: the `ARM\x64` magic,
+  little-endian, loadable anywhere, `image_size` not less than the file, and the PE header of
+  its EFI stub behind it (`CONFIG_EFI_STUB`): systemd's `linuxaa64.efi.stub`, which dracut puts
+  the Image behind (`uefi_stub` of `10-vh.conf`), starts the kernel through that header.
+- **The release.** A bzImage reports it in its setup header; the Image has no such field, so
+  install reads the kernel's banner, `Linux version A.B.C-vh (vh@ci) (clang ...) #1 SMP ...`,
+  which the uncompressed image carries and `/proc/version` shows later. The workflow records
+  the same line as the last line of `BUILD` (`strings Image | grep -m1 '^Linux version '`),
+  and install refuses an image whose banner is not BUILD's: the files of one run belong
+  together. A bzImage's banner is compressed, so BUILD has no such line on x86_64 and nothing
+  changes there.
+- **No early cpio.** dracut's `early_microcode` is x86's (the CPU vendor decides, in
+  `dracut.sh`): on aarch64 the UKI's `.initrd` is the compressed archive alone,
+  `CONFIG_MICROCODE` is not noted, and the plan has no microcode pattern to leave out.
+  Everything else is the same: the final `.config` against what a UKI needs (`EFI_STUB`,
+  `BLK_DEV_INITRD`, the `RD_*` of dracut's compressor, the firmware loader's compression), the
+  plan's firmware in the initrd, the stock UKI's command line without the parameters of modules
+  the kernel lacks (on the virt rig `efi_pstore.pstore_disable=1`), `vh-limine-update --new`,
+  the trial. The gaming kernel is x86_64's: a `-vh-game` Image is refused.
+- **The rig's machine is its own probe.** `kernel/hw/qemu-virt.zon` is the aarch64 rig's
+  `/etc/vh/hw.zon` of the U5 installation under hvf (QEMU's virt machine: NVMe, the TPM on the
+  MMIO TIS interface, the SMMUv3, virtio-net, virtio-gpu, a USB keyboard on xhci, the CDs on
+  virtio-scsi; the host's Apple cores, `-march=armv8-a`), as `qemu-q35.zon` is the x86 rig's.
+  `aarch64-virt.zon`, the probe of a VM on Apple's Virtualization framework, has virtio disks and
+  neither TPM nor NVMe: a kernel built from it would lose the rig's root disk and TPM, and the
+  boot assessment would fail it (`lost=N`), rightly. The step `machine` passes `--hw` the rig's
+  file, as on x86. Its plan is tiered (strict refuses the Secure Boot QEMU's AAVMF lacks):
+  the classes `cpu-arm64 cpu-arm64-aes gpu-virtio iommu-smmu storage-nvme tpm-tis
+  acpi-tiny-power-button-off`, 71 LSMOD modules, `tests/kernel/matrix.sh` green for all seven
+  machines.
+
+**Verified on the aarch64 rig** (2026-10-28, under hvf on an Apple M1, QEMU 11.1.2, the
+installed system of U5's rig: the stock kernel 6.18.59_1, Limine 12.9.4 on QEMU's AAVMF; a
+boot to the root shell takes 36 s):
+
+- **The assessment itself**, `check.py assess` with `VH_ARCH=aarch64 VH_ACCEL=hvf`: 17 of 17
+  in 6 min 27 s over six boots, the same checks as on x86_64: the Boot Loader Interface with
+  one-shot entries, `--new` with a copy of the stock UKI as the machine UKI, three trial boots
+  through the one-shot entry (`started: Void-Linux-6.18.59-vh_1--machine-kernel-`, set again
+  after each good boot), the promotion (`LoaderEntryDefault` set, limine.conf's hash
+  unchanged), `--demote`, `--retry`, a trial reset at its passphrase prompt whose next boot
+  reaches the stock default by itself and is recorded as failed, the copy removed and the
+  trial forgotten.
+- **The arm64 build passes `vh-kconf diff` as the profiles are**: `kernel-custom` with
+  `hw=kernel/hw/aarch64-virt.zon` (run 40675427404 on main, linux 6.18.59, 24 minutes): 245
+  of 246 requested symbols survived, the one lost not mandatory (`DEBUG_FS`, which `hardening`
+  turns off, is selected by `EDAC_DEBUG` and `PAGE_OWNER`, as on x86_64); 64 of 78 LSMOD
+  modules built in, 4 not (`efi_pstore` by `hardening`'s design, `llc` and `stp` without a
+  prompt, `virtiofs` behind `FUSE_FS=n`), 10 the tree has no module rule for (the Crypto
+  Extensions' ciphers, which `cpu-arm64-aes` sets by symbol). The Image: 43.4 MiB, the header
+  and the banner as above. With `hw=kernel/hw/qemu-virt.zon` (run 40678082632 on the branch,
+  25 minutes): 255 of 256, `DEBUG_FS` again; 61 of 71, `cuse` behind `FUSE_FS=n` and
+  `efi_pstore`; 46.4 MiB, with NVMe, the TIS TPM, the SMMUv3, PL011, virtio-net, virtio-gpu,
+  virtio-scsi and xhci built in.
+- **The machine UKI itself**, `check.py machine --repo` with the qemu-virt files of run
+  40678082632: 23 of 23 in 11 min 46 s over seven boots. `vh-kconf install` verified the nine
+  files, read the Image (47474 KiB in the file, `image_size` 48448 KiB, `text_offset` 0, 4 KiB
+  pages, little-endian, loadable anywhere, the EFI stub) and its banner, took no firmware (the
+  plan names none, cfg80211 is not built in), dropped `module.sig_enforce=1`,
+  `module_blacklist=`, `efi_pstore.pstore_disable=1` and `cfg80211.ieee80211_regdom=SI` from
+  the stock line (none of those modules is in this kernel) and left the iwlwifi options in
+  modprobe.d; dracut built a 57 MiB UKI on `linuxaa64.efi.stub` with the verified Image as
+  `.linux` and no early cpio; `vh-limine-update --new` signed it and set the one-shot entry.
+  Three trial boots of `6.18.59-vh` (no `/proc/modules`), each with `vh-kconf check` at
+  `machine=same devices=0 firmware=0 lost=0` (the NVMe root, the TIS TPM, the SMMUv3, the
+  PL011 console, every virtio device driven), the promotion to `LoaderEntryDefault`, vh-audit on
+  the machine kernel with no FAIL about modules and its own lines for a kernel without them,
+  `--demote`, the stock entry's boot, the UKI removed and the trial forgotten.
+
+**What stays [VERIFY]:** a real ARM64 machine (the Boot Loader Interface is Limine's, the
+NVRAM behaviour under a vendor's UEFI is each firmware's); Secure Boot with a machine UKI on an
+ARM64 firmware (the rig's AAVMF has none; Ubuntu's Secure Boot build stops after its banner
+under hvf, [hardware.md](hardware.md#arm64)); the Raspberry Pi, which has no Limine at all
+([rpi.md](rpi.md)).
+
 ### Not yet
 
-- A real run: no `kernel-custom` run of this fork has built a kernel with the `BUILD` line and
-  the `modules.builtin*` files install reads (scripts/Makefile.vmlinux of 6.18 writes both with
-  every vmlinux, `CONFIG_MODULES=n` included); no machine UKI has booted, on the GF63 (runbook
-  1.6) or on the VM rig (the step `machine`, kvm-smoke with `kernel_run`). [VERIFY]
+- On the GF63 itself (runbook 1.6): no machine UKI has been installed on real hardware yet
+  [VERIFY]. On the x86 VM rig the machine kernel of kernel-custom run 40321559300 (qemu-q35)
+  went through `vh-kconf install` and its trial boot under vh-init (kvm-smoke runs 40333017117
+  and 40340658992, the step `sched`, [ROADMAP](ROADMAP.md#state-2026-10-26-evening-the-three-pieces-on-the-vm-rig));
+  the step `machine` with its three boots to the default has run on the aarch64 rig
+  ([above](#the-machine-uki-on-arm64)) and not yet on the x86 one [VERIFY: kvm-smoke with
+  `step=machine` and `kernel_run`].
 - The local build ([below](#the-local-build-later)) will install its kernel the same way.
 
 ## The local build, later
