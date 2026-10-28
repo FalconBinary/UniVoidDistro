@@ -47,7 +47,9 @@ def find_firmware():
     known pair. On aarch64 Debian's and Ubuntu's qemu-efi-aarch64 ships a Secure Boot build
     (AAVMF_CODE.secboot.fd, with TPM 2.0 support); QEMU's own edk2-aarch64-code.fd (Homebrew)
     is built without SECURE_BOOT_ENABLE (roms/edk2-build.config), so with it the rig installs
-    in tiered mode only."""
+    in tiered mode only. Under Apple's hvf Ubuntu's 2025.11 build stops after its banner and
+    never reaches the boot manager (2026-10-28, QEMU 11.1.2; QEMU's own build boots in
+    seconds), so on a Mac the Homebrew pair is the one that works [VERIFY under KVM]."""
     if os.environ.get("VH_FW_CODE") and os.environ.get("VH_FW_VARS"):
         return os.environ["VH_FW_CODE"], os.environ["VH_FW_VARS"]
     if ARCH == "aarch64":

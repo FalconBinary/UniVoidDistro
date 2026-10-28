@@ -55,6 +55,20 @@ cp -a "$pre" "$inc/usr/local/lib/vh/prebuilt"
 # this machine uses and not every module of modules.devname, and the probe of the installation
 # (hw.zon) lists only that (rootfs/etc/modprobe.d/vh-devnodes.conf)
 cp "$inc/root/vh/rootfs/etc/modprobe.d/"*.conf "$inc/etc/modprobe.d/"
+# the rig logs in on the kernel's serial console (tests/vm/vhvm.py): void-mklive's getty-serial
+# hook enables a getty for console=ttyS0, hvc0 and hvsi0 only, and the PL011 of ARM machines
+# and of QEMU's virt is ttyAMA0 (the aarch64 rig found it: the live system came up with no
+# login on the console). The live system enables it itself in stage 1, as the hook would
+mkdir -p "$inc/etc/runit/core-services"
+cat > "$inc/etc/runit/core-services/98-vh-live-serial.sh" <<'EOT'
+# UniVoidDistro's live image (live/build-image.sh): a getty on the PL011 serial console when the
+# kernel was told to use it (console=ttyAMA0), as void-mklive's getty-serial hook does for ttyS0
+case " $(cat /proc/cmdline 2>/dev/null)" in
+	*" console=ttyAMA0"*)
+		[ -e /etc/runit/runsvdir/default/agetty-ttyAMA0 ] || [ ! -d /etc/sv/agetty-ttyAMA0 ] \
+			|| ln -s /etc/sv/agetty-ttyAMA0 /etc/runit/runsvdir/default/ ;;
+esac
+EOT
 cat > "$inc/etc/vh-live" <<EOT
 # UniVoidDistro's live image (docs/uni/live-image.md)
 COMMIT=$commit
