@@ -10,8 +10,8 @@
   check.py deadman    -- optional/deadman: RAM dump after poweroff, without the module and with it
   check.py totp       -- optional/tpm2-totp on swtpm: generation, the code before the passphrase, PCR 14
   check.py assess     -- the boot assessment of a machine UKI (a copy of the stock UKI), docs/uni/kernel.md
-  check.py machine    -- vh-kconf install of a kernel-custom run's qemu-q35 kernel (build/kernel-custom)
-                         through the boot assessment
+  check.py machine    -- vh-kconf install of a kernel-custom run's kernel for the rig (build/kernel-custom:
+                         qemu-q35's bzImage, or qemu-virt's Image with VH_ARCH=aarch64) through the boot assessment
   check.py vhinit     -- vh-init as PID 1 (init/README.md): the install through the boot assessment, a
                          reset trial, the trial boot under it; it stays PID 1 for the steps after it
                          (vhinit-rollback: the boots to the default, then runit back)

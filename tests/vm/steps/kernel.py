@@ -1,5 +1,5 @@
 """Track K (U3): the boot assessment of a machine UKI on the rig, and vh-kconf install of a real
-machine kernel (docs/uni/kernel.md)."""
+machine kernel (docs/uni/kernel.md); on either architecture of the rig (VH_ARCH, U5)."""
 import os
 import re
 import sys
@@ -94,7 +94,12 @@ def step_assess(a):
         shutdown(vm, ser)
 
 
-# the files of a kernel-custom run for qemu-q35 (its artifact kernel-custom-qemu-q35-KVER): the
+# the rig's own machine in kernel/hw, by architecture (the x86 rig's probe is qemu-q35, the
+# aarch64 rig's qemu-virt), and the kernel image of a kernel-custom run for it, as the workflow
+# names the file and vh-kconf install reports it: the x86_64 bzImage, the arm64 Image
+HW_NAME = "qemu-virt" if vhvm.ARCH == "aarch64" else "qemu-q35"
+KIMG = "Image" if vhvm.ARCH == "aarch64" else "bzImage"
+# the files of a kernel-custom run for that machine (its artifact kernel-custom-HW_NAME-KVER): the
 # kvm-smoke workflow downloads them here (its input kernel_run), by hand: gh run download
 ART = os.path.join(vhvm.REPO, "build", "kernel-custom")
 
@@ -108,8 +113,8 @@ def final_cmdline(out):
 def need_run_files(a):
     """the preconditions of a step that installs build/kernel-custom's kernel"""
     if not os.path.isfile(os.path.join(ART, "SHA256SUMS")):
-        sys.exit(f"no run's files in {ART}: the artifact kernel-custom-qemu-q35-KVER of a kernel-custom run "
-                 "(kvm-smoke: the input kernel_run; by hand: gh run download RUN -n kernel-custom-qemu-q35-KVER -D build/kernel-custom)")
+        sys.exit(f"no run's files in {ART}: the artifact kernel-custom-{HW_NAME}-KVER of a kernel-custom run "
+                 f"(kvm-smoke: the input kernel_run; by hand: gh run download RUN -n kernel-custom-{HW_NAME}-KVER -D build/kernel-custom)")
     if not getattr(a, "repo", False):
         sys.exit("the step needs --repo: the run's files and vh-kconf travel with the working copy")
     if not os.path.isfile(os.path.join(vhvm.REPO, "build", "vh-kconf")):
@@ -120,7 +125,7 @@ def install_trial(ser):
     """vh-kconf install of build/kernel-custom's kernel with the working copy's vh-kconf: the machine
     UKI on trial, set for the next boot. Returns (the Limine entry id, the UKI's name)."""
     d = f"{VM_SRC}/build/kernel-custom"
-    rc, out = run(ser, f"install -m 0755 {VM_SRC}/build/vh-kconf /usr/local/sbin/vh-kconf && vh-kconf install --hw {d}/qemu-q35.zon {d}", timeout=1800)
+    rc, out = run(ser, f"install -m 0755 {VM_SRC}/build/vh-kconf /usr/local/sbin/vh-kconf && vh-kconf install --hw {d}/{HW_NAME}.zon {d}", timeout=1800)
     m = re.search(r"vh-kconf install: linux-(\S+)\.efi installed", out)
     ver = m.group(1) if m else "?"
     check("vh-kconf install: the machine UKI is on the ESP and on trial, set for the next boot",
@@ -136,36 +141,32 @@ def remove_trial(ser, name):
 
 
 def step_machine(a):
-    """vh-kconf install of a real machine kernel: the qemu-q35 kernel of a kernel-custom run (its
-    files in build/kernel-custom) becomes a machine UKI on trial; it boots, vh-kconf check finds
+    """vh-kconf install of a real machine kernel: the rig's kernel of a kernel-custom run (its
+    files in build/kernel-custom: the qemu-q35 bzImage, or with VH_ARCH=aarch64 the qemu-virt
+    Image) becomes a machine UKI on trial; it boots, vh-kconf check finds
     the rig with every driver, three good boots make it Limine's default, vh-audit's boot and plan
     areas have no FAIL about modules on it, --demote and the removal of the UKI give the stock UKI
-    back. The run's kernel is built from kernel/hw/qemu-q35.zon, the rig's /etc/vh/hw.zon of a
-    kvm-smoke run (vhvm.py pins the CPU, so it is this rig's too): --hw names that file, and the
+    back. The run's kernel is built from kernel/hw/qemu-q35.zon (qemu-virt.zon), the rig's own
+    /etc/vh/hw.zon of a kvm-smoke run (of the U5 installation under hvf; vhvm.py pins the x86 CPU,
+    under hvf the CPU is the host's, so each is its rig's too): --hw names that file, and the
     boot assessment judges the kernel against this installation's own /etc/vh/hw.zon."""
-    if not os.path.isfile(os.path.join(ART, "SHA256SUMS")):
-        sys.exit(f"no run's files in {ART}: the artifact kernel-custom-qemu-q35-KVER of a kernel-custom run "
-                 "(kvm-smoke: the input kernel_run; by hand: gh run download RUN -n kernel-custom-qemu-q35-KVER -D build/kernel-custom)")
-    if not getattr(a, "repo", False):
-        sys.exit("the machine step needs --repo: the run's files and vh-kconf travel with the working copy")
-    if not os.path.isfile(os.path.join(vhvm.REPO, "build", "vh-kconf")):
-        sys.exit("no build/vh-kconf: sh tests/zig/build.sh")
+    need_run_files(a)
     d = f"{VM_SRC}/build/kernel-custom"
     vm, ser = boot(a)
     try:
         rc, out = run(ser, f"install -m 0755 {VM_SRC}/build/vh-kconf /usr/local/sbin/vh-kconf && vh-kconf version")
         check("the working copy's vh-kconf", rc == 0, out[-200:])
-        rc, out = run(ser, f"vh-kconf install --dry-run --hw {d}/qemu-q35.zon {d}", timeout=600)
+        rc, out = run(ser, f"vh-kconf install --dry-run --hw {d}/{HW_NAME}.zon {d}", timeout=600)
         cmd = final_cmdline(out)
         check("install --dry-run: the run's files verified, nothing written", rc == 0 and "verified:" in out and "nothing was written" in out,
               out[-500:].replace("\n", " | "))
         check("the machine command line: the stock one without module_blacklist= and module.sig_enforce=1",
               "root=UUID=" in cmd and "module_blacklist=" not in cmd and "module.sig_enforce" not in cmd, cmd)
-        rc, out = run(ser, f"vh-kconf install --hw {d}/qemu-q35.zon {d}", timeout=1800)
+        rc, out = run(ser, f"vh-kconf install --hw {d}/{HW_NAME}.zon {d}", timeout=1800)
         m = re.search(r"vh-kconf install: linux-(\S+)\.efi installed", out)
         ver = m.group(1) if m else "?"
         name = f"linux-{ver}.efi"
-        check("install: dracut --no-kernel built the UKI, .linux and .cmdline checked", ".linux is the verified bzImage" in out,
+        check(f"install: dracut --no-kernel built the UKI, .linux is the verified {KIMG}, .cmdline checked", f".linux is the verified {KIMG}" in out,
               out[-400:].replace("\n", " | "))
         check("install: the machine UKI is on the ESP and on trial, set for the next boot",
               rc == 0 and m is not None and "on trial: the next boot tries it" in out, out[-400:].replace("\n", " | "))
