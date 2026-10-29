@@ -40,6 +40,10 @@ check "a dependency on xbps is satisfied by thor (virtual)" 'xbps-query -p provi
 check "xbps-pkgdb thor: package files intact" 'xbps-pkgdb thor > "$w/pkgdb.log" 2>&1 || { cat "$w/pkgdb.log"; false; }'
 check "thor install: a package from the official repository" 'thor install -y tree > "$w/tree.log" 2>&1 && xbps-query tree >/dev/null'
 check "thor remove" 'thor remove -y tree > /dev/null 2>&1 && ! xbps-query tree >/dev/null 2>&1'
+# without -y, xbps-install's "Do you want to continue? [Y/n]" reads stdin: thor must leave it to
+# the xbps-install it execs (a zeroed xbps handle once made xbps_end close descriptor 0)
+check "thor install without -y: y on stdin installs" 'printf "y\n" | thor install tree > "$w/yes.log" 2>&1 && xbps-query tree >/dev/null'
+check "thor install without -y: n on stdin aborts, nothing installed" 'thor remove -y tree > /dev/null 2>&1; printf "n\n" | thor install tree > "$w/no.log" 2>&1; grep -q "Aborting" "$w/no.log" && ! xbps-query tree >/dev/null 2>&1'
 check "deny list: fuse3 is not installed without an allow" '! thor install -y fuse3 > "$w/deny.log" 2>&1 && grep -q "fuse3.*denied" "$w/deny.log"'
 echo fuse3 > /etc/thor/allow.conf
 check "SUID stripped from official packages too (fusermount3)" 'thor install -y fuse3 > "$w/fuse.log" 2>&1; [ -f /usr/bin/fusermount3 ] && [ ! -u /usr/bin/fusermount3 ] && grep -q "SUID/SGID stripped: /usr/bin/fusermount3" "$w/fuse.log"'
