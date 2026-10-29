@@ -175,6 +175,12 @@ fn xbpsInit(opt: XbpsPaths) void {
     if (opt.cache) |d| setStr(&xhp.cachedir, d);
     if (opt.conf) |d| setStr(&xhp.confdir, d);
     xhp.flags |= c.XBPS_FLAG_DISABLE_SYSLOG;
+    // the pkgdb lock's descriptor: libxbps sets it only in xbps_pkgdb_lock, which thor never
+    // calls (the xbps-install it execs takes the lock itself), and in the zeroed handle it is 0,
+    // stdin. xbps_end, run before that exec, unlocks by closing the descriptor: with 0 the
+    // exec'd xbps-install read EOF at its "[Y/n]" question and aborted every installation
+    // without -y (tests/thor/package_test.sh, "without -y")
+    xhp.lock_fd = -1;
     const rv = c.xbps_init(&xhp);
     if (rv != 0) {
         vh.errno = @enumFromInt(rv);
