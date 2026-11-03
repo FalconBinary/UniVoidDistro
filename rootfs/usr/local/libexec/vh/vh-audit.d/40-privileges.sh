@@ -25,6 +25,15 @@ xbps-query -p pkgver xbps 2>/dev/null | grep -q '^xbps-' && bad "plain xbps is i
 	|| ok "no plain xbps (thor replaces it)"
 grep -q thor_unpack_entry /usr/lib/libxbps.so.6 2>/dev/null && ok "libxbps with the thor policy" || bad "libxbps without the thor policy"
 chk "thor policy" "$(sed -n 's/^mode=//p' /etc/thor/policy.conf 2>/dev/null)" enforce
+# the channel of our own packages (docs/uni/rolling.md): one key of ours, the channel's
+if [ -s /etc/xbps.d/00-vh-channel.conf ]; then
+	ok "our packages: $(sed -n 's/^repository=//p' /etc/xbps.d/00-vh-channel.conf)"
+	n=0
+	for k in /usr/local/share/vh/keys/*/*.plist; do
+		[ ! -e "/var/db/xbps/keys/${k##*/}" ] || n=$((n + 1))
+	done
+	[ "$n" = 1 ] && ok "xbps trusts one key of ours" || bad "xbps trusts $n keys of ours: doas vh-update --channel NAME"
+fi
 for c in crond snooze acpid polkitd udisksd avahi-daemon cupsd NetworkManager sshd; do
 	command -v "$c" >/dev/null && bad "unwanted daemon: $c"
 done

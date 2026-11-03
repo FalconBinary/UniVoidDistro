@@ -1,11 +1,16 @@
 #!/bin/sh
 # void-hardperf-light: update the system with one command (docs/09).
-#   doas vh-update
+#   doas vh-update [-y]                            update the system
+#   doas vh-update --channel stable|rolling [--downgrade] [-y]
+#                                                  follow another channel of our packages, then update
+#   doas vh-update --adopt [-y]                    an installation of v0.2.0: our packages take over
+#                                                  its files, then update (docs/uni/rolling.md)
 # 0. gives runit's state of each service to /run (vh-sv-runstate);
-# 1. shows what will be updated; 2. installs; 3. the kernel hooks rebuild and sign the UKI
-# and Limine; 4. if the microcode, firmware, dracut, stub or limine were updated, rebuilds
-# the UKI itself (their hooks do not); 5. strips SUID bits that came back; 6. refreshes the
-# certificates for unbound; 7. shows what has to be restarted.
+# 1. shows what will be updated, Void's packages and ours; 2. installs, in one transaction of thor;
+# 3. the kernel hooks rebuild and sign the UKI and Limine; 4. if the microcode, firmware, dracut,
+# stub, limine or vh-limine-update were updated, rebuilds the UKI itself (their hooks do not);
+# 5. runs the migrations our packages brought (the files no package can own); 6. strips SUID bits
+# that came back; 7. refreshes the certificates for unbound; 8. shows what has to be restarted.
 # With the keys on separate media (optional/sb-offline-keys): the packages are downloaded
 # with the network up, then installed and signed without network while the media is attached.
 set -eu
@@ -16,8 +21,93 @@ PATH=/usr/bin
 umask 022
 [ "$(id -u)" = 0 ] || { echo "run: doas vh-update" >&2; exit 1; }
 . /etc/vh/vh.env
+yes=0 channel="" downgrade=0 adopt=0
+while [ $# -gt 0 ]; do
+	case $1 in
+		-y) yes=1 ;;
+		--channel) channel=${2:-}; [ $# -gt 1 ] && shift ;;
+		--downgrade) downgrade=1 ;;
+		--adopt) adopt=1 ;;
+		*) echo "usage: doas vh-update [-y] [--channel stable|rolling [--downgrade]] [--adopt]" >&2; exit 2 ;;
+	esac
+	shift
+done
 offline=0
 grep -q '^KEYS_OFFLINE=yes' /etc/vh/boot.conf 2>/dev/null && offline=1
+CHANNEL_CONF=/etc/xbps.d/00-vh-channel.conf
+KEYS=/usr/local/share/vh/keys
+
+# xbps asks [Y/n] before it trusts a repository's new key, and -y does not answer that question:
+# with stdin closed it refuses the repository. A signature of an unknown key stops the update here,
+# instead of a key taken at a stray Enter, or of an update that quietly leaves that repository out
+sync_repos() {
+	if ! out=$(xbps-install -S </dev/null 2>&1); then
+		printf '%s\n' "$out" | grep -v 'repodata' >&2 || true
+		case $out in
+			*"Failed to import pubkey"*) echo "!! a repository is signed by a key this system does not trust: nothing was updated (docs/uni/rolling.md, \"The keys\")" >&2 ;;
+		esac
+		exit 1
+	fi
+	case $out in
+		*"Failed to import pubkey"*)
+			printf '%s\n' "$out" | grep -v 'repodata' >&2
+			echo "!! a repository is signed by a key this system does not trust: nothing was updated (docs/uni/rolling.md, \"The keys\")" >&2
+			exit 1 ;;
+	esac
+}
+
+# set_channel NAME: its repository in xbps.d and its key the only one of ours xbps trusts, so a
+# system on stable does not take what the rolling key signed. Before 01-thor.conf: xbps takes a
+# package from the first repository that has it
+set_channel() {
+	url=$(sed -n "s|^$1=||p" /etc/vh/channels.conf)
+	[ -n "$url" ] || { echo "no channel \"$1\" in /etc/vh/channels.conf: stable or rolling" >&2; exit 2; }
+	ls "$KEYS/$1"/*.plist >/dev/null 2>&1 || { echo "no key of the channel $1 in $KEYS (the package vh-keyring)" >&2; exit 1; }
+	for k in "$KEYS"/*/*.plist; do
+		rm -f "/var/db/xbps/keys/${k##*/}"
+	done
+	install -m 0644 "$KEYS/$1"/*.plist /var/db/xbps/keys/
+	printf '# the channel of our own packages (docs/uni/rolling.md): doas vh-update --channel NAME\nrepository=%s\n' "$url" > "$CHANNEL_CONF"
+	echo "==> the channel: $1 ($url)"
+}
+
+# rolling is published at least weekly: an older index is a broken publication or a frozen mirror
+# (docs/09, section 4). Its age: univoid's version carries the time of its build (pkg/build.sh)
+check_fresh() {
+	url=$(sed -n 's/^repository=//p' "$CHANNEL_CONF" 2>/dev/null)
+	[ "$url" = "$(sed -n 's/^rolling=//p' /etc/vh/channels.conf 2>/dev/null)" ] || return 0
+	v=$(xbps-query -i --repository="$url" -p pkgver univoid </dev/null 2>/dev/null) || v=""
+	v=${v%_*}; v=${v##*.}
+	case $v in [0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]) ;; *) return 0 ;; esac
+	t=$(date -u -d "$(printf '%s-%s-%s %s:%s' "${v%????????}" "$(echo "$v" | cut -c5-6)" "$(echo "$v" | cut -c7-8)" "$(echo "$v" | cut -c9-10)" "$(echo "$v" | cut -c11-12)")" +%s 2>/dev/null) || return 0
+	age=$((($(date -u +%s) - t) / 86400))
+	if [ "$age" -gt 9 ]; then
+		echo "  !! the rolling index is $age days old, it is published weekly: check it by a second channel (docs/09, section 4)"
+	fi
+}
+
+# the migrations of our packages: each once, in order (docs/uni/rolling.md, "What no package owns")
+MIGRATE=/usr/local/libexec/vh/migrate.d
+MIGRATED=/var/lib/vh/migrated
+run_migrations() {
+	[ -d "$MIGRATE" ] || return 0
+	[ -d /var/lib/vh ] || install -d -m 0700 /var/lib/vh
+	for m in "$MIGRATE"/*; do
+		[ -f "$m" ] || continue
+		n=${m##*/}
+		! grep -qxF "$n" "$MIGRATED" 2>/dev/null || continue
+		echo "==> migration $n"
+		sh "$m" || { echo "!! the migration $n failed: fix the cause and run doas vh-update again" >&2; exit 1; }
+		echo "$n" >> "$MIGRATED"
+	done
+}
+
+# the packages that take over an installation's files: the desktop's build and the policy as the plan
+# and vh.conf ask for them, in the installer's own words
+adopt_packages() {
+	# shellcheck disable=SC2016
+	bash -c '. /root/vh/install/lib.sh; load_config /root/vh/vh.conf >/dev/null 2>&1; load_plan /root/vh/plan.env; echo "univoid vh-desktop-$(vh_desktop_variant)"; [ "$VH_MAC" != selinux ] || echo vh-selinux-policy'
+}
 
 # runit's state of each service in /run, as Void's packages keep it (an installation before
 # 2026-10-21 kept ours on disk): first, whether or not there are updates
@@ -25,8 +115,39 @@ grep -q '^KEYS_OFFLINE=yes' /etc/vh/boot.conf 2>/dev/null && offline=1
 
 # strict network mode (optional/strict-net): root opens the mirrors only for a while
 [ -e /etc/vh/optional/strict-net ] && /usr/local/sbin/vh-net xbps 30
+
+if [ -n "$channel" ]; then
+	set_channel "$channel"
+fi
 echo "==> synchronising repositories and listing updates"
-xbps-install -S >/dev/null
+sync_repos
+if [ "$adopt" = 1 ]; then
+	[ -s "$CHANNEL_CONF" ] || { echo "no channel in $CHANNEL_CONF: the command of docs/uni/rolling.md, \"From v0.2.0\", writes it" >&2; exit 1; }
+	echo "==> our packages take over this installation's files"
+	# a build made here (from the USB stick) may have the admin's own config.zig: kept next to it
+	if ! head -1 /etc/vh/desktop.sha256 2>/dev/null | grep -q prebuilt; then
+		install -d -m 0700 /root/vh-desktop-before-adopt
+		cp -p /usr/local/bin/refurswm /usr/local/bin/refursline /root/vh-desktop-before-adopt/
+		echo "  !! the desktop here was built on this machine: the binaries are in /root/vh-desktop-before-adopt; with your own config.zig: docs/ru/09-updates.md, section 7"
+	fi
+	while read -r k; do
+		case $k in /*) thor keep "$k" >/dev/null ;; esac
+	done < /usr/local/lib/vh/thor-keep
+	xbps-install -yu thor </dev/null
+	# shellcheck disable=SC2046 # the names have no spaces
+	thor install -y $(adopt_packages) </dev/null
+	# a conf file already there stays: the package's identical copy next to it goes
+	find /etc -name '*.new-*' -type f | while read -r f; do
+		if cmp -s "$f" "${f%.new-*}"; then rm -f "$f"; fi
+	done
+	run_migrations
+fi
+if [ "$downgrade" = 1 ]; then
+	echo "==> our packages at the versions of the channel, downwards too"
+	# shellcheck disable=SC2046 # the names have no spaces
+	xbps-install -yf $(xbps-query -l | awk '{print $2}' | sed 's/-[^-]*$//' | grep -E '^(thor|univoid|vh-.*)$') </dev/null
+fi
+check_fresh
 # thor is based on xbps 0.60.7: when a new xbps is out, rebuild thor from the USB stick (docs/18)
 up=$(xbps-query -R -p pkgver xbps 2>/dev/null | sed -n 's/^xbps-\([0-9]\)/\1/p')
 base=$(thor --version | awk '{print $2}' | sed 's/\.[0-9]*$//')
@@ -40,21 +161,24 @@ if [ -z "$updates" ]; then
 fi
 echo "$updates" | sed 's/^/  /'
 
-rebuild=0 kver_updated=0
+rebuild=0 kver_updated=0 limine_maybe=0
 for p in $updates; do
 	case ${p%-*} in
 		intel-ucode|linux-firmware*|wireless-regdb|dracut|dracut-uefi|systemd-boot-efistub|cryptsetup|tpm2-totp|tpm2-tools|limine|sbctl|eudev|kmod) rebuild=1 ;;
+		vh-tools) limine_maybe=1 ;;
 	esac
 done
 echo "$updates" | grep -q "^$VH_KERNEL-" && kver_updated=1
 [ "$kver_updated" = 1 ] && echo "  new kernel: note it down to compare at reboot -- $(echo "$updates" | grep "^$VH_KERNEL-")"
-printf 'Continue? [y/N] '
-read -r a
-case $a in y|Y) ;; *) exit 1 ;; esac
+if [ "$yes" != 1 ]; then
+	printf 'Continue? [y/N] '
+	read -r a
+	case $a in y|Y) ;; *) exit 1 ;; esac
+fi
 
-if [ "$offline" = 1 ] && [ $((rebuild + kver_updated)) -gt 0 ]; then
+if [ "$offline" = 1 ] && [ $((rebuild + kver_updated + limine_maybe)) -gt 0 ]; then
 	echo "==> downloading the packages into the cache (network still up, in parallel: thor)"
-	thor fetch -u
+	thor fetch -u </dev/null
 	printf 'Insert the Secure Boot key media and press Enter... '
 	read -r _
 	/usr/local/sbin/vh-keys mount
@@ -62,21 +186,28 @@ if [ "$offline" = 1 ] && [ $((rebuild + kver_updated)) -gt 0 ]; then
 fi
 
 echo "==> installing (thor: parallel download, security policy)"
-# the new thor from the local repository goes first (like xbps-install -u xbps)
-xbps-install -yu thor
-thor update -y
+limine_before=$(sha256sum /usr/local/sbin/vh-limine-update 2>/dev/null) || limine_before=""
+# the new thor goes first (like xbps-install -u xbps)
+xbps-install -yu thor </dev/null
+thor update -y </dev/null
+# the UKI's signature and Limine's configuration are vh-limine-update's work (docs/09, section 2)
+[ "$limine_before" = "$(sha256sum /usr/local/sbin/vh-limine-update 2>/dev/null)" ] || rebuild=1
 if [ "$rebuild" = 1 ] && [ "$kver_updated" = 0 ]; then
 	echo "==> initramfs/bootloader components were updated: rebuilding the UKI"
 	xbps-reconfigure -f "$VH_KERNEL"
 fi
-if [ "$offline" = 1 ] && [ $((rebuild + kver_updated)) -gt 0 ]; then
+if [ "$offline" = 1 ] && [ $((rebuild + kver_updated + limine_maybe)) -gt 0 ]; then
 	trap - EXIT INT TERM
 	/usr/local/sbin/vh-keys umount
 fi
 
+run_migrations
+
 echo "==> inspecting the updated packages (new SUID, sysctl.d, udev, hooks: vh-pkg scan)"
+# our own packages have been through the rig; their hooks are in pkg/thor-keep
+scan=$(echo "$updates" | sed 's/-[^-]*$//' | grep -vE '^(thor|univoid|vh-.*)$') || scan=""
 # shellcheck disable=SC2086
-/usr/local/sbin/vh-pkg scan $(echo "$updates" | sed 's/-[^-]*$//') || true
+[ -z "$scan" ] || /usr/local/sbin/vh-pkg scan $scan || true
 
 echo "==> SUID and capabilities"
 /usr/local/sbin/vh-suid-strip
@@ -84,8 +215,15 @@ echo "==> SUID and capabilities"
 # SELinux (docs/uni/selinux.md): a package's new files take their directory's label; the
 # programs that enter a domain (a new /usr/bin/unbound) get theirs here
 if [ -s /etc/vh/selinux/file_contexts ] && [ -x /usr/local/sbin/vh-selabel ]; then
-	echo "==> SELinux labels of /usr and /etc"
-	/usr/local/sbin/vh-selabel /usr /etc
+	echo "==> SELinux labels of /usr, /etc and /root/vh"
+	/usr/local/sbin/vh-selabel /usr /etc /root/vh
+fi
+
+# a conf file the admin or the installer changed stayed: the new one is next to it
+news=$(find /etc -name '*.new-*' -type f 2>/dev/null | head -20)
+if [ -n "$news" ]; then
+	echo "==> configuration: new versions next to files you changed (compare, then replace or delete):"
+	echo "$news" | sed 's/^/  /'
 fi
 
 if echo "$updates" | grep -q '^ca-certificates-'; then

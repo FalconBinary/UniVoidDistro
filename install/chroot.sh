@@ -181,6 +181,13 @@ if [ ! -e /var/lib/sbctl/keys/db/db.key ]; then
 fi
 chmod -R go-rwx /var/lib/sbctl
 
+# ---------------------------------------------------------------- migrations (docs/uni/rolling.md)
+# they bring older installations to what this one already is: a later vh-update runs only newer ones
+if [ -d /usr/local/libexec/vh/migrate.d ]; then
+	[ -d /var/lib/vh ] || install -d -m 0700 /var/lib/vh
+	ls /usr/local/libexec/vh/migrate.d > /var/lib/vh/migrated
+fi
+
 # ---------------------------------------------------------------- SUID (docs/05)
 say "SUID and capabilities"
 /usr/local/sbin/vh-suid-strip

@@ -167,7 +167,7 @@ sh "$src/pkg/sign.sh" "$pub" "$w/keys/a.pem" "CI" > "$w/s3.log" 2>&1 && ok "sign
 # a build of the same programs with one changed: only that one, and univoid, get new versions
 p4=$w/pre4; cp -a "$p3" "$p4"; printf '#!/bin/sh\necho vh-init 4\n' > "$p4/bin/vh-init"
 n4=$w/n4; st4=$w/st4
-VH_PKG_VERSION=0.2.0.r4 VH_PKG_REVISION=11 VH_PKG_STAMP=202611020000 sh "$src/pkg/build.sh" "$p4" "$arch" "$n4" >/dev/null 2>"$w/err4" || bad "pkg/build.sh r4" "$(tail -3 "$w/err4")"
+VH_PKG_VERSION=0.2.0.r4 VH_PKG_REVISION=11 VH_PKG_STAMP=202001020300 sh "$src/pkg/build.sh" "$p4" "$arch" "$n4" >/dev/null 2>"$w/err4" || bad "pkg/build.sh r4" "$(tail -3 "$w/err4")"
 XBPS_BIN=/usr/bin sh "$src/pkg/merge.sh" "$n4" "$arch" "$pub" "$st4" > "$w/m4.log" 2>&1 || bad "merge" "$(tail -3 "$w/m4.log")"
 got=$(cd "$st4" && ls *.xbps | sed 's/-[^-]*$//' | LC_ALL=C sort | tr '\n' ' ')
 [ "$got" = "univoid vh-init " ] && ok "the second publication: only vh-init and univoid are new" || bad "the second publication" "$got"
@@ -229,6 +229,43 @@ if bash "$src/install/build-thor.sh" --out "$w/realthor" > "$w/thor.log" 2>&1; t
 	[ ! -e "$w/tn/etc/kernel.d/post-install/90-vh-uki" ] && grep -q 'not extracted' "$w/tn.log" && ok "without the list the policy holds the hooks back" || bad "the policy let a hook through" "$(grep -c 'not extracted' "$w/tn.log")"
 else
 	bad "build-thor.sh --out" "$(tail -5 "$w/thor.log")"
+fi
+
+echo "== vh-update: the channel, this container as the system"
+if [ -x "${T:-}/thor" ]; then
+	# the real thor as the system's, of a revision above the stand-in in the published set
+	VH_PKG_REVISION=999 bash "$src/install/build-thor.sh" --out "$w/rt2" > "$w/thor2.log" 2>&1 || bad "thor revision 999" "$(tail -3 "$w/thor2.log")"
+	yes | xbps-install -R "$w/rt2/repo" -Sy thor > "$w/thor3.log" 2>&1 || bad "the real thor" "$(tail -3 "$w/thor3.log")"
+	( cd "$pub" && exec python3 -m http.server 8321 --bind 127.0.0.1 >/dev/null 2>&1 ) &
+	srv=$!
+	sleep 1
+	# this container's system: only the published set as a repository, the key dirs vh-keyring brings
+	find /etc/xbps.d /usr/share/xbps.d -name '*repository*' -delete
+	mkdir -p /etc/vh /etc/thor /usr/local/sbin /usr/local/libexec/vh /usr/local/share/vh/keys/stable /usr/local/share/vh/keys/rolling
+	printf 'mode=enforce\n' > /etc/thor/policy.conf
+	printf 'stable=%s\nrolling=%s\n' "$U" "$U" > /etc/vh/channels.conf
+	printf 'VH_KERNEL=linux6.18\n' > /etc/vh/vh.env
+	cp "$kr"/var/db/xbps/keys/*.plist /usr/local/share/vh/keys/rolling/
+	cp "$kr2"/var/db/xbps/keys/*.plist /usr/local/share/vh/keys/stable/
+	printf '#!/bin/sh\nexit 0\n' > /usr/local/libexec/vh/vh-sv-runstate
+	printf '#!/bin/sh\nexit 0\n' > /usr/local/sbin/vh-suid-strip
+	chmod 755 /usr/local/libexec/vh/vh-sv-runstate /usr/local/sbin/vh-suid-strip
+	install -m 0755 "$src/rootfs/usr/local/sbin/vh-update" /usr/local/sbin/vh-update
+	yes | xbps-install -Sy >/dev/null 2>&1   # no channel yet: nothing to fetch
+	# the published set is signed by the stable key now
+	/usr/local/sbin/vh-update --channel stable -y > "$w/u1.log" 2>&1; rc=$?
+	[ "$rc" = 0 ] && grep -qx "repository=$U" /etc/xbps.d/00-vh-channel.conf && ok "--channel stable: its repository in xbps.d" || bad "--channel stable, rc $rc" "$(tail -5 "$w/u1.log")"
+	[ -e "/var/db/xbps/keys/$(basename "$kr2"/var/db/xbps/keys/*.plist)" ] && [ ! -e "/var/db/xbps/keys/$(basename "$kr"/var/db/xbps/keys/*.plist)" ] && ok "only the stable key of ours is trusted" || bad "keys after --channel stable" "$(ls /var/db/xbps/keys | tr '\n' ' ')"
+	/usr/local/sbin/vh-update --channel rolling -y > "$w/u2.log" 2>&1; rc=$?
+	[ "$rc" != 0 ] && grep -q 'does not trust' "$w/u2.log" && ok "--channel rolling while the index is the stable key's: refused, with the reason" || bad "--channel rolling, rc $rc" "$(tail -5 "$w/u2.log")"
+	sh "$src/pkg/sign.sh" "$pub" "$w/keys/a.pem" "CI" --all >/dev/null 2>&1
+	/usr/local/sbin/vh-update --channel rolling -y > "$w/u3.log" 2>&1; rc=$?
+	[ "$rc" = 0 ] && ok "--channel rolling: signed by its key" || bad "--channel rolling signed, rc $rc" "$(tail -5 "$w/u3.log")"
+	grep -q 'the rolling index is .* days old' "$w/u3.log" && ok "the rolling index of 2020: reported as stale" || bad "stale index" "$(tail -5 "$w/u3.log")"
+	xbps-install -y vh-sched </dev/null >/dev/null 2>&1
+	kill "$srv" 2>/dev/null
+else
+	bad "no real thor for vh-update"
 fi
 
 echo

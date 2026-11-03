@@ -126,6 +126,7 @@ load_config() {
 	yesno VH_FIRMWARE_TRIM "$VH_FIRMWARE_TRIM"
 	case $VH_SECURITY in strict|tiered) ;; *) die "VH_SECURITY: strict or tiered" ;; esac
 	case $VH_MAC in apparmor|selinux) ;; *) die "VH_MAC: apparmor or selinux" ;; esac
+	case ${VH_CHANNEL:-stable} in stable|rolling) ;; *) die "VH_CHANNEL: stable or rolling" ;; esac
 	case $VH_SELINUX_MODE in permissive|enforcing) ;; *) die "VH_SELINUX_MODE: permissive or enforcing" ;; esac
 	case $VH_GPU in auto|igpu|nouveau) ;; *) die "VH_GPU: auto, igpu or nouveau" ;; esac
 	case $VH_BLUETOOTH in off|optional|on) ;; *) die "VH_BLUETOOTH: off, optional or on" ;; esac

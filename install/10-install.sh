@@ -377,7 +377,26 @@ if [ "$VH_MAC" = selinux ] && [ "$DRY_RUN" != 1 ]; then
 		|| { printf '%s\n' "$selabel_diff" | tail -25; die "vh-selabel: a label differs after the kernel's installation"; }
 fi
 
-say "thor policy: enforce (baseline: $(grep -vc '^#' "$MNT/etc/thor/baseline" 2>/dev/null || echo 0) entries)"
+# Only thor stays in the local repository: our other packages, every desktop build among them, were
+# for this installation; their updates come from the channel. The channel goes in last: nothing of
+# the installation depends on it
+say "the local repository: thor alone; the channel of our packages: $VH_CHANNEL"
+if [ "$DRY_RUN" = 1 ]; then echo "   + /etc/xbps.d/00-vh-channel.conf, its key in /var/db/xbps/keys"
+else
+	find "$MNT/var/lib/thor/repo" -maxdepth 1 -type f ! -name 'thor-*.xbps' -delete
+	( cd "$MNT/var/lib/thor/repo" && XBPS_TARGET_ARCH=$VH_ARCH "${THOR%/thor}/xbps-rindex" -a thor-*.xbps >/dev/null )
+	# no key yet in pkg/keys (before the first publication): the system has no channel, the rebuild
+	# from the USB stick remains (docs/ru/09-updates.md)
+	if ls "$VH_ROOT/pkg/keys/$VH_CHANNEL"/*.plist >/dev/null 2>&1; then
+		install -m 0644 "$VH_ROOT/pkg/keys/$VH_CHANNEL"/*.plist "$MNT/var/db/xbps/keys/"
+		printf '# the channel of our own packages (docs/uni/rolling.md): doas vh-update --channel NAME\nrepository=%s\n' \
+			"$(sed -n "s|^$VH_CHANNEL=||p" "$MNT/etc/vh/channels.conf")" > "$MNT/etc/xbps.d/00-vh-channel.conf"
+	else
+		warn "no key of the channel $VH_CHANNEL in pkg/keys: no channel yet, vh-update updates Void's packages only"
+	fi
+fi
+
+say "thor policy: enforce (baseline:$(grep -vc '^#' "$MNT/etc/thor/baseline" 2>/dev/null || echo 0) entries)"
 if [ "$DRY_RUN" = 1 ]; then echo "   + /etc/thor/policy.conf: mode=enforce"
 else printf '# thor (docs/18): enforce -- the policy applies; learn -- only while the system is being installed\nmode=enforce\n' > "$MNT/etc/thor/policy.conf"; fi
 

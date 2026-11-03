@@ -1,0 +1,16 @@
+#!/bin/sh
+# /etc/runit/ctrlaltdel of an older installation: the thin file, whose work is in vh-base. A file
+# neither of the versions the installer wrote (an admin's) stays, with the new one next to it.
+set -eu
+new=/root/vh/rootfs/etc/runit/ctrlaltdel
+cur=/etc/runit/ctrlaltdel
+if cmp -s "$new" "$cur"; then
+	exit 0
+fi
+# the logic of v0.2.0 tests the driver's directory; an admin's own file does not end like ours
+if grep -q "^# Void's ctrlaltdel: on to stage 3, which reboots" "$cur" 2>/dev/null && grep -q 'tiny-power-button' "$cur"; then
+	install -m 0755 "$new" "$cur"
+else
+	install -m 0644 "$new" "$cur.new-migration"
+	echo "  $cur was changed here: the new one is $cur.new-migration"
+fi
