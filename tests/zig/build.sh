@@ -24,6 +24,10 @@ cp "$b"/zx/bin/* "$b/"
 rm -rf "$b/kx"
 (cd "$repo/kernel" && zig build -Dtarget="$VH_ARCH-linux" -Dcpu=baseline --prefix "$b/kx")
 cp "$b/kx/bin/vh-kconf" "$b/"
+# vh-plan of the working copy: pkg/tools.map's list, which build-tools.sh --prebuilt installs
+rm -rf "$b/ax"
+(cd "$repo/adapt" && zig build -Dtarget="$VH_ARCH-linux" -Dcpu=baseline --prefix "$b/ax")
+cp "$b/ax/bin/vh-plan" "$b/"
 # the gaming session (session/), PID 1 (init/) and the scheduler (sched/: the loader and the
 # BPF object): build-tools.sh --prebuilt installs them with the tools
 rm -rf "$b/sx" "$b/ix" "$b/scx"

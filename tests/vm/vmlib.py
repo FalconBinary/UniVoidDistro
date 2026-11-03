@@ -185,7 +185,7 @@ def boot(a, extra=None, on_prompt=None):
                  "tar -xf $(readlink -f /dev/disk/by-id/nvme-*VHREPO* | head -1) -C /tmp/vhn && "
                  # the directory is always void-hardperf-light, whatever the checkout is called
                  f"{{ [ -d {VM_SRC} ] || mv /tmp/vhn/* {VM_SRC}; }} && "
-                 f"cp -a {VM_SRC}/install {VM_SRC}/optional {VM_SRC}/rootfs {VM_SRC}/tools {VM_SRC}/zig "
+                 f"cp -a {VM_SRC}/install {VM_SRC}/optional {VM_SRC}/pkg {VM_SRC}/rootfs {VM_SRC}/tools {VM_SRC}/zig "
                  f"{VM_SRC}/thor /root/vh/ && rm -rf /root/vh/src && "
                  f"cd {VM_SRC}/rootfs/usr/local && find . -type f ! -name '*.in' | "
                  "while read f; do install -m $(stat -c %a \"$f\") \"$f\" \"/usr/local/$f\"; done; cd / && "

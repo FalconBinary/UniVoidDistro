@@ -256,12 +256,21 @@ render() {
 # Copies the rootfs/ tree into ROOT: *.in files go through render(), the rest are
 # copied as they are. Modes: executable -> 0755, others -> 0644, doas.conf -> 0400.
 # *.cin files are rendered by chroot.sh: they need values that exist only inside the
-# system (GIDs of the groups it creates).
+# system (GIDs of the groups it creates). With a third argument "installer", only what stays
+# the installer's: the templates and pkg/installer-owned; vh-etc and vh-base, the packages,
+# bring the rest (pkg/build.sh, docs/uni/rolling.md).
 install_tree() {
-	local tree=$1 root=$2 f rel dst mode
+	local tree=$1 root=$2 only=${3:-} f rel dst mode owned=""
+	[ "$only" != installer ] || owned=$(grep -v '^[[:space:]]*\(#\|$\)' "$VH_ROOT/pkg/installer-owned")
 	while IFS= read -r -d '' f; do
 		rel=${f#"$tree"/}
 		case $rel in *.cin) continue ;; esac
+		if [ "$only" = installer ]; then
+			case $rel in
+				*.in) ;;
+				*) printf '%s\n' "$owned" | grep -qxF "/$rel" || continue ;;
+			esac
+		fi
 		dst=$root/${rel%.in}
 		# a link goes in as a link: runit's state of each service in /run, as Void's packages
 		# ship it (/etc/sv/NAME/supervise -> /run/runit/supervise.NAME), in place of a supervise
@@ -294,6 +303,15 @@ install_tree() {
 }
 
 export -f render 2>/dev/null || true
+
+# A package's conf file over a file already there leaves its own copy next to it, FILE.new-VERSION,
+# even when the two are the same (xbps 0.60.7): the identical copies under ROOT/etc go
+new_identical() {
+	local root=$1 f
+	while IFS= read -r -d '' f; do
+		if cmp -s "$f" "${f%.new-*}"; then rm -f "$f"; fi
+	done < <(find "$root/etc" -name '*.new-*' -type f -print0 2>/dev/null)
+}
 
 # Modules the kernel refuses to load (module_blacklist= on the cmdline and
 # "install ... /bin/false" in modprobe.d). Rationale: docs/03, docs/05. The policy below is

@@ -84,6 +84,20 @@ xbps-query -i --repository="$w/repo" -p conf_files vh-etc | LC_ALL=C sort > "$w/
 grep -qxF /etc/vh/firefox/policies-trusted.json "$w/conf.list" && ! grep -q '^/etc/kernel.d/' "$w/conf.list" \
 	&& ok "conf_files: $(wc -l < "$w/conf.list") files, the programs (hooks, run scripts) not among them" || bad "conf_files" "$(head -3 "$w/conf.list" | tr '\n' ' ')"
 
+echo "== no path of vh-etc or vh-base belongs to a package of Void (xbps refuses two owners)"
+void=https://repo-default.voidlinux.org/current
+case $arch in aarch64*) void=$void/aarch64 ;; esac
+names=$(. "$src/install/lib.sh"; . "$src/install/packages.sh"; VH_KERNEL=linux6.18; vh_packages 2>/dev/null | grep -vE '^(thor|univoid|vh-.*)$'; echo dhcpcd iwd bluez tpm2-tools)
+cat "$w/etc.list" "$w/base.list" | LC_ALL=C sort > "$w/ours.list"
+seen=0 clash=0
+for n in $names; do
+	xbps-query -i --repository="$void" -f "$n" 2>/dev/null | sed 's/ -> .*//' | LC_ALL=C sort > "$w/void.list"
+	[ -s "$w/void.list" ] && seen=$((seen + 1))
+	c=$(comm -12 "$w/void.list" "$w/ours.list")
+	[ -z "$c" ] || { clash=$((clash + 1)); bad "$n owns $(echo "$c" | tr '\n' ' ')"; }
+done
+[ "$seen" -gt 40 ] && [ "$clash" = 0 ] && ok "$seen packages of Void read, no path in common" || bad "only $seen packages of Void read, $clash with a path of ours"
+
 echo "== installation over the files of an installation of v0.2.0 (no owner)"
 r=$w/root
 mkdir -p "$r/var/db/xbps" "$r/usr/local/sbin" "$r/etc/vh/firefox"
@@ -125,6 +139,39 @@ echo "== the desktop's build: another plan, another package"
 if xbps-install -r "$r" -R "$w/repo" -y vh-desktop-x86-64-v3-btmenu > "$w/sw.log" 2>&1; then ok "install vh-desktop-x86-64-v3-btmenu"; else bad "switch" "$(tail -5 "$w/sw.log")"; fi
 xbps-query -r "$r" vh-desktop-x86-64-v1-plain >/dev/null 2>&1 && bad "v1-plain still installed" || ok "it replaced vh-desktop-x86-64-v1-plain"
 grep -q 'x86-64-v3-btmenu 2' "$r/usr/local/bin/refurswm" && ok "refurswm is v3-btmenu's" || bad "refurswm" "$(cat "$r/usr/local/bin/refurswm")"
+
+echo "== the installer's part of rootfs/ (install_tree ... installer), the identical .new files"
+ir=$w/iroot
+( . "$src/install/lib.sh"; DRY_RUN=0 VH_TEST=1; set -a; . "$src/vh.conf.example"; VH_EFI_ARCH=x VH_REPO_SUB= VH_CMDLINE=c VH_DOT_IPS=d VH_UNBOUND_FORWARDS=f VH_CHRONY_SERVERS=s VH_SHM_SIZE=1 VH_UNBOUND_AAAA= VH_DRACUT_DRIVERS=d VH_LUKS_UUID=l VH_ROOT_UUID=r VH_ESP_UUID=e; set +a; install_tree "$src/rootfs" "$ir" installer ) > "$w/tree.log" 2>&1 || bad "install_tree installer" "$(tail -3 "$w/tree.log")"
+( cd "$ir" && find . \( -type f -o -type l \) | sed 's|^\.||' | LC_ALL=C sort ) > "$w/tree.list"
+{ grep -E '\.in$' "$w/rootfs.list" | sed 's/\.in$//'; cat "$w/owned.list"; } | LC_ALL=C sort > "$w/tree.want"
+cmp -s "$w/tree.list" "$w/tree.want" && ok "install_tree installer: the templates and pkg/installer-owned, $(wc -l < "$w/tree.list") files" \
+	|| bad "install_tree installer" "$(diff "$w/tree.want" "$w/tree.list" | head -5 | tr '\n' ' ')"
+mkdir -p "$w/nr/etc/a"; echo same > "$w/nr/etc/a/f"; echo same > "$w/nr/etc/a/f.new-1_1"; echo other > "$w/nr/etc/a/f.new-2_1"
+( . "$src/install/lib.sh"; new_identical "$w/nr" ) >/dev/null 2>&1
+[ ! -e "$w/nr/etc/a/f.new-1_1" ] && [ -e "$w/nr/etc/a/f.new-2_1" ] && ok "new_identical: the same copy goes, another stays" || bad "new_identical"
+
+echo "== thor's policy on our packages (a real thor, enforce)"
+if bash "$src/install/build-thor.sh" --out "$w/realthor" > "$w/thor.log" 2>&1; then
+	T=$w/realthor/dest/usr/bin
+	ok "thor built"
+	# inst ROOT KEEP: univoid and a desktop into an empty root, enforce, with or without the keep list
+	inst() {
+		mkdir -p "$1/var/db/xbps" "$1/etc/thor"
+		printf 'mode=enforce\n' > "$1/etc/thor/policy.conf"
+		[ "$2" = no ] || grep -v '^[[:space:]]*\(#\|$\)' "$src/pkg/thor-keep" > "$1/etc/thor/keep.conf"
+		"$T/xbps-install" -r "$1" -R "$w/repo" -Sy univoid vh-desktop-x86-64-v3-btmenu > "$1.log" 2>&1
+	}
+	inst "$w/tk" yes && ok "installed in enforce, pkg/thor-keep in keep.conf" || bad "thor install with keep" "$(tail -5 "$w/tk.log")"
+	miss=0
+	while read -r f; do [ -e "$w/tk$f" ] || miss=$((miss + 1)); done < "$w/keep.list"
+	[ "$miss" = 0 ] && ok "every hook and the login script extracted" || bad "$miss entry points not extracted" "$(grep -m3 'not extracted' "$w/tk.log" | tr '\n' ' ')"
+	[ -z "$(find "$w/tk" -type f -perm /6000)" ] && ok "no SUID or SGID file" || bad "SUID" "$(find "$w/tk" -type f -perm /6000 | head -3)"
+	inst "$w/tn" no && ok "installed in enforce without the list" || bad "thor install without keep" "$(tail -5 "$w/tn.log")"
+	[ ! -e "$w/tn/etc/kernel.d/post-install/90-vh-uki" ] && grep -q 'not extracted' "$w/tn.log" && ok "without the list the policy holds the hooks back" || bad "the policy let a hook through" "$(grep -c 'not extracted' "$w/tn.log")"
+else
+	bad "build-thor.sh --out" "$(tail -5 "$w/thor.log")"
+fi
 
 echo
 [ "$fails" = 0 ] && echo "pkg: every check passed" || echo "pkg: $fails checks failed"

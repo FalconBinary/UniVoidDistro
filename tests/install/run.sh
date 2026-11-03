@@ -67,7 +67,9 @@ norm "$golden/gf63-upstream.txt" > "$out/gf63-upstream.norm"
 # the firmware below other directories (noextract=!/usr/lib/firmware/*/PATTERN) is ours alone: since
 # 2025 linux-firmware keeps iwlwifi-*.ucode as links into intel/iwlwifi/, and upstream's trim, as
 # captured, keeps the links without their targets (the GF63's Wi-Fi, linux-firmware 20260810)
-norm "$out/gf63.txt" | grep -v '^noextract=!/usr/lib/firmware/\*/' > "$out/gf63.norm"
+# univoid and vh-desktop-*, our own packages (docs/uni/rolling.md), are the programs upstream's
+# installer lays out as files: a difference of form, not of the machine's choices
+norm "$out/gf63.txt" | grep -v '^noextract=!/usr/lib/firmware/\*/' | grep -vE '^(univoid|vh-desktop-.*)$' > "$out/gf63.norm"
 if cmp -s "$out/gf63-upstream.norm" "$out/gf63.norm"; then
 	echo "the GF63's packages, blacklist, firmware and command line are void-hardperf-light's"
 else

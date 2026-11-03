@@ -180,5 +180,6 @@ mkpkg univoid "UniVoidDistro: every package of an installation" \
 	-D "thor>=0 vh-tools>=0 vh-init>=0 vh-sched>=0 vh-session>=0 vh-desktop>=0 vh-data>=0 vh-installer>=0 vh-base>=0 vh-etc>=0"
 
 # ---------------------------------------------------------------- the index
-( cd "$out" && XBPS_TARGET_ARCH=$arch "$X/xbps-rindex" -a $(cat "$work/made") >/dev/null )
+# -f: a rebuilt package of the same version (thor's version is xbps's) replaces its entry
+( cd "$out" && XBPS_TARGET_ARCH=$arch "$X/xbps-rindex" -f -a $(cat "$work/made") >/dev/null )
 sed "s|^|$out/|" "$work/made"
