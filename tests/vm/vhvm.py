@@ -321,25 +321,33 @@ def login(ser, user, password):
 def cmd_install(a):
     vm = VM(a.dir, a.mem, a.smp)
     vm.new_disk()
-    repo_iso = os.path.join(vm.d, "repo.iso")
-    make_repo_iso(repo_iso, {"selinux": a.selinux} if a.selinux else None)
+    drives = [("live", a.iso)]
+    # --own-installer: the image's own /root/vh, at its own commit (the rolling gate: an installation
+    # of the previous release, docs/uni/rolling.md); otherwise this working copy, on a second drive
+    if not a.own_installer:
+        repo_iso = os.path.join(vm.d, "repo.iso")
+        make_repo_iso(repo_iso, {"selinux": a.selinux} if a.selinux else None)
+        drives.append(("repo", repo_iso))
     work = tempfile.mkdtemp(dir=vm.d)
     # bsdtar (libarchive) reads ISO 9660 images; GNU tar, the tar of Linux, does not
     subprocess.run(["bsdtar", "-xf", a.iso, "-C", work, LIVE_KERNEL, "boot/initrd"], check=True)
     append = ("root=live:CDLABEL=VOID_LIVE ro init=/sbin/init rd.luks=0 rd.md=0 rd.dm=0 "
               f"loglevel=4 console={SERIAL_TTY},115200 rd.live.overlay.overlayfs=1")
     # the live ISO first (sr0, found by its label), the repository's second (sr1)
-    ser = vm.start(cd_devices([("live", a.iso), ("repo", repo_iso)]) +
+    ser = vm.start(cd_devices(drives) +
                    ["-kernel", f"{work}/{LIVE_KERNEL}", "-initrd", f"{work}/boot/initrd",
                     "-append", append])
     try:
         login(ser, "root", "voidlinux")
         name = os.path.basename(REPO)
-        ser.sh("mkdir -p /tmp/r && mount -o ro /dev/sr1 /tmp/r && tar -xf /tmp/r/vh.tar -C /root && "
-               # the built SELinux policy, when the image does not bring it (VH_SELINUX_DIR below)
-               "{ [ ! -d /tmp/r/selinux ] || cp -r /tmp/r/selinux /root/vh-selinux; } && umount /tmp/r && "
-               # the directory in the VM is always /root/void-hardperf-light, whatever the checkout is called
-               f"{{ [ {name} = {VM_REPO_NAME} ] || mv /root/{name} /root/{VM_REPO_NAME}; }}")
+        if a.own_installer:
+            ser.sh(f"cp -a /root/vh /root/{VM_REPO_NAME}")
+        else:
+            ser.sh("mkdir -p /tmp/r && mount -o ro /dev/sr1 /tmp/r && tar -xf /tmp/r/vh.tar -C /root && "
+                   # the built SELinux policy, when the image does not bring it (VH_SELINUX_DIR below)
+                   "{ [ ! -d /tmp/r/selinux ] || cp -r /tmp/r/selinux /root/vh-selinux; } && umount /tmp/r && "
+                   # the directory in the VM is always /root/void-hardperf-light, whatever the checkout is called
+                   f"{{ [ {name} = {VM_REPO_NAME} ] || mv /root/{name} /root/{VM_REPO_NAME}; }}")
         conf = "\n".join([
             'VH_DISK="/dev/nvme0n1"',
             f'VH_EXTRA_CMDLINE="console=tty0 console={SERIAL_TTY},115200"',
@@ -414,6 +422,7 @@ def main():
     ap.add_argument("--conf", action="append", default=[], help="an extra vh.conf line")
     ap.add_argument("--selinux", help="install: the built SELinux policy (sh selinux/build.sh DIR) for VH_MAC=selinux "
                                       "from an image that does not bring it (Void's); vh.conf gets VH_SELINUX_DIR")
+    ap.add_argument("--own-installer", action="store_true", help="install: the installer the image itself brings, /root/vh, at the image's commit")
     ap.add_argument("--user", default="admin")
     ap.add_argument("--run", action="append", default=[])
     ap.add_argument("--repo", action="store_true", help="attach a fresh copy of the repository as a CD")

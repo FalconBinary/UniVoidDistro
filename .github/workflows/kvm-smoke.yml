@@ -14,6 +14,9 @@
 # (ubuntu-24.04-arm), from our aarch64 image (live_run is required: Void has no aarch64 live
 # ISO); the runner's /dev/kvm decides the accelerator, and without it the run stops before
 # the installation unless accel=tcg asks for the slow path (docs/uni/hardware.md, "ARM64").
+# With from_release and update_run it is the rolling release's gate (docs/uni/rolling.md): the
+# previous release's ISO and its own installer, then step update,base against that packages run's
+# signed repository. The packages workflow calls it so; nothing is published before it passes.
 name: kvm-smoke
 on:
   workflow_dispatch:
@@ -51,6 +54,66 @@ on:
       mirror:
         description: "the Void package mirror (VH_MIRROR, https://...) for the installer, the dev image and the sysroot; empty: repo-default"
         default: ""
+      from_release:
+        description: "a tag, or latest: install from that release's ISO with the installer it brings, instead of this commit's (the rolling gate, docs/uni/rolling.md)"
+        default: ""
+      update_run:
+        description: "the id of a packages run: its repository (the artifact own-repo) for the step update"
+        default: ""
+  workflow_call:
+    inputs:
+      arch:
+        type: string
+        description: "the rig's architecture: x86_64 (q35, OVMF, ubuntu-latest) or aarch64 (virt, AAVMF, ubuntu-24.04-arm; needs live_run)"
+        default: x86_64
+      accel:
+        type: string
+        description: "auto: KVM where the runner has /dev/kvm, else stop; tcg: emulate (hours; for aarch64 without KVM)"
+        default: auto
+      step:
+        type: string
+        description: "check.py steps after the installation, comma-separated, in order (base; assess: the boot assessment of a machine UKI; machine: vh-kconf install of kernel_run's kernel, docs/uni/kernel.md; vhinit: vh-init as PID 1, kept for the steps after it, vhinit-rollback: runit back, init/README.md; sched: vh-sched under vh-init on kernel_run's kernel, sched/README.md; selinux: the policy permissive on that kernel under vh-init, with mac=selinux)"
+        default: base
+      mac:
+        type: string
+        description: "VH_MAC of the installation: apparmor, or selinux (the policy of selinux/ built here, permissive at boot; docs/uni/selinux.md)"
+        default: apparmor
+      kernel_run:
+        type: string
+        description: "the id of a kernel-custom run that built the rig's machine (hw=all, or hw=kernel/hw/qemu-q35.zon; with arch=aarch64 kernel/hw/qemu-virt.zon), for the step machine"
+        default: ""
+      kver:
+        type: string
+        description: the kernel version of that run
+        default: "6.18.57"
+      game_kernel_run:
+        type: string
+        description: "the id of a game-kernel run (the gaming kernel as vh-game kernel build builds it, for qemu-q35), for the step gamekernel (docs/uni/game.md)"
+        default: ""
+      live_run:
+        type: string
+        description: "the id of a live-image run of this commit: install from its ISO instead of Void's"
+        default: ""
+      mem:
+        type: string
+        description: "the VM's RAM in MiB (empty: 3072); below 3 GiB only with live_run, since on Void's image the installer builds in RAM and refuses less"
+        default: ""
+      security:
+        type: string
+        description: "VH_SECURITY of the installation: strict, or tiered (below 2 GiB strict refuses: Argon2id with 1 GiB)"
+        default: strict
+      mirror:
+        type: string
+        description: "the Void package mirror (VH_MIRROR, https://...) for the installer, the dev image and the sysroot; empty: repo-default"
+        default: ""
+      from_release:
+        type: string
+        description: "a tag, or latest: install from that release's ISO with the installer it brings, instead of this commit's (the rolling gate, docs/uni/rolling.md)"
+        default: ""
+      update_run:
+        type: string
+        description: "the id of a packages run: its repository (the artifact own-repo) for the step update"
+        default: ""
   schedule:
     - cron: "17 4 * * 1"
 permissions:
@@ -65,14 +128,14 @@ env:
   # there (it peaks at 2.1 GiB, the RefursWM build, and prints its RAM at every heading). With
   # live_run as low as the gate's floor, 1.5 GiB (hwdb/security.zon memory-floor), in tiered mode
   # below 2 GiB. 4096 while the live ISO rode along (run 39297735098)
-  VH_MEM: ${{ github.event.inputs.mem || '3072' }}
-  VH_SECURITY: ${{ github.event.inputs.security || 'strict' }}
-  VH_MAC: ${{ github.event.inputs.mac || 'apparmor' }}
-  VH_MIRROR: ${{ github.event.inputs.mirror || 'https://repo-default.voidlinux.org' }}
-  VH_ARCH: ${{ github.event.inputs.arch || 'x86_64' }}
+  VH_MEM: ${{ inputs.mem || '3072' }}
+  VH_SECURITY: ${{ inputs.security || 'strict' }}
+  VH_MAC: ${{ inputs.mac || 'apparmor' }}
+  VH_MIRROR: ${{ inputs.mirror || 'https://repo-default.voidlinux.org' }}
+  VH_ARCH: ${{ inputs.arch || 'x86_64' }}
 jobs:
   smoke:
-    runs-on: ${{ (github.event.inputs.arch || 'x86_64') == 'aarch64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
+    runs-on: ${{ (inputs.arch || 'x86_64') == 'aarch64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     timeout-minutes: 300
     steps:
       - uses: actions/checkout@v4
@@ -84,29 +147,29 @@ jobs:
             x86_64) [ "$(uname -m)" = x86_64 ] ;;
             aarch64)
               [ "$(uname -m)" = aarch64 ]
-              [ -n "${{ github.event.inputs.live_run }}" ] || { echo "arch=aarch64 needs live_run: Void publishes no aarch64 live ISO, ours comes from a live-image run"; exit 1; }
-              [ -z "${{ github.event.inputs.game_kernel_run }}" ] || { echo "game_kernel_run is x86_64's (qemu-q35): the gaming session is"; exit 1; } ;;
+              [ -n "${{ inputs.live_run }}${{ inputs.from_release }}" ] || { echo "arch=aarch64 needs live_run: Void publishes no aarch64 live ISO, ours comes from a live-image run"; exit 1; }
+              [ -z "${{ inputs.game_kernel_run }}" ] || { echo "game_kernel_run is x86_64's (qemu-q35): the gaming session is"; exit 1; } ;;
             *) echo "arch: x86_64 or aarch64"; exit 1 ;;
           esac
-      - name: the rig's machine kernel of kernel-custom run ${{ github.event.inputs.kernel_run }} (qemu-q35, or qemu-virt on aarch64)
-        if: github.event.inputs.kernel_run != ''
+      - name: the rig's machine kernel of kernel-custom run ${{ inputs.kernel_run }} (qemu-q35, or qemu-virt on aarch64)
+        if: inputs.kernel_run != ''
         uses: actions/download-artifact@v4
         with:
-          name: kernel-custom-${{ (github.event.inputs.arch || 'x86_64') == 'aarch64' && 'qemu-virt' || 'qemu-q35' }}-${{ github.event.inputs.kver || '6.18.57' }}
-          run-id: ${{ github.event.inputs.kernel_run }}
+          name: kernel-custom-${{ (inputs.arch || 'x86_64') == 'aarch64' && 'qemu-virt' || 'qemu-q35' }}-${{ inputs.kver || '6.18.57' }}
+          run-id: ${{ inputs.kernel_run }}
           github-token: ${{ github.token }}
           path: build/kernel-custom
-      - name: the gaming kernel of game-kernel run ${{ github.event.inputs.game_kernel_run }}
-        if: github.event.inputs.game_kernel_run != ''
+      - name: the gaming kernel of game-kernel run ${{ inputs.game_kernel_run }}
+        if: inputs.game_kernel_run != ''
         uses: actions/download-artifact@v4
         with:
-          name: game-kernel-qemu-q35-${{ github.event.inputs.kver || '6.18.57' }}
-          run-id: ${{ github.event.inputs.game_kernel_run }}
+          name: game-kernel-qemu-q35-${{ inputs.kver || '6.18.57' }}
+          run-id: ${{ inputs.game_kernel_run }}
           github-token: ${{ github.token }}
           path: build/game-kernel
       - name: "/dev/kvm for the runner user (the accelerator: KVM, or none on a runner without it)"
         env:
-          ACCEL: ${{ github.event.inputs.accel || 'auto' }}
+          ACCEL: ${{ inputs.accel || 'auto' }}
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
@@ -133,16 +196,41 @@ jobs:
           # shellcheck disable=SC2086 # a list of packages
           sudo apt-get install -y -q $pk swtpm xorriso minisign libarchive-tools
       - uses: ./.github/actions/setup-zig
-      - name: our live ISO of live-image run ${{ github.event.inputs.live_run }}
-        if: github.event.inputs.live_run != ''
+      - name: the repository of packages run ${{ inputs.update_run }}, for the step update
+        if: inputs.update_run != ''
         uses: actions/download-artifact@v4
         with:
-          name: univoiddistro-live-${{ github.event.inputs.arch || 'x86_64' }}
-          run-id: ${{ github.event.inputs.live_run }}
+          name: own-repo
+          run-id: ${{ inputs.update_run }}
+          github-token: ${{ github.token }}
+          path: build/own-repo
+      - name: the ISO of release ${{ inputs.from_release }}, verified (sha256, attestation)
+        if: inputs.from_release != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FROM: ${{ inputs.from_release }}
+        run: |
+          set -euo pipefail
+          tag=$FROM
+          [ "$tag" != latest ] || tag=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName)
+          echo "the previous image: $tag"
+          mkdir -p iso-prev && cd iso-prev
+          gh release download "$tag" --repo "$GITHUB_REPOSITORY" -p "univoiddistro-live-$VH_ARCH-*.iso" -p "$VH_ARCH-SHA256SUMS"
+          sha256sum -c "$VH_ARCH-SHA256SUMS"
+          iso=$(ls univoiddistro-live-*.iso)
+          gh attestation verify "$iso" --repo "$GITHUB_REPOSITORY"
+          echo "VH_ISO=$PWD/$iso" >> "$GITHUB_ENV"
+          echo "VH_UPDATE_REPO=$GITHUB_WORKSPACE/build/own-repo" >> "$GITHUB_ENV"
+      - name: our live ISO of live-image run ${{ inputs.live_run }}
+        if: inputs.live_run != ''
+        uses: actions/download-artifact@v4
+        with:
+          name: univoiddistro-live-${{ inputs.arch || 'x86_64' }}
+          run-id: ${{ inputs.live_run }}
           github-token: ${{ github.token }}
           path: iso-live
       - name: our live ISO, verified (sha256, attestation, this commit)
-        if: github.event.inputs.live_run != ''
+        if: inputs.live_run != ''
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -156,7 +244,7 @@ jobs:
           cat BUILD
           echo "VH_ISO=$PWD/$iso" >> "$GITHUB_ENV"
       - name: the Void live ISO, verified
-        if: github.event.inputs.live_run == ''
+        if: inputs.live_run == '' && inputs.from_release == ''
         run: |
           set -euo pipefail
           . tests/vm/void-live.pins
@@ -178,8 +266,10 @@ jobs:
           grep -qFx "SHA256 ($ISO) = $sum" sha256sum.txt || { echo "$ISO: sha256 $sum is not in the signed sha256sum.txt"; exit 1; }
           echo "VH_ISO=$PWD/$ISO" >> "$GITHUB_ENV"
       - name: the tools and thor for the VM (tests/zig/build.sh)
+        if: inputs.from_release == ''
         run: sh tests/zig/build.sh
       - name: vh-stage1 for the VM (tests/init/build.sh; the stage1 step installs it)
+        if: inputs.from_release == ''
         run: sh tests/init/build.sh
       - name: the SELinux policy (selinux/build.sh, secilc in a Fedora container), for VH_MAC=selinux
         if: env.VH_MAC == 'selinux'
@@ -190,10 +280,14 @@ jobs:
         run: |
           set --
           [ "$VH_MAC" != selinux ] || set -- --selinux build/selinux
+          [ -z "${{ inputs.from_release }}" ] || set -- "$@" --own-installer
           python3 tests/vm/vhvm.py install --iso "$VH_ISO" --mem "$VH_MEM" --timeout 10800 \
             --conf "VH_SECURITY=\"$VH_SECURITY\"" --conf "VH_MAC=\"$VH_MAC\"" --conf "VH_MIRROR=\"$VH_MIRROR\"" "$@"
       - name: check
-        run: python3 tests/vm/check.py "${{ github.event.inputs.step || 'base' }}" --repo --mem "$VH_MEM"
+        run: |
+          # --repo refreshes /root/vh from this commit; the rolling gate checks what the packages brought
+          if [ -n "${{ inputs.from_release }}" ]; then set --; else set -- --repo; fi
+          python3 tests/vm/check.py "${{ inputs.step || 'base' }}" "$@" --mem "$VH_MEM"
       - name: "the rig's hw.zon at installation (kernel/hw/qemu-q35.zon; kernel/hw/qemu-virt.zon on aarch64), its probe now, the plan, vh-kconf check"
         run: |
           python3 tests/vm/vhvm.py boot --mem "$VH_MEM" --timeout 1800 \

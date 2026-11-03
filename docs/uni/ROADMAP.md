@@ -227,6 +227,15 @@ hardware enters: N shows the plan and the tier and runs the gate; G is GPU-vendo
 | **U6: live image** | x86_64 and aarch64 images | U1 |
 | **V (continuous)** | the VM matrix, the fixture corpus from real snapshots, runbooks per vendor | — |
 
+### State (2026-11-03): the rolling release, in a pull request
+
+The design and what stays [VERIFY]: [rolling.md](rolling.md). `pkg/` makes our programs and files
+into xbps packages, the installer installs them through thor, CI (`packages`) merges what changed
+into the published index, signs it and publishes after the gates; `vh-update` follows a channel,
+`stable` by default, and `--adopt` takes over an installation of v0.2.0. Passed in a container
+(`tests/pkg`): the packages, signatures over HTTP, the channels. **Not running yet:** the keys are
+the owner's to make (`pkg/keygen.sh`), so CI publishes nothing until then.
+
 ### State (2026-10-28): U5, the ARM64 path, on a virtual machine
 
 U5 is done as far as a virtual machine can show it; nothing has run on real ARM64 hardware.

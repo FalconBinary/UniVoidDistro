@@ -57,11 +57,14 @@ The tree, beside Void's root file system:
 - `plan.sh` takes the prebuilt `vh-kconf` and `vh-plan`: no Zig, no compile;
 - the live environment's tools are there: the installer's `xbps-install` lines find them
   installed (a repository sync, no download);
-- `build-thor.sh --prebuilt`, `build-tools.sh --prebuilt` (it exists), `build-desktop.sh
-  --prebuilt` (it exists) with the variant the plan and `vh.conf` ask for;
+- `build-thor.sh --prebuilt` takes thor and the repository of our packages
+  ([rolling.md](rolling.md)), from which thor installs `univoid` and the desktop's build the plan
+  and `vh.conf` ask for;
 - every prebuilt file is checked against `SHA256SUMS` before it is copied.
 
-On Void's official image nothing changes: the installer builds as it does now.
+On Void's official image the installer builds in RAM into the same tree and packages it
+(`build-thor.sh --out`, `build-tools.sh --out`, `build-desktop.sh --out`, `pkg/build.sh`): from
+there on both paths are one.
 
 ## Building it: `.github/workflows/live-image.yml`
 

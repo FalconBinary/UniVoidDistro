@@ -19,7 +19,7 @@ if [ "$ch" = stable ]; then
 fi
 docker run --rm -i -e XBPS_PASSPHRASE="$pw" -e CH="$ch" -e CRYPT="$crypt" ghcr.io/void-linux/void-glibc-full:latest sh -euc '
 	exec 3>&1 1>&2
-	xbps-install -Sy openssl >/dev/null
+	xbps-install -Sy openssl python3 >/dev/null
 	mkdir -p /o /e /r /c/var/db/xbps/keys
 	cd /r
 	# shellcheck disable=SC2086
@@ -29,8 +29,11 @@ docker run --rm -i -e XBPS_PASSPHRASE="$pw" -e CH="$ch" -e CRYPT="$crypt" ghcr.i
 	xbps-create -q -A "$a" -n empty-1_1 -s empty /e
 	xbps-rindex -a empty-1_1.$a.xbps >/dev/null
 	xbps-rindex --sign --signedby "UniVoidDistro $CH" --privkey /o/$CH.pem /r >/dev/null
-	# xbps itself names the public key: it imports it from the index, at a yes
-	yes | xbps-install -r /c -R /r -S >/dev/null 2>&1 || true
+	# xbps itself names the public key: it imports it from a remote index, at a yes
+	python3 -m http.server 8321 --bind 127.0.0.1 >/dev/null 2>&1 &
+	sleep 1
+	yes | xbps-install -r /c -R http://127.0.0.1:8321 -S >/dev/null 2>&1 || true
+	kill $!
 	[ -n "$(ls /c/var/db/xbps/keys/)" ] || { echo "no key imported"; exit 1; }
 	cp /c/var/db/xbps/keys/*.plist /o/
 	cd /o && tar -cf - . >&3
