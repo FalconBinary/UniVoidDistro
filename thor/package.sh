@@ -10,7 +10,8 @@ thor=$(cd "$(dirname "$0")" && pwd)
 dest=${1:?DESTDIR}
 arch=${2:?"architecture, for example x86_64"}
 repo=${3:?"repository directory"}
-pkgver=thor-$XBPS_VERSION.${THOR_REVISION}_1
+# the package's revision: CI's run number (docs/uni/rolling.md), 1 elsewhere
+pkgver=thor-$XBPS_VERSION.${THOR_REVISION}_${VH_PKG_REVISION:-1}
 # xbps-create and xbps-rindex from DESTDIR; in a cross-build, the build machine's programs
 X=${XBPS_BIN:-$dest/usr/bin}
 [ -n "${XBPS_BIN:-}" ] || export LD_LIBRARY_PATH="$dest/usr/lib"

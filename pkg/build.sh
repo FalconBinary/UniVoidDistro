@@ -15,10 +15,14 @@
 #   vh-base            rootfs/usr: the programs in /usr/local (vh-update, vh-audit, ...)
 #   vh-etc             rootfs/etc: the configuration; its files that are not programs are
 #                      conf_files, so an edited file stays and the new one goes next to it
-#   univoid            depends on every package each installation has
+#   vh-keyring         the public keys of pkg/keys, one directory per channel; vh-update puts the
+#                      channel's into /var/db/xbps/keys (none yet: no package)
+#   univoid            depends on every package each installation has; with VH_PKG_STAMP (a time,
+#                      CI's) its version carries it, so the channel's index tells its age
 # What no package owns: the templates (*.in, *.cin) and pkg/installer-owned.
 # The version: VH_PKG_VERSION, else git describe of this repository (v0.2.0-15-gHASH: 0.2.0.r15;
-# no git: 0.0.0.r0, below every published package); the revision: VH_PKG_REVISION (1).
+# no git: 0.0.0.r0, below every published package); the revision: VH_PKG_REVISION (1; CI's run
+# number). REPO/ARCH-contents: NAME PKGVER HASH of each package's files, for pkg/merge.sh.
 # xbps-create and xbps-rindex: thor's own (PREBUILT/thor/dest), or XBPS_BIN's.
 set -eu
 pkg=$(cd "$(dirname "$0")" && pwd)
@@ -44,6 +48,14 @@ home=https://github.com/FalconBinary/UniVoidDistro
 work=$(mktemp -d "${TMPDIR:-/tmp}/vh-pkg.XXXXXX")
 trap 'rm -rf "$work"' EXIT INT TERM
 : > "$work/made"
+: > "$out/$arch-contents"
+
+# tree_hash DIR: the files, links and modes of a package; the policy's BUILD names the commit
+tree_hash() {
+	( cd "$1" && find . \( -type f -o -type l \) ! -path ./etc/vh/selinux/BUILD ! -path ./etc/vh/selinux/SHA256SUMS | LC_ALL=C sort | while read -r f; do
+		if [ -L "$f" ]; then echo "$f -> $(readlink "$f")"; else echo "$(stat -c %a "$f") $(sha256sum "$f")"; fi
+	done )
+}
 
 # the libraries the ELF files of a tree need (readelf: binutils); none without readelf
 shlibs() {
@@ -59,9 +71,12 @@ mkpkg() {
 	mkdir -p "$t"
 	find "$t" -exec touch -h -d "@$epoch" {} +
 	s=$(shlibs "$t")
-	( cd "$out" && "$X/xbps-create" -q -A "$arch" -n "$n-${ver}_$rev" -s "$desc" -H "$home" \
+	v=$ver
+	[ "$n" != univoid ] || v=$ver${VH_PKG_STAMP:+.$VH_PKG_STAMP}
+	( cd "$out" && "$X/xbps-create" -q -A "$arch" -n "$n-${v}_$rev" -s "$desc" -H "$home" \
 		-l "GPL-3.0-or-later" -m "UniVoidDistro <$home>" ${s:+--shlib-requires "$s"} "$@" "$t" )
-	echo "$n-${ver}_$rev.$arch.xbps" >> "$work/made"
+	echo "$n-${v}_$rev.$arch.xbps" >> "$work/made"
+	echo "$n $n-${v}_$rev $( { tree_hash "$t"; echo "$desc $s $*"; } | sha256sum | cut -d' ' -f1)" >> "$out/$arch-contents"
 }
 
 # put NAME FILE PLACE: FILE into package NAME at PLACE, 0755 when executable, 0644 otherwise
@@ -75,6 +90,7 @@ put() {
 thor=$(ls "$pre"/thor/repo/thor-*."$arch".xbps 2>/dev/null) || die "no thor package in $pre/thor/repo (install/build-thor.sh --out)"
 [ "$(dirname "$thor")" = "$out" ] || cp "$thor" "$out/"
 echo "$(basename "$thor")" >> "$work/made"
+echo "thor $(basename "$thor" ".$arch.xbps") $(tree_hash "$pre/thor/dest" | sha256sum | cut -d' ' -f1)" >> "$out/$arch-contents"
 
 # ---------------------------------------------------------------- the programs (pkg/tools.map)
 grep -v '^[[:space:]]*\(#\|$\)' "$pkg/tools.map" | while read -r p name place copy; do
@@ -114,7 +130,7 @@ for d in "$pre"/desktop/*/; do
 	chmod -R u=rwX,go=rX "$work/$n/usr/local/share/refurswm"
 	install -d -m 0755 "$work/$n/etc/vh"
 	{
-		echo "# RefursWM + RefursLine: $n-${ver}_$rev, zig $zigv"
+		echo "# RefursWM + RefursLine: $n, zig $zigv"
 		( cd "$work/$n/usr/local/bin" && sha256sum refurswm refursline )
 	} > "$work/$n/etc/vh/desktop.sha256"
 	r=""
@@ -175,9 +191,19 @@ install -D -m 0644 "$pkg/thor-keep" "$work/vh-base/usr/local/lib/vh/thor-keep"
 mkpkg vh-base "UniVoidDistro's programs in /usr/local: vh-update, vh-audit and the rest"
 mkpkg vh-etc "UniVoidDistro's configuration in /etc" --config-files "$(tr '\n' ' ' < "$work/conf")"
 
+# ---------------------------------------------------------------- vh-keyring
+keyring=
+if ls "$pkg"/keys/*/*.plist >/dev/null 2>&1; then
+	for k in "$pkg"/keys/*/*.plist; do
+		install -D -m 0644 "$k" "$work/vh-keyring/usr/local/share/vh/keys/$(basename "$(dirname "$k")")/$(basename "$k")"
+	done
+	mkpkg vh-keyring "UniVoidDistro's public keys, one per channel"
+	keyring=" vh-keyring>=0"
+fi
+
 # ---------------------------------------------------------------- univoid
 mkpkg univoid "UniVoidDistro: every package of an installation" \
-	-D "thor>=0 vh-tools>=0 vh-init>=0 vh-sched>=0 vh-session>=0 vh-desktop>=0 vh-data>=0 vh-installer>=0 vh-base>=0 vh-etc>=0"
+	-D "thor>=0 vh-tools>=0 vh-init>=0 vh-sched>=0 vh-session>=0 vh-desktop>=0 vh-data>=0 vh-installer>=0 vh-base>=0 vh-etc>=0$keyring"
 
 # ---------------------------------------------------------------- the index
 # -f: a rebuilt package of the same version (thor's version is xbps's) replaces its entry

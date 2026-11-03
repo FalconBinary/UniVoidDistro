@@ -151,6 +151,64 @@ mkdir -p "$w/nr/etc/a"; echo same > "$w/nr/etc/a/f"; echo same > "$w/nr/etc/a/f.
 ( . "$src/install/lib.sh"; new_identical "$w/nr" ) >/dev/null 2>&1
 [ ! -e "$w/nr/etc/a/f.new-1_1" ] && [ -e "$w/nr/etc/a/f.new-2_1" ] && ok "new_identical: the same copy goes, another stays" || bad "new_identical"
 
+echo "== a publication: what changed against the published set, signed, served over HTTP"
+pub=$w/pub
+mkdir -p "$pub" "$w/keys"
+openssl genrsa -out "$w/keys/a.pem" 4096 2>/dev/null; openssl genrsa -out "$w/keys/b.pem" 4096 2>/dev/null
+# the first publication: everything
+p3=$w/pre3; cp -a "$p2" "$p3"
+n3=$w/n3
+VH_PKG_VERSION=0.2.0.r3 VH_PKG_REVISION=10 VH_PKG_STAMP=202611010000 sh "$src/pkg/build.sh" "$p3" "$arch" "$n3" >/dev/null 2>"$w/err3" || bad "pkg/build.sh r3" "$(tail -3 "$w/err3")"
+XBPS_BIN=/usr/bin sh "$src/pkg/merge.sh" "$n3" "$arch" /nonexistent "$pub" > "$w/m3.log" 2>&1 || bad "merge, the first" "$(tail -3 "$w/m3.log")"
+[ -s "$pub/$arch-repodata" ] && [ ! -s "$pub/$arch-kept" ] && ok "the first publication: every package, nothing kept" || bad "the first publication" "$(wc -l < "$pub/$arch-kept") kept"
+for f in "$w"/repo/seatd-*.xbps "$w"/repo/wayland-*.xbps "$w"/repo/lib*.xbps "$w"/repo/pixman-*.xbps "$w"/repo/eudev-*.xbps "$w"/repo/mtdev-*.xbps "$w"/repo/xkeyboard-*.xbps; do cp "$f" "$pub/"; done
+( cd "$pub" && xbps-rindex -a seatd-*.xbps wayland-*.xbps lib*.xbps pixman-*.xbps eudev-*.xbps mtdev-*.xbps xkeyboard-*.xbps >/dev/null )
+sh "$src/pkg/sign.sh" "$pub" "$w/keys/a.pem" "CI" > "$w/s3.log" 2>&1 && ok "signed: $(cat "$w/s3.log")" || bad "pkg/sign.sh" "$(tail -3 "$w/s3.log")"
+# a build of the same programs with one changed: only that one, and univoid, get new versions
+p4=$w/pre4; cp -a "$p3" "$p4"; printf '#!/bin/sh\necho vh-init 4\n' > "$p4/bin/vh-init"
+n4=$w/n4; st4=$w/st4
+VH_PKG_VERSION=0.2.0.r4 VH_PKG_REVISION=11 VH_PKG_STAMP=202611020000 sh "$src/pkg/build.sh" "$p4" "$arch" "$n4" >/dev/null 2>"$w/err4" || bad "pkg/build.sh r4" "$(tail -3 "$w/err4")"
+XBPS_BIN=/usr/bin sh "$src/pkg/merge.sh" "$n4" "$arch" "$pub" "$st4" > "$w/m4.log" 2>&1 || bad "merge" "$(tail -3 "$w/m4.log")"
+got=$(cd "$st4" && ls *.xbps | sed 's/-[^-]*$//' | LC_ALL=C sort | tr '\n' ' ')
+[ "$got" = "univoid vh-init " ] && ok "the second publication: only vh-init and univoid are new" || bad "the second publication" "$got"
+grep -q "^vh-tools-0.2.0.r3_10.$arch.xbps$" "$st4/$arch-kept" && ok "vh-tools stays at its published version" || bad "kept" "$(head -3 "$st4/$arch-kept" | tr '\n' ' ')"
+sh "$src/pkg/sign.sh" "$st4" "$w/keys/a.pem" "CI" >/dev/null 2>&1 || bad "pkg/sign.sh second"
+cp "$st4"/*.xbps "$st4"/*.sig2 "$st4/$arch-repodata" "$st4/$arch-contents" "$pub/"
+( cd "$pub" && exec python3 -m http.server 8321 --bind 127.0.0.1 >/dev/null 2>&1 ) &
+srv=$!
+sleep 1
+U=http://127.0.0.1:8321
+# the public key as xbps names it, taken at a yes
+kr=$w/kroot; mkdir -p "$kr/var/db/xbps/keys"
+yes | xbps-install -r "$kr" -R "$U" -S >/dev/null 2>&1
+ls "$kr"/var/db/xbps/keys/*.plist >/dev/null 2>&1 && ok "the key's file: $(basename "$kr"/var/db/xbps/keys/*.plist)" || bad "no key imported"
+c=$w/client; mkdir -p "$c/var/db/xbps/keys"
+if xbps-install -r "$c" -R "$U" -Sy univoid vh-desktop-x86-64-v3-btmenu </dev/null > "$w/c0.log" 2>&1; then
+	bad "a repository of an unknown key was used with stdin closed"
+else
+	grep -q 'Failed to import pubkey' "$w/c0.log" && ok "an unknown key, stdin closed: refused" || bad "unknown key" "$(tail -3 "$w/c0.log")"
+fi
+cp "$kr"/var/db/xbps/keys/*.plist "$c/var/db/xbps/keys/"
+xbps-install -r "$c" -R "$U" -Sy univoid vh-desktop-x86-64-v3-btmenu </dev/null > "$w/c1.log" 2>&1 && ok "the known key: installed, every signature checked" || bad "signed install" "$(tail -5 "$w/c1.log")"
+[ "$(sh "$c/usr/local/sbin/vh-init")" = "vh-init 4" ] && ok "vh-init is the second publication's" || bad "vh-init" "$(cat "$c/usr/local/sbin/vh-init")"
+xbps-query -r "$c" -p pkgver vh-tools | grep -q 'r3_10' && ok "vh-tools the first's" || bad "vh-tools version"
+# a package changed on the server: its signature no longer matches
+vt=$(ls "$pub"/vh-sched-*.xbps | head -1)
+cp "$vt" "$w/vt.good"; printf x >> "$vt"
+c2=$w/client2; mkdir -p "$c2/var/db/xbps/keys"; cp "$kr"/var/db/xbps/keys/*.plist "$c2/var/db/xbps/keys/"
+if xbps-install -r "$c2" -R "$U" -Sy vh-sched </dev/null > "$w/c2.log" 2>&1; then bad "a changed package was installed"; else ok "a changed package: refused"; fi
+cp "$w/vt.good" "$vt"
+# stable: the same files, every signature the other key's; a system that trusts only that key
+sh "$src/pkg/sign.sh" "$pub" "$w/keys/b.pem" "stable" --all > "$w/s5.log" 2>&1 || bad "sign --all" "$(tail -3 "$w/s5.log")"
+c3=$w/client3; mkdir -p "$c3/var/db/xbps/keys"
+cp "$kr"/var/db/xbps/keys/*.plist "$c3/var/db/xbps/keys/"
+if xbps-install -r "$c3" -R "$U" -Sy vh-sched </dev/null > "$w/c3.log" 2>&1; then bad "the rolling key's system took the stable key's index"; else ok "a system of the other key refuses the index"; fi
+rm -f "$c3"/var/db/xbps/keys/*.plist
+kr2=$w/kroot2; mkdir -p "$kr2/var/db/xbps/keys"; yes | xbps-install -r "$kr2" -R "$U" -S >/dev/null 2>&1
+cp "$kr2"/var/db/xbps/keys/*.plist "$c3/var/db/xbps/keys/"
+xbps-install -r "$c3" -R "$U" -Sy vh-sched </dev/null > "$w/c4.log" 2>&1 && ok "signed again by the stable key: its system installs" || bad "stable install" "$(tail -5 "$w/c4.log")"
+kill "$srv" 2>/dev/null
+
 echo "== thor's policy on our packages (a real thor, enforce)"
 if bash "$src/install/build-thor.sh" --out "$w/realthor" > "$w/thor.log" 2>&1; then
 	T=$w/realthor/dest/usr/bin
