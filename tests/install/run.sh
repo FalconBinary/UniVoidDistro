@@ -88,7 +88,8 @@ tar -C "$repo" -cf - install tests/install/firmware_test.sh |
 # runit's state of each service in /run: the links, install_tree, vh-sv-runstate (services_test.sh)
 tar -C "$repo" -cf - install rootfs optional tests/install/services_test.sh |
 	docker run --rm -i "$img" bash -c 'mkdir -p /src && cd /src && tar -xf - 2>/dev/null && bash /src/tests/install/services_test.sh /src' || rc=1
-# the power button through /etc/runit/ctrlaltdel on both sysfs paths (ctrlaltdel_test.sh)
-tar -C "$repo" -cf - rootfs/etc/runit/ctrlaltdel rootfs/usr/local/libexec/vh/vh-audit.d/70-network.sh tests/vm/steps/core.py tests/install/ctrlaltdel_test.sh |
+# the power button through /etc/runit/ctrlaltdel and vh-ctrlaltdel on both sysfs paths, and the
+# migration of v0.2.0's file (ctrlaltdel_test.sh)
+tar -C "$repo" -cf - rootfs/etc/runit/ctrlaltdel rootfs/usr/local/libexec/vh/vh-ctrlaltdel rootfs/usr/local/libexec/vh/migrate.d/0001-ctrlaltdel rootfs/usr/local/libexec/vh/vh-audit.d/70-network.sh tests/vm/steps/core.py tests/install/ctrlaltdel_test.sh tests/install/ctrlaltdel-v0.2.0 |
 	docker run --rm -i "$img" bash -c 'mkdir -p /src && cd /src && tar -xf - 2>/dev/null && bash /src/tests/install/ctrlaltdel_test.sh /src' || rc=1
 exit "$rc"

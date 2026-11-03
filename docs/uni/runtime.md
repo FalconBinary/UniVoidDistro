@@ -101,7 +101,8 @@ device for the fixed button, so `tiny_power_button` drives it (rule `acpi.power-
 machine without a control-method button and without a lid: it builds `tiny_power_button` into
 the machine kernel instead of `button`, since built in the two exclude each other). It signals init, with SIGINT
 (`tiny_power_button.power_signal=2`: Void builds it with 38, which runit ignores); runit runs
-`/etc/runit/ctrlaltdel`, ours (kept over runit-void's by `/etc/xbps.d/30-vh-noextract.conf`),
+`/etc/runit/ctrlaltdel`, ours (kept over runit-void's by `/etc/xbps.d/30-vh-noextract.conf`), a thin
+file calling `/usr/local/libexec/vh/vh-ctrlaltdel` of the package `vh-base`,
 which hands it to `vh-acpid` as SIGUSR1 (`sv 1 vh-acpid`), and `vh-acpid` takes that as a
 press. A hypervisor's shutdown request (`virsh shutdown`, QEMU's `system_powerdown`) is this
 button, and `tests/vm` checks it ends in a regular poweroff. Ctrl+Alt+Del on a text console
@@ -111,10 +112,11 @@ sends init the same SIGINT, so on such a machine it is the power button too; els
 Kernel 6.18.60 moved this driver: a backport (upstream f4203ec64e11) made it a platform driver, so
 its device is `/sys/bus/platform/drivers/acpi-tiny-power-button/LNXPWRBN:00` instead of
 `/sys/bus/acpi/drivers/tiny-power-button/LNXPWRBN:00`, and the same release gives the fixed button
-a platform device. `ctrlaltdel`, `vh-audit` and `tests/vm` look in both places, since a machine
+a platform device. `vh-ctrlaltdel`, `vh-audit` and `tests/vm` look in both places, since a machine
 kernel of older pins keeps the old one. `button` could bind the new device, and the rule keeps it
 refused: `tiny_power_button` stays the one path, on either kernel. A `ctrlaltdel` from before this
-change sends the button to a reboot on 6.18.60, and `vh-audit` says so.
+change sends the button to a reboot on 6.18.60, and `vh-audit` says so; the migration
+`0001-ctrlaltdel` replaces it at `vh-update` ([rolling.md](rolling.md#what-no-package-owns)).
 
 The alarm combination of `optional/deadman` (Right Ctrl + Right Alt + End, `COMBO=yes` in
 `/etc/vh/deadman.conf`) works on the same built-in keyboards, not only on a PS/2 one:
