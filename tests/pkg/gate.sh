@@ -38,9 +38,12 @@ tar -C "$repo" -cf - . | docker run --rm -i -e VARIANT="$variant" -e THORKEEP="$
 	/usr/local/sbin/vh-plan --help >/dev/null 2>&1 || [ $? -lt 126 ]
 	/usr/local/sbin/vh-kconf --help >/dev/null 2>&1 || [ $? -lt 126 ]
 	/usr/local/sbin/vh-init --help >/dev/null 2>&1 || [ $? -lt 126 ]
-	for b in /usr/local/bin/refurswm /usr/local/bin/refursline /root/vh/tools/vh-hashpw /usr/local/libexec/vh/pin-fetch /root/vh/optional/dns-pin/pin-fetch; do
-		[ -e "$b" ] || continue
-		! ldd "$b" 2>&1 | grep "not found" || { echo "$b: a library is missing"; exit 1; }
+	# the libraries, from the dynamic linker itself: ldd is not in this image
+	ld=$(ls /usr/lib/ld-linux-*.so.* | head -1)
+	for b in /usr/local/bin/refurswm /usr/local/bin/refursline /root/vh/tools/vh-hashpw /root/vh/optional/dns-pin/pin-fetch; do
+		libs=$("$ld" --list "$b" 2>&1) || { echo "$b: $libs"; exit 1; }
+		case $libs in *"not found"*) echo "$b: a library is missing: $libs"; exit 1 ;; esac
+		echo "$b: $(printf "%s\n" "$libs" | wc -l) libraries"
 	done
 	[ -z "$(find /usr/local /root/vh -type f -perm /6000)" ]
 	[ -e /etc/kernel.d/post-install/90-vh-uki ]

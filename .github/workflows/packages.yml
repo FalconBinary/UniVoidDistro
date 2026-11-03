@@ -23,9 +23,10 @@ on:
 permissions:
   contents: read
 # the newest commit wins: a publication of an older one that has not passed yet is not wanted; a
-# tag is never cancelled
+# tag is never cancelled. A pull request publishes nothing: each of its commits keeps its own run,
+# so a push does not throw away the rig's result of the one before
 concurrency:
-  group: packages-${{ github.ref }}
+  group: packages-${{ github.event_name == 'pull_request' && github.sha || github.ref }}
   cancel-in-progress: ${{ github.ref_type != 'tag' }}
 jobs:
   build:
