@@ -96,8 +96,8 @@ decides the action either way). A control-method button (`PNP0C0C`, most laptops
 input device of the `button` driver; `tiny_power_button`, which matches it too and has no input
 device, is refused (hwdb rule `acpi.power-button.tiny-off`). A machine with only the fixed
 button (`LNXPWRBN`: QEMU's q35, some PCs) has no input device for it on kernel 6.18: between
-6.12 and 6.18 `button` became a platform driver, and the kernel makes no platform device for the
-fixed button, so `tiny_power_button` alone drives it (rule `acpi.power-button.fixed`, for a
+6.12 and 6.18 `button` became a platform driver, and before 6.18.60 the kernel made no platform
+device for the fixed button, so `tiny_power_button` drives it (rule `acpi.power-button.fixed`, for a
 machine without a control-method button and without a lid: it builds `tiny_power_button` into
 the machine kernel instead of `button`, since built in the two exclude each other). It signals init, with SIGINT
 (`tiny_power_button.power_signal=2`: Void builds it with 38, which runit ignores); runit runs
@@ -107,6 +107,14 @@ press. A hypervisor's shutdown request (`virsh shutdown`, QEMU's `system_powerdo
 button, and `tests/vm` checks it ends in a regular poweroff. Ctrl+Alt+Del on a text console
 sends init the same SIGINT, so on such a machine it is the power button too; elsewhere
 `ctrlaltdel` does what Void's does, a reboot.
+
+Kernel 6.18.60 moved this driver: a backport (upstream f4203ec64e11) made it a platform driver, so
+its device is `/sys/bus/platform/drivers/acpi-tiny-power-button/LNXPWRBN:00` instead of
+`/sys/bus/acpi/drivers/tiny-power-button/LNXPWRBN:00`, and the same release gives the fixed button
+a platform device. `ctrlaltdel`, `vh-audit` and `tests/vm` look in both places, since a machine
+kernel of older pins keeps the old one. `button` could bind the new device, and the rule keeps it
+refused: `tiny_power_button` stays the one path, on either kernel. A `ctrlaltdel` from before this
+change sends the button to a reboot on 6.18.60, and `vh-audit` says so.
 
 The alarm combination of `optional/deadman` (Right Ctrl + Right Alt + End, `COMBO=yes` in
 `/etc/vh/deadman.conf`) works on the same built-in keyboards, not only on a PS/2 one:
