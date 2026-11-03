@@ -1,0 +1,11 @@
+# The entry points vh-etc brings that thor's policy would not extract (docs/18): the kernel's
+# hooks and the login script. The installer and vh-update --adopt put them into
+# /etc/thor/keep.conf before vh-etc is installed; thor policy shows them. tests/pkg/run.sh checks
+# that this list is exactly vh-etc's entry points.
+/etc/bash/bashrc.d/vh.sh
+/etc/kernel.d/post-install/05-vh-esp
+/etc/kernel.d/post-install/90-vh-uki
+/etc/kernel.d/post-install/99-vh-esp
+/etc/kernel.d/post-remove/05-vh-esp
+/etc/kernel.d/post-remove/90-vh-uki
+/etc/kernel.d/post-remove/99-vh-esp

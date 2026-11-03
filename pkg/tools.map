@@ -1,0 +1,36 @@
+# The built programs and where they go: PACKAGE PROGRAM PLACE [COPY]
+# COPY is the copy an enabled optional/ module installed: replaced together with PLACE
+# (install/build-tools.sh at a rebuild from the USB stick; the package's INSTALL script at an
+# update, docs/uni/rolling.md). Read by install/build-tools.sh and pkg/build.sh.
+vh-tools   vh-seccomp       /usr/local/libexec/vh/vh-seccomp
+vh-tools   vh-wlfilter      /usr/local/bin/vh-wlfilter
+# SELinux (docs/uni/selinux.md): the labels, and the login shells that pick the domain of an
+# account (the same program under two names, two files, two labels)
+vh-tools   vh-selabel       /usr/local/sbin/vh-selabel
+vh-tools   vh-shell         /usr/local/bin/vh-usersh
+vh-tools   vh-shell         /usr/local/bin/vh-adminsh
+vh-tools   vh-acpid         /usr/local/sbin/vh-acpid
+vh-tools   vh-limine-update /usr/local/sbin/vh-limine-update
+vh-tools   vh-pkg           /usr/local/sbin/vh-pkg
+vh-tools   vh-deep-clean    /usr/local/sbin/vh-deep-clean
+vh-tools   vh-hashpw        /root/vh/tools/vh-hashpw
+vh-tools   vh-deadman       /root/vh/optional/deadman/vh-deadman             /usr/local/sbin/vh-deadman
+vh-tools   vh-uki-verify    /root/vh/optional/sb-offline-keys/vh-uki-verify  /usr/local/sbin/vh-uki-verify
+vh-tools   vh-open          /root/vh/optional/viewers/vh-open                /usr/local/bin/vh-open
+vh-tools   vh-usb-udev      /root/vh/optional/usb-auth/vh-usb-udev           /usr/local/libexec/vh/vh-usb-udev
+vh-tools   pin-fetch        /root/vh/optional/dns-pin/pin-fetch              /usr/local/libexec/vh/pin-fetch
+# the probe and the plan (kernel/, adapt/): vh-check and a re-plan after a hardware change (U2)
+vh-tools   vh-kconf         /usr/local/sbin/vh-kconf
+vh-tools   vh-plan          /usr/local/sbin/vh-plan
+# the gaming session (session/, track G): nothing of it runs before doas vh-game install
+vh-session vh-root          /usr/local/sbin/vh-root
+vh-session vh-game          /usr/local/sbin/vh-game
+vh-session vh-game-enter    /usr/local/bin/vh-game-enter
+# PID 1 and the services (init/, track I): runit stays PID 1 until doas vh-init --install
+vh-init    vh-stage1        /usr/local/sbin/vh-stage1
+vh-init    vh-init          /usr/local/sbin/vh-init
+vh-init    vh-ctl           /usr/local/sbin/vh-ctl
+# the scheduler's loader (sched/, track S); its BPF object goes next to the libraries
+# (/usr/local/lib/vh/vh_sched.o). The service vh-sched.svc runs nothing until
+# doas vh-ctl enable vh-sched on a kernel with sched_ext
+vh-sched   vh-sched         /usr/local/sbin/vh-sched
