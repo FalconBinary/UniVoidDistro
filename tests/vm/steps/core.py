@@ -123,7 +123,7 @@ def step_base(a):
         # without /dev/log): restart, as in the ctools step
         # under vh-init vh-acpid's output is the manager's log file, not socklog's (vh-acpid.svc: log = file)
         rc, out = run(ser, "doas sh -c 'sv restart vh-acpid; sleep 3; { grep -ah vh-acpid /var/log/socklog/*/current; cat /var/log/vh/vh-acpid/current; } 2>/dev/null | tail -3; "
-                           "grep -c \"Power Button\" /proc/bus/input/devices; ls /sys/bus/acpi/drivers/tiny-power-button 2>/dev/null'")
+                           "grep -c \"Power Button\" /proc/bus/input/devices; ls /sys/bus/platform/drivers/acpi-tiny-power-button /sys/bus/acpi/drivers/tiny-power-button 2>/dev/null'")
         if "LNXPWRBN" in out:
             # the fixed button alone (q35; hwdb rule acpi.power-button.fixed): kernel 6.18 drives it with
             # tiny_power_button, which signals init; /etc/runit/ctrlaltdel hands it to vh-acpid

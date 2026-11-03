@@ -23,13 +23,20 @@ chronyc -n authdata 2>/dev/null | awk 'NR>2 && $2=="NTS" {n++} END {exit !(n>0)}
 	&& ok "chrony: NTS sources" || unk "chrony: no NTS sources (no network?)"
 
 sec "Power button and lid"
-if ls /sys/bus/acpi/drivers/tiny-power-button/ 2>/dev/null | grep -q ':'; then
+# the device under the driver: a platform driver since kernel 6.18.60, an ACPI driver before it
+tiny_button=no
+for tiny_dev in /sys/bus/platform/drivers/acpi-tiny-power-button/*:* /sys/bus/acpi/drivers/tiny-power-button/*:*; do
+	[ -e "$tiny_dev" ] && tiny_button=yes
+done
+if [ "$tiny_button" = yes ]; then
 	# the fixed button alone (hwdb rule acpi.power-button.fixed): tiny_power_button is its only
 	# driver on 6.18, set to signal SIGINT, and /etc/runit/ctrlaltdel hands that to vh-acpid
-	if grep -qwF 'tiny_power_button.power_signal=2' /proc/cmdline && grep -q 'sv 1 vh-acpid' /etc/runit/ctrlaltdel 2>/dev/null; then
-		ok "the fixed power button: tiny_power_button signals init (SIGINT), /etc/runit/ctrlaltdel hands it to vh-acpid"
-	else
+	if ! grep -qwF 'tiny_power_button.power_signal=2' /proc/cmdline || ! grep -q 'sv 1 vh-acpid' /etc/runit/ctrlaltdel 2>/dev/null; then
 		bad "tiny_power_button took the power button (Ctrl+Alt+Del bypasses vh-acpid): module_blacklist needed"
+	elif ! grep -q 'acpi-tiny-power-button' /etc/runit/ctrlaltdel; then
+		bad "/etc/runit/ctrlaltdel does not know kernel 6.18.60's driver path: the power button reboots; install rootfs/etc/runit/ctrlaltdel of a current repository"
+	else
+		ok "the fixed power button: tiny_power_button signals init (SIGINT), /etc/runit/ctrlaltdel hands it to vh-acpid"
 	fi
 else
 	ok "the power button is not owned by tiny_power_button"
