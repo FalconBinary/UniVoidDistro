@@ -107,20 +107,23 @@ jobs:
             printf '%s\n' "$KEY" > "$RUNNER_TEMP/k/key.pem"
             publish=true
             by="UniVoidDistro rolling"
-            mkdir -p stage/gate-key
-            cp pkg/keys/rolling/*.plist stage/gate-key/
+            plist=$(ls pkg/keys/rolling/*.plist)
             # the secret and the committed public key must be one pair
             pub=$(openssl rsa -in "$RUNNER_TEMP/k/key.pem" -pubout 2>/dev/null | base64 -w0)
-            grep -qF "$pub" stage/gate-key/*.plist || { echo "VH_REPO_KEY_ROLLING is not the key of pkg/keys/rolling"; exit 1; }
+            grep -qF "$pub" "$plist" || { echo "VH_REPO_KEY_ROLLING is not the key of pkg/keys/rolling"; exit 1; }
           else
             # a tag's draft and a pull request: a key of this run; a tag's is replaced by the offline key
             sh pkg/keygen.sh rolling "$RUNNER_TEMP/k"
             mv "$RUNNER_TEMP/k/rolling.pem" "$RUNNER_TEMP/k/key.pem"
-            mkdir -p stage/gate-key
-            cp "$RUNNER_TEMP"/k/*.plist stage/gate-key/
+            plist=$(ls "$RUNNER_TEMP"/k/*.plist)
             by="UniVoidDistro rolling"
             [ "$GITHUB_REF_TYPE" != tag ] || publish=draft
           fi
+          # for the gates. An artifact's file name may not hold a colon, and xbps names a key by its
+          # fingerprint, which does: the name goes beside the file
+          mkdir -p stage/gate-key
+          cp "$plist" stage/gate-key/key.plist
+          basename "$plist" .plist > stage/gate-key/fingerprint
           echo "publish=$publish" >> "$GITHUB_OUTPUT"
           echo "BY=$by" >> "$GITHUB_ENV"
       - name: signed (pkg/sign.sh)

@@ -2,7 +2,7 @@
 # The gate of an architecture the rig cannot boot on GitHub (aarch64: its runners have no /dev/kvm,
 # docs/uni/rolling.md, "The gates"): this build's signed repository through a real system's package
 # manager, in a throwaway Void container on a runner of that architecture.
-#   sh tests/pkg/gate.sh REPO ARCH VARIANT   (REPO: the repository, with gate-key/FINGERPRINT.plist)
+#   sh tests/pkg/gate.sh REPO ARCH VARIANT   (REPO: the repository, with gate-key/key.plist and fingerprint)
 # The new thor replaces xbps; our packages and their dependencies from Void install under its
 # policy in enforce with every signature checked; the programs start and the libraries resolve.
 # What it does not show: that the system boots after the update. That stays [VERIFY] here.
@@ -17,7 +17,7 @@ tar -C "$repo" -cf - . | docker run --rm -i -e VARIANT="$variant" -e THORKEEP="$
 	mkdir -p /www && tar -xf - -C /www
 	xbps-install -Syu xbps >/dev/null && xbps-install -Syu >/dev/null
 	xbps-install -y python3 >/dev/null
-	cp /www/gate-key/*.plist /var/db/xbps/keys/
+	cp /www/gate-key/key.plist "/var/db/xbps/keys/$(cat /www/gate-key/fingerprint).plist"
 	cd /www && python3 -m http.server 8321 --bind 127.0.0.1 >/dev/null 2>&1 &
 	sleep 1
 	# ahead of Void'"'"'s repository, as in the system: stdin closed, a signature of another key is refused

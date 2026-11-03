@@ -1,6 +1,5 @@
 """The rolling release's gate (docs/uni/rolling.md): an installation of the previous image takes our
 packages from the signed repository of this build, with the command the document gives."""
-import glob
 import hashlib
 import os
 import re
@@ -22,7 +21,7 @@ def adopt_command(fp, sha):
     an admin types is what the gate ran."""
     with open(os.path.join(vhvm.REPO, "docs", "uni", "rolling.md")) as f:
         cmd = re.search(r"<!-- the command of an installation of v0\.2\.0 -->\n```sh\n(.*?)\n```", f.read(), re.S).group(1)
-    cmd = re.sub(r"https://raw\.githubusercontent\.com/\S+?\.plist", f"{URL}/gate-key/{fp}.plist", cmd)
+    cmd = re.sub(r"https://raw\.githubusercontent\.com/\S+?\.plist", f"{URL}/gate-key/key.plist", cmd)
     cmd = re.sub(r"[0-9A-Za-z_]+(?=  /tmp/vh-key)", sha, cmd)
     cmd = re.sub(r"/var/db/xbps/keys/\S+?\.plist", f"/var/db/xbps/keys/{fp}.plist", cmd)
     cmd = re.sub(r"repository=https://\S+?(?=\\n)", f"repository={URL}", cmd)
@@ -35,11 +34,9 @@ def step_update(a):
     docs/uni/rolling.md against this build's signed repository (VH_UPDATE_REPO), vh-update; every own
     package is installed, its files as packaged, the migrations ran. The reboot and check.py base follow."""
     repo = os.environ.get("VH_UPDATE_REPO", os.path.join(vhvm.REPO, "build", "own-repo"))
-    keys = glob.glob(os.path.join(repo, "gate-key", "*.plist"))
-    if len(keys) != 1:
-        sys.exit(f"{repo}/gate-key: one public key is expected, found {keys}")
-    fp = os.path.basename(keys[0])[:-len(".plist")]
-    with open(keys[0], "rb") as f:
+    with open(os.path.join(repo, "gate-key", "fingerprint")) as f:
+        fp = f.read().strip()
+    with open(os.path.join(repo, "gate-key", "key.plist"), "rb") as f:
         sha = hashlib.sha256(f.read()).hexdigest()
     srv = subprocess.Popen([sys.executable, "-m", "http.server", str(PORT), "--bind", "127.0.0.1", "--directory", repo],
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
