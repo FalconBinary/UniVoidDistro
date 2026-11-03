@@ -102,6 +102,15 @@ run_migrations() {
 	done
 }
 
+# libxbps lets nothing else through while the package that provides xbps has an update, lists only
+# that one, and takes it only under the name xbps. Never without an update of thor: on a current thor,
+# -u xbps replaces thor with Void's xbps, and the policy is gone
+thor_first() {
+	if xbps-install -un </dev/null 2>/dev/null | grep -q '^thor-'; then
+		xbps-install -yu xbps </dev/null
+	fi
+}
+
 # the packages that take over an installation's files: the desktop's build and the policy as the plan
 # and vh.conf ask for them, in the installer's own words
 adopt_packages() {
@@ -133,7 +142,7 @@ if [ "$adopt" = 1 ]; then
 	while read -r k; do
 		case $k in /*) thor keep "$k" >/dev/null ;; esac
 	done < /usr/local/lib/vh/thor-keep
-	xbps-install -yu thor </dev/null
+	thor_first
 	# shellcheck disable=SC2046 # the names have no spaces
 	thor install -y $(adopt_packages) </dev/null
 	# a conf file already there stays: the package's identical copy next to it goes

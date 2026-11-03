@@ -138,11 +138,13 @@ key is pinned by its sha256, so nothing is trusted on first use:
 
 <!-- the command of an installation of v0.2.0 -->
 ```sh
-doas sh -c 'xbps-fetch -o /tmp/vh-key https://raw.githubusercontent.com/FalconBinary/UniVoidDistro/main/pkg/keys/stable/FINGERPRINT.plist && echo "KEY_SHA256  /tmp/vh-key" | sha256sum -c - && install -m 0644 /tmp/vh-key /var/db/xbps/keys/FINGERPRINT.plist && printf "repository=https://github.com/FalconBinary/UniVoidDistro/releases/latest/download\n" > /etc/xbps.d/00-vh-channel.conf && xbps-install -Sy vh-base </dev/null && /usr/local/sbin/vh-update --adopt'
+doas sh -c 'xbps-fetch -o /tmp/vh-key https://raw.githubusercontent.com/FalconBinary/UniVoidDistro/main/pkg/keys/stable/FINGERPRINT.plist && echo "KEY_SHA256  /tmp/vh-key" | sha256sum -c - && install -m 0644 /tmp/vh-key /var/db/xbps/keys/FINGERPRINT.plist && printf "repository=https://github.com/FalconBinary/UniVoidDistro/releases/latest/download\n" > /etc/xbps.d/00-vh-channel.conf && xbps-install -S </dev/null && if xbps-install -un </dev/null | grep -q "^thor-"; then xbps-install -yu xbps </dev/null; fi && xbps-install -y vh-base </dev/null && /usr/local/sbin/vh-update --adopt'
 ```
 
-`FINGERPRINT` and `KEY_SHA256` are filled in with the first stable key. `vh-base` brings the new
-`vh-update`; `--adopt` names the entry points for thor, installs `univoid` with the desktop's build
+`FINGERPRINT` and `KEY_SHA256` are filled in with the first stable key. thor goes first: libxbps lets
+nothing else through while the package that provides xbps has an update, and it takes that update
+only under the name `xbps`. Only then: on a current thor, `xbps-install -u xbps` replaces thor with
+Void's xbps, and the policy is gone. `vh-base` brings the new `vh-update`; `--adopt` names the entry points for thor, installs `univoid` with the desktop's build
 and policy the plan and `vh.conf` ask for (the installer's own `vh_desktop_variant`), removes the
 identical `.new-*` copies, runs the migrations and goes on to a normal update. The files keep their
 places; only their owner changes. Then reboot. The rig gate runs this very text.

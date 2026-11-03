@@ -52,6 +52,9 @@ def step_update(a):
         check("the previous image's installation: vh-update has no owner", "vh-base" not in out, out[-200:].replace("\n", " | "))
         rc, out = run(ser, adopt_command(fp, sha) + "; echo ADOPT_RC=$?", timeout=3600)
         check("the document's command, then our packages over its files", "ADOPT_RC=0" in out, out[-1500:].replace("\n", " | "))
+        if "ADOPT_RC=0" not in out:
+            # everything below asks about what this command does: its failures would say nothing new
+            return
         rc, out = run(ser, "for p in " + " ".join(OWN) + "; do xbps-query -p pkgver $p || echo MISSING $p; done; "
                            "echo DESKTOPS=$(xbps-query -l | awk '{print $2}' | grep -c '^vh-desktop-')")
         check("every own package installed, one desktop build", "MISSING" not in out and "DESKTOPS=1" in out,
@@ -61,9 +64,9 @@ def step_update(a):
                            "xbps-query -o $f | cut -d: -f1; done")
         for own in ("vh-base-", "vh-init-", "vh-sched-", "vh-session-", "vh-desktop-", "vh-data-", "vh-installer-", "vh-etc-"):
             check(f"a file owned by {own[:-1]}", own in out, out[-400:].replace("\n", " | "))
-        # a package that is not installed: xbps-pkgdb says so and still exits 0, the check above catches it
+        # a package that is not installed: xbps-pkgdb says so and still exits 0
         rc, out = run(ser, "xbps-pkgdb " + " ".join(OWN) + "; echo PKGDB_RC=$?", timeout=900)
-        check("the files are as packaged (xbps-pkgdb)", "PKGDB_RC=0" in out, out[-500:].replace("\n", " | "))
+        check("the files are as packaged (xbps-pkgdb)", "PKGDB_RC=0" in out and "not installed" not in out, out[-500:].replace("\n", " | "))
         rc, out = run(ser, "stat -c %a /root/vh; find /etc -name '*.new-*' -type f | head; ls /var/db/xbps/keys | grep -c " + fp + "; "
                            "cat /var/lib/vh/migrated; echo THIN=$(grep -c vh-ctrlaltdel /etc/runit/ctrlaltdel); echo KEEP=$(grep -c 90-vh-uki /etc/thor/keep.conf)")
         check("/root/vh is 0700", re.search(r"\b700\s*$", out, re.M) is not None, out[:100].replace("\n", " | "))
@@ -75,7 +78,8 @@ def step_update(a):
         rc, out = run(ser, "printf 'y\\n' | thor install tree > /tmp/t.log 2>&1; echo THOR_RC=$?; xbps-query tree >/dev/null && echo HAS_TREE; "
                            "xbps-remove -y tree >/dev/null", timeout=600)
         check("thor without -y answers its question (the new thor is the one that runs)", "HAS_TREE" in out, out[-300:].replace("\n", " | "))
-        rc, out = run(ser, "vh-update -y > /tmp/u.log 2>&1; echo UPDATE_RC=$?; tail -5 /tmp/u.log", timeout=3600)
+        # stdin closed: -y asks nothing, and a question would hold the rig until its timeout
+        rc, out = run(ser, "vh-update -y > /tmp/u.log 2>&1 </dev/null; echo UPDATE_RC=$?; tail -5 /tmp/u.log", timeout=3600)
         check("vh-update again", "UPDATE_RC=0" in out, out[-500:].replace("\n", " | "))
     finally:
         shutdown(vm, ser)
