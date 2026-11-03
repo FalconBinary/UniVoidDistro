@@ -10,7 +10,9 @@ import time
 import vhvm
 from vmlib import check, boot, run, shutdown
 
-PORT = 8321
+# root may reach only port 443 (rootfs/etc/vh/nft/people.nft.in); plain HTTP on it, the signatures
+# decide. A runner needs net.ipv4.ip_unprivileged_port_start at most 443 (kvm-smoke sets it).
+PORT = 443
 # the runner, as QEMU's user network shows it to the VM
 URL = f"http://10.0.2.2:{PORT}"
 OWN = ["univoid", "thor", "vh-tools", "vh-init", "vh-sched", "vh-session", "vh-data", "vh-installer", "vh-base", "vh-etc"]
@@ -41,6 +43,8 @@ def step_update(a):
     srv = subprocess.Popen([sys.executable, "-m", "http.server", str(PORT), "--bind", "127.0.0.1", "--directory", repo],
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     time.sleep(1)
+    if srv.poll() is not None:
+        sys.exit(f"the repository's server did not start on port {PORT}")
     vm, ser = boot(a)
     try:
         rc, out = run(ser, "xbps-query -p pkgver thor; xbps-query -o /usr/local/sbin/vh-update; echo before=$?; "
@@ -49,25 +53,29 @@ def step_update(a):
         rc, out = run(ser, adopt_command(fp, sha) + "; echo ADOPT_RC=$?", timeout=3600)
         check("the document's command, then our packages over its files", "ADOPT_RC=0" in out, out[-1500:].replace("\n", " | "))
         rc, out = run(ser, "for p in " + " ".join(OWN) + "; do xbps-query -p pkgver $p || echo MISSING $p; done; "
-                           "xbps-query -l | awk '{print $2}' | grep -c '^vh-desktop-'")
-        check("every own package installed, one desktop build", "MISSING" not in out and re.search(r"^1\s*$", out, re.M) is not None,
+                           "echo DESKTOPS=$(xbps-query -l | awk '{print $2}' | grep -c '^vh-desktop-')")
+        check("every own package installed, one desktop build", "MISSING" not in out and "DESKTOPS=1" in out,
               out[-500:].replace("\n", " | "))
         rc, out = run(ser, "for f in /usr/local/sbin/vh-update /usr/local/sbin/vh-init /usr/local/sbin/vh-sched /usr/local/sbin/vh-game "
                            "/usr/local/bin/refurswm /root/vh/hwdb/gpu.zon /root/vh/install/10-install.sh /etc/kernel.d/post-install/90-vh-uki; do "
                            "xbps-query -o $f | cut -d: -f1; done")
         for own in ("vh-base-", "vh-init-", "vh-sched-", "vh-session-", "vh-desktop-", "vh-data-", "vh-installer-", "vh-etc-"):
             check(f"a file owned by {own[:-1]}", own in out, out[-400:].replace("\n", " | "))
+        # a package that is not installed: xbps-pkgdb says so and still exits 0, the check above catches it
         rc, out = run(ser, "xbps-pkgdb " + " ".join(OWN) + "; echo PKGDB_RC=$?", timeout=900)
         check("the files are as packaged (xbps-pkgdb)", "PKGDB_RC=0" in out, out[-500:].replace("\n", " | "))
         rc, out = run(ser, "stat -c %a /root/vh; find /etc -name '*.new-*' -type f | head; ls /var/db/xbps/keys | grep -c " + fp + "; "
-                           "cat /var/lib/vh/migrated; grep -c vh-ctrlaltdel /etc/runit/ctrlaltdel; grep -c 90-vh-uki /etc/thor/keep.conf")
-        check("/root/vh is 0700", re.search(r"^700\s*$", out, re.M) is not None, out[:100].replace("\n", " | "))
+                           "cat /var/lib/vh/migrated; echo THIN=$(grep -c vh-ctrlaltdel /etc/runit/ctrlaltdel); echo KEEP=$(grep -c 90-vh-uki /etc/thor/keep.conf)")
+        check("/root/vh is 0700", re.search(r"\b700\s*$", out, re.M) is not None, out[:100].replace("\n", " | "))
+        check("the channel's key is the one the command installed", re.search(r"^1\s*$", out, re.M) is not None, out[-300:].replace("\n", " | "))
+        check("the entry points are named for thor", "KEEP=2" in out, out[-300:].replace("\n", " | "))
+        check("/etc/runit/ctrlaltdel is the thin file", "THIN=0" not in out and "THIN=" in out, out[-300:].replace("\n", " | "))
         check("the migration of /etc/runit/ctrlaltdel ran", "0001-ctrlaltdel" in out, out[-300:].replace("\n", " | "))
         # the defect of PR 8: thor without -y closed stdin, so its question was never answered
         rc, out = run(ser, "printf 'y\\n' | thor install tree > /tmp/t.log 2>&1; echo THOR_RC=$?; xbps-query tree >/dev/null && echo HAS_TREE; "
                            "xbps-remove -y tree >/dev/null", timeout=600)
         check("thor without -y answers its question (the new thor is the one that runs)", "HAS_TREE" in out, out[-300:].replace("\n", " | "))
-        rc, out = run(ser, "vh-update -y 2>&1 | tail -3; echo UPDATE_RC=$?", timeout=3600)
+        rc, out = run(ser, "vh-update -y > /tmp/u.log 2>&1; echo UPDATE_RC=$?; tail -5 /tmp/u.log", timeout=3600)
         check("vh-update again", "UPDATE_RC=0" in out, out[-500:].replace("\n", " | "))
     finally:
         shutdown(vm, ser)

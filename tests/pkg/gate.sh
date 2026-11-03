@@ -38,7 +38,7 @@ tar -C "$repo" -cf - . | docker run --rm -i -e VARIANT="$variant" -e THORKEEP="$
 	/usr/local/sbin/vh-plan --help >/dev/null 2>&1 || [ $? -lt 126 ]
 	/usr/local/sbin/vh-kconf --help >/dev/null 2>&1 || [ $? -lt 126 ]
 	/usr/local/sbin/vh-init --help >/dev/null 2>&1 || [ $? -lt 126 ]
-	# the libraries, from the dynamic linker itself: ldd is not in this image
+	# the libraries, from the dynamic linker itself: the gate of ee1e648 found no ldd in this container
 	ld=$(ls /usr/lib/ld-linux-*.so.* | head -1)
 	for b in /usr/local/bin/refurswm /usr/local/bin/refursline /root/vh/tools/vh-hashpw /root/vh/optional/dns-pin/pin-fetch; do
 		libs=$("$ld" --list "$b" 2>&1) || { echo "$b: $libs"; exit 1; }

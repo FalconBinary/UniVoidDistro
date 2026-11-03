@@ -221,6 +221,8 @@ jobs:
           gh attestation verify "$iso" --repo "$GITHUB_REPOSITORY"
           echo "VH_ISO=$PWD/$iso" >> "$GITHUB_ENV"
           echo "VH_UPDATE_REPO=$GITHUB_WORKSPACE/build/own-repo" >> "$GITHUB_ENV"
+          # the VM's root reaches port 443 only (people.nft): the step update serves the repository there
+          sudo sysctl -w net.ipv4.ip_unprivileged_port_start=443
       - name: our live ISO of live-image run ${{ inputs.live_run }}
         if: inputs.live_run != ''
         uses: actions/download-artifact@v4
