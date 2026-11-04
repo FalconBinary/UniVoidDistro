@@ -6,7 +6,8 @@
 #   doas vh-update --adopt [-y]                    an installation of v0.2.0: our packages take over
 #                                                  its files, then update (docs/uni/rolling.md)
 # 0. gives runit's state of each service to /run (vh-sv-runstate);
-# 1. shows what will be updated, Void's packages and ours; 2. installs, in one transaction of thor;
+# 1. a new thor, first and alone (thor_first), then shows what will be updated, Void's packages and
+# ours; 2. installs, in one transaction of thor;
 # 3. the kernel hooks rebuild and sign the UKI and Limine; 4. if the microcode, firmware, dracut,
 # stub, limine or vh-limine-update were updated, rebuilds the UKI itself (their hooks do not);
 # 5. runs the migrations our packages brought (the files no package can own); 6. strips SUID bits
@@ -103,12 +104,18 @@ run_migrations() {
 }
 
 # libxbps lets nothing else through while the package that provides xbps has an update, lists only
-# that one, and takes it only under the name xbps. Never without an update of thor: on a current thor,
-# -u xbps replaces thor with Void's xbps, and the policy is gone
+# that one, and takes it only under the name xbps. Only with an update of thor: on a current thor,
+# -u xbps asks for Void's xbps, and the transaction aborts over libxbps.so.6
 thor_first() {
-	if xbps-install -un </dev/null 2>/dev/null | grep -q '^thor-'; then
-		xbps-install -yu xbps </dev/null
+	new=$(xbps-install -un </dev/null 2>/dev/null | awk '$1 ~ /^thor-/ { print $1 }')
+	[ -n "$new" ] || return 0
+	echo "==> $new goes first: the other updates are listed after it"
+	if [ "$yes" != 1 ]; then
+		printf 'Install it now? [y/N] '
+		read -r a || a=""
+		case $a in y|Y) ;; *) echo "nothing was updated" >&2; exit 1 ;; esac
 	fi
+	xbps-install -yu xbps </dev/null
 }
 
 # the packages that take over an installation's files: the desktop's build and the policy as the plan
@@ -130,6 +137,7 @@ if [ -n "$channel" ]; then
 fi
 echo "==> synchronising repositories and listing updates"
 sync_repos
+thor_first
 if [ "$adopt" = 1 ]; then
 	[ -s "$CHANNEL_CONF" ] || { echo "no channel in $CHANNEL_CONF: the command of docs/uni/rolling.md, \"From v0.2.0\", writes it" >&2; exit 1; }
 	echo "==> our packages take over this installation's files"
@@ -142,7 +150,6 @@ if [ "$adopt" = 1 ]; then
 	while read -r k; do
 		case $k in /*) thor keep "$k" >/dev/null ;; esac
 	done < /usr/local/lib/vh/thor-keep
-	thor_first
 	# shellcheck disable=SC2046 # the names have no spaces
 	thor install -y $(adopt_packages) </dev/null
 	# a conf file already there stays: the package's identical copy next to it goes
@@ -196,8 +203,6 @@ fi
 
 echo "==> installing (thor: parallel download, security policy)"
 limine_before=$(sha256sum /usr/local/sbin/vh-limine-update 2>/dev/null) || limine_before=""
-# the new thor goes first (like xbps-install -u xbps)
-xbps-install -yu thor </dev/null
 thor update -y </dev/null
 # the UKI's signature and Limine's configuration are vh-limine-update's work (docs/09, section 2)
 [ "$limine_before" = "$(sha256sum /usr/local/sbin/vh-limine-update 2>/dev/null)" ] || rebuild=1

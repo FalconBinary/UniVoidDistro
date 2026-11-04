@@ -262,7 +262,42 @@ if [ -x "${T:-}/thor" ]; then
 	/usr/local/sbin/vh-update --channel rolling -y > "$w/u3.log" 2>&1; rc=$?
 	[ "$rc" = 0 ] && ok "--channel rolling: signed by its key" || bad "--channel rolling signed, rc $rc" "$(tail -5 "$w/u3.log")"
 	grep -q 'the rolling index is .* days old' "$w/u3.log" && ok "the rolling index of 2020: reported as stale" || bad "stale index" "$(tail -5 "$w/u3.log")"
-	xbps-install -y vh-sched </dev/null >/dev/null 2>&1
+	echo "== vh-update: a new thor goes first, and the list is the whole update"
+	xbps-install -y vh-sched </dev/null >/dev/null 2>&1 || bad "vh-sched from the channel"
+	# xbps compares the index's time in seconds: the next one must not fall in the second of the last
+	sleep 2
+	# the real thor's tree, without its shlib-requires: the test's repository has none of those libraries,
+	# and xbps-rindex would keep the package in a stage index that xbps never reads
+	# and without Void's repository in its xbps.d: this update stays inside the published set
+	. "$src/thor/UPSTREAM"
+	cp -a "$w/rt2/dest" "$w/rt3"; rm -f "$w/rt3/usr/share/xbps.d/00-repository-main.conf"
+	( cd "$pub" && xbps-create -q -A "$arch" -n "thor-$XBPS_VERSION.${THOR_REVISION}_1000" -s thor -P "xbps-${XBPS_VERSION}_1 libxbps-${XBPS_VERSION}_1" -R "xbps>=0 libxbps>=0" --shlib-provides "libxbps.so.6" "$w/rt3" )
+	mkdir -p "$w/vs/usr/local/sbin"; printf '#!/bin/sh\necho vh-sched 5\n' > "$w/vs/usr/local/sbin/vh-sched"; chmod 755 "$w/vs/usr/local/sbin/vh-sched"
+	( cd "$pub" && xbps-create -q -A "$arch" -n vh-sched-0.2.0.r5_12 -s "a newer vh-sched" "$w/vs" && xbps-rindex -a thor-*_1000."$arch".xbps vh-sched-0.2.0.r5_12."$arch".xbps >/dev/null )
+	[ ! -e "$pub/$arch-stagedata" ] || bad "the new thor went to the stage index"
+	sh "$src/pkg/sign.sh" "$pub" "$w/keys/a.pem" "CI" >/dev/null 2>&1 || bad "sign the new thor"
+	xbps-install -S </dev/null >/dev/null 2>&1
+	xbps-query -R -p pkgver thor | grep -q '_1000$' || bad "the new thor is not in the index xbps read" "$(ls -l --time-style=full-iso "$pub/$arch-repodata" /var/db/xbps/http*/"$arch-repodata" | tr '\n' ' ') $(xbps-query -R -p pkgver thor)"
+	xbps-install -y vh-init </dev/null > "$w/u4a.log" 2>&1; rc=$?
+	[ "$rc" = 16 ] && ok "a pending thor holds every other package back (exit 16)" || bad "a pending thor, rc $rc" "$(tail -3 "$w/u4a.log")"
+	before=$(xbps-query -l | awk '{print $2}' | LC_ALL=C sort | tr '\n' ' ')
+	printf 'n\n' | /usr/local/sbin/vh-update > "$w/u4n.log" 2>&1; rc=$?
+	[ "$rc" = 1 ] && grep -q 'Install it now' "$w/u4n.log" && [ "$before" = "$(xbps-query -l | awk '{print $2}' | LC_ALL=C sort | tr '\n' ' ')" ] && ok "no to the question about thor: nothing installed" || bad "no to thor, rc $rc" "$(tail -3 "$w/u4n.log")"
+	/usr/local/sbin/vh-update > "$w/u4c.log" 2>&1 </dev/null; rc=$?
+	[ "$rc" = 1 ] && [ "$before" = "$(xbps-query -l | awk '{print $2}' | LC_ALL=C sort | tr '\n' ' ')" ] && ok "nobody to answer it: nothing installed" || bad "stdin closed, rc $rc" "$(tail -3 "$w/u4c.log")"
+	/usr/local/sbin/vh-update -y > "$w/u4.log" 2>&1 </dev/null; rc=$?
+	! grep -q 'Install it now' "$w/u4.log" && ok "-y asks nothing" || bad "-y asked about thor"
+	[ "$rc" = 0 ] && ok "vh-update with a pending thor" || bad "vh-update with a pending thor, rc $rc" "$(tail -12 "$w/u4.log")"
+	xbps-query -p pkgver thor | grep -q '_1000$' && ok "thor is the new one" || bad "thor" "$(xbps-query -p pkgver thor)"
+	xbps-query -p pkgver vh-sched | grep -q 'r5_12$' && ok "the other package came with it" || bad "vh-sched" "$(xbps-query -p pkgver vh-sched)"
+	grep -q '^  vh-sched-0.2.0.r5_12' "$w/u4.log" && ok "the list names the other package" || bad "the list" "$(grep -n '^  ' "$w/u4.log" | head -5 | tr '\n' ' ')"
+	# Void's xbps in a repository: vh-update does not ask for it on a current thor. This stand-in has
+	# no shlib to stop it, so a -u xbps would show here (the real package: tests/thor/package_test.sh)
+	mkdir -p "$w/vx/usr/share/vh-test"; echo x > "$w/vx/usr/share/vh-test/x"
+	( cd "$pub" && xbps-create -q -A "$arch" -n xbps-999_1 -s "Void's xbps" "$w/vx" && xbps-rindex -a xbps-999_1."$arch".xbps >/dev/null )
+	sh "$src/pkg/sign.sh" "$pub" "$w/keys/a.pem" "CI" >/dev/null 2>&1 || bad "sign xbps"
+	/usr/local/sbin/vh-update -y > "$w/u5.log" 2>&1 </dev/null; rc=$?
+	[ "$rc" = 0 ] && xbps-query -p pkgver thor | grep -q '_1000$' && ! xbps-query -p pkgver xbps 2>/dev/null | grep -q '^xbps-' && ok "a current thor: vh-update leaves xbps alone" || bad "thor and Void's xbps, rc $rc" "$(tail -5 "$w/u5.log")"
 	kill "$srv" 2>/dev/null
 else
 	bad "no real thor for vh-update"

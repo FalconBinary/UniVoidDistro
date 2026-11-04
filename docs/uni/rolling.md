@@ -3,7 +3,8 @@
 Void's packages have always rolled. Our own layer now does too: thor, the Zig tools, vh-init,
 vh-sched, the desktop, the SELinux policy, `hwdb/`, the kernel's profiles and pins, the installer
 and the programs of `rootfs/` reach an installed system as signed xbps packages through the same
-`doas vh-update`, in one transaction of thor with Void's. Nothing is published before it has passed
+`doas vh-update`, in one transaction of thor with Void's; only a new thor goes first and alone, since
+libxbps holds everything else back until it is in. Nothing is published before it has passed
 the rig. The rebuild from the live USB ([09](../ru/09-updates.md), section 7) stays as the fallback
 until this path has passed its definition of done.
 
