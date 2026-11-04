@@ -36,6 +36,7 @@ check "libxbps carries the policy" 'grep -q thor_unpack_entry /usr/lib/libxbps.s
 echo "== a system with thor"
 check "xbps-install -Su: no update loop of xbps itself" 'xbps-install -Sun > "$w/u.log" 2>&1; ! grep -q "^xbps-[0-9]" "$w/u.log"'
 check "xbps-install xbps does not replace thor (xbps is a virtual package of thor)" 'xbps-install -y xbps >/dev/null 2>&1; xbps-query -p pkgver thor | grep -q "^thor-" && ! xbps-query -p pkgver xbps | grep -q "^xbps-"'
+check "xbps-install -u xbps on a current thor does not replace it" 'xbps-install -yu xbps > "$w/ux.log" 2>&1; xbps-query -p pkgver thor | grep -q "^thor-" && ! xbps-query -p pkgver xbps 2>/dev/null | grep -q "^xbps-"'
 check "a dependency on xbps is satisfied by thor (virtual)" 'xbps-query -p provides thor | grep -q "^xbps-"'
 check "xbps-pkgdb thor: package files intact" 'xbps-pkgdb thor > "$w/pkgdb.log" 2>&1 || { cat "$w/pkgdb.log"; false; }'
 check "thor install: a package from the official repository" 'thor install -y tree > "$w/tree.log" 2>&1 && xbps-query tree >/dev/null'

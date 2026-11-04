@@ -144,8 +144,9 @@ doas sh -c 'xbps-fetch -o /tmp/vh-key https://raw.githubusercontent.com/FalconBi
 
 `FINGERPRINT` and `KEY_SHA256` are filled in with the first stable key. thor goes first: libxbps lets
 nothing else through while the package that provides xbps has an update, and it takes that update
-only under the name `xbps`. Only then: on a current thor, `xbps-install -u xbps` replaces thor with
-Void's xbps, and the policy is gone. `vh-base` brings the new `vh-update`; `--adopt` names the entry points for thor, installs `univoid` with the desktop's build
+only under the name `xbps`. Only then: on a current thor, `xbps-install -u xbps` asks for Void's xbps,
+and the transaction aborts over `libxbps.so.6`. thor stays (`tests/thor/package_test.sh`), but the
+command would stop there. `vh-base` brings the new `vh-update`; `--adopt` names the entry points for thor, installs `univoid` with the desktop's build
 and policy the plan and `vh.conf` ask for (the installer's own `vh_desktop_variant`), removes the
 identical `.new-*` copies, runs the migrations and goes on to a normal update. The files keep their
 places; only their owner changes. Then reboot. The rig gate runs this very text.
