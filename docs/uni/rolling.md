@@ -6,7 +6,8 @@ and the programs of `rootfs/` reach an installed system as signed xbps packages 
 `doas vh-update`, in one transaction of thor with Void's; only a new thor goes first and alone, since
 libxbps holds everything else back until it is in. Nothing is published before it has passed
 the rig. The rebuild from the live USB ([09](../ru/09-updates.md), section 7) stays as the fallback
-until this path has passed its definition of done.
+until a publication has reached real systems: the gate is green (below), the keys and the first
+publication are still to come.
 
 ## The packages: `pkg/build.sh`
 
@@ -120,17 +121,46 @@ refuses the repository, and `vh-update` stops and says so instead of updating wi
 reports a rolling index older than nine days (`univoid`'s version carries the time). Stable can
 rightly be old, so a frozen stable is not detected: [09](../ru/09-updates.md), section 4 applies.
 
-Making them, once:
+Making them, once, in this order: the secret needs its environment, and the rule "only `main`" must
+hold before there is a secret to guard. A key's directory must not lie in `~/Documents`, which syncs
+to iCloud.
 
 ```sh
-sh pkg/keygen.sh rolling /tmp/k     # then: gh secret set VH_REPO_KEY_ROLLING --env rolling < /tmp/k/rolling.pem, and delete it
-sh pkg/keygen.sh stable /Volumes/KEY   # a passphrase; the media stays offline
+echo '{"deployment_branch_policy":{"protected_branches":false,"custom_branch_policies":true}}' | gh api -X PUT repos/FalconBinary/UniVoidDistro/environments/rolling --input -
 ```
 
-The two `FINGERPRINT.plist` files are committed in `pkg/keys/rolling/` and `pkg/keys/stable/`, the
-environment `rolling` gets the deployment rule "only `main`", and the fingerprint and sha256 go into
+```sh
+gh api -X POST repos/FalconBinary/UniVoidDistro/environments/rolling/deployment-branch-policies -f name=main -f type=branch
+```
+
+```sh
+sh pkg/keygen.sh rolling /tmp/vh-rolling-key
+```
+
+```sh
+gh secret set VH_REPO_KEY_ROLLING --env rolling < /tmp/vh-rolling-key/rolling.pem
+```
+
+```sh
+mkdir -p pkg/keys/rolling && cp /tmp/vh-rolling-key/*.plist pkg/keys/rolling/ && rm -rf /tmp/vh-rolling-key
+```
+
+```sh
+sh pkg/keygen.sh stable /Volumes/KEY    # asks for a passphrase; the media stays offline
+```
+
+```sh
+mkdir -p pkg/keys/stable && cp /Volumes/KEY/*.plist pkg/keys/stable/
+```
+
+The two `FINGERPRINT.plist` files are committed, and the stable key's fingerprint and sha256 go into
 the command below. Until then CI builds and gates but publishes nothing, and new installations have
 no channel.
+
+Neither script leaves a secret behind in Docker. A private key is made or read in a tmpfs (colima's
+VM has no swap), and it reaches or leaves the container only on a stream, so its disk never holds the
+key. The passphrase comes on stdin, so neither `ps` nor `docker inspect` shows it. A stream also means
+the media need not be shared with the VM: colima does not share `/Volumes`.
 
 ### From v0.2.0
 
@@ -196,4 +226,14 @@ replace last week's among the assets of the pre-release `rolling`. Tags stay the
   copy, the desktop's switch, a second publication replacing only what changed, signatures over HTTP
   (an unknown key, a changed package, the other channel's key), a real thor in enforce, and `vh-update
   --channel` with this container as the system.
-- The rig: the gate above, on every pull request of these paths and before every publication.
+- The rig: the gate above, on every pull request of these paths and before every publication. Run
+  41748466629 (2026-11-04): v0.2.0's ISO installed, the command above, every package replaced,
+  `vh-update`, a reboot, `base` with no failure, including `vh-kconf check` with `lost=0` and the power
+  button's regular poweroff; `gate-aarch64` green in the same run.
+- `pkg/keygen.sh` and `pkg/sign-stable.sh` by hand on a Mac with colima, with throwaway keys and a
+  stand-in for `gh`: the keys in a tmpfs, the signed index and packages install with the public key,
+  a wrong passphrase uploads nothing.
+
+**Not run yet:** the job `publish` and a real `gh release`, `sign-stable.sh` against a real draft and
+its attestations, the weekly `live-image` path, the installer's path that builds in RAM and packages
+through `pkg/build.sh`, and the `gh api` commands above (they would create the environment).

@@ -152,7 +152,7 @@ umount /mnt && cryptsetup close cryptroot
 
 После загрузки выполните:
 
-- `doas xbps-install -Su thor`, если пересобран thor;
+- `doas xbps-install -Su xbps`, если пересобран thor;
 - `doas xbps-reconfigure -f linux6.18`, если обновился `vh-limine-update`.
 
 `vh-update` сам предупредит, когда в репозитории Void появится xbps новее, чем основа

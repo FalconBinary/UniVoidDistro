@@ -53,7 +53,7 @@
 | `./install/build-desktop.sh /mnt` | собрать RefursWM и RefursLine (`desktop/`) в RAM live-среды и поставить в смонтированную систему (установщик делает это сам); повторный запуск — обновление или новый конфиг |
 
 | `install/build-tools.sh /mnt` | собрать инструменты на Zig в RAM live-среды и поставить в систему ([17](17-zig-tools.md)); повторный запуск после `git pull` обновляет их |
-| `install/build-thor.sh /mnt` | собрать thor (xbps + политика) в RAM live-среды, пакет — в `/mnt/var/lib/thor/repo` ([18](18-thor.md)); установщик делает это сам; затем в системе `doas xbps-install -Su thor` |
+| `install/build-thor.sh /mnt` | собрать thor (xbps + политика) в RAM live-среды, пакет — в `/mnt/var/lib/thor/repo` ([18](18-thor.md)); установщик делает это сам; затем в системе `doas xbps-install -Su xbps` |
 
 `install/chroot.sh` и `install/lib.sh` руками не запускаются — их вызывает `10-install.sh`.
 

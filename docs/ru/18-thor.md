@@ -186,8 +186,10 @@ cd /путь/к/void-hardened && git pull          # новая версия в 
 install/build-thor.sh /mnt                     # пакет — в /mnt/var/lib/thor/repo
 umount /mnt && cryptsetup close cryptroot
 # после загрузки системы
-doas xbps-install -Su thor
+doas xbps-install -Su xbps
 ```
+
+Именно `xbps`: пока ждёт новый `thor`, libxbps не пропускает другие имена, `thor` тоже (код 16).
 
 При новой версии xbps upstream сначала обновите `thor/UPSTREAM`: версию и sha256 из
 шаблона Void (`void-packages/srcpkgs/xbps/template`). Затем проверьте, что патч
