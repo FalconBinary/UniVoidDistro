@@ -1,0 +1,18 @@
+# Files of rootfs/ that stay the installer's: no package owns them, an update never touches
+# them (docs/uni/rolling.md). The templates (*.in, *.cin) are the installer's too, without a line
+# here. Every other file of rootfs/ belongs to vh-etc (/etc) or vh-base (/usr/local).
+#
+# owned by a Void package (xbps refuses two packages with one file; tests/pkg/run.sh checks
+# the list against Void's packages)
+/etc/dhcpcd.conf
+/etc/pam.d/doas
+/etc/pam.d/swaylock
+/etc/pam.d/system-login
+/etc/runit/ctrlaltdel
+/etc/security/faillock.conf
+# edited for this machine by install/chroot.sh (INTERNAL_INPUT)
+/etc/vh/acpi.conf
+# deleted by install/chroot.sh where the plan does not ask for them: a package would bring a
+# deleted file back at the next update (VH_PLAN_UDEV_KNOWN; VH_VIRT=yes)
+/etc/udev/rules.d/99-vh-dgpu-off.rules
+/etc/modprobe.d/vh-novirt.conf

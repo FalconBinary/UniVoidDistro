@@ -25,7 +25,7 @@ need_root
 ARCH=$(xbps-uhelper arch)    # x86_64 on the laptop; anything else only in tests (tests/thor/live_test.sh)
 WORK=/tmp/vh-thor            # the live environment's tmpfs
 ZIG_VERSION=$(cat "$VH_ROOT/zig/ZIG_VERSION")
-PKGVER=thor-$XBPS_VERSION.${THOR_REVISION}_1
+PKGVER=thor-$XBPS_VERSION.${THOR_REVISION}_${VH_PKG_REVISION:-1}
 
 # build DEST REPO: thor's install tree, and the repository with its package
 build() {
@@ -65,8 +65,10 @@ case ${1:-} in
 	;;
 --prebuilt)
 	dir=${2:?"build directory (DIR/dest, DIR/repo)"} ROOT=${3:?"system root, for example /mnt"}
+	# any revision: CI's run number when our packages are published (docs/uni/rolling.md)
+	PKGVER=$(basename "$(ls "$dir"/repo/thor-"$XBPS_VERSION.$THOR_REVISION"_*."$ARCH".xbps 2>/dev/null | head -1)" ".$ARCH.xbps")
 	[ -x "$dir/dest/usr/bin/thor" ] && [ -f "$dir/repo/$PKGVER.$ARCH.xbps" ] \
-		|| die "$dir: no $PKGVER.$ARCH build (dest/usr/bin/thor, repo/$PKGVER.$ARCH.xbps)"
+		|| die "$dir: no thor-$XBPS_VERSION.$THOR_REVISION.$ARCH build (dest/usr/bin/thor, a package in repo/)"
 	say "thor: $PKGVER as the live image brings it ($dir)"
 	mkdir -p "$WORK"
 	rm -rf "$WORK/dest"

@@ -2,6 +2,8 @@
 # void-hardperf-light: the system tools written in Zig (zig/): build and install (docs/05, docs/17).
 #   install/build-tools.sh ROOT                   -- build in the live environment's RAM, install into ROOT
 #   install/build-tools.sh --prebuilt DIR ROOT    -- install an existing build (VM bench, tests/zig/build.sh)
+#   install/build-tools.sh --out DIR              -- build only, into DIR (the installer, which packages
+#                                                    the build: pkg/build.sh, docs/uni/rolling.md)
 #
 # The installed system has neither a compiler nor interpreters such as python3, on purpose
 # (docs/05): Zig is downloaded into the live environment (install/fetch-zig.sh, minisign
@@ -12,43 +14,20 @@ set -euo pipefail
 VH_ROOT=$(cd "$(dirname "$0")/.." && pwd)
 . "$VH_ROOT/install/lib.sh"
 
-# program -> place in the system [-> the copy installed by an enabled optional/ module]
-MAP=(
-	"vh-seccomp       /usr/local/libexec/vh/vh-seccomp"
-	"vh-wlfilter      /usr/local/bin/vh-wlfilter"
-	# SELinux (docs/uni/selinux.md): the labels, and the login shells that pick the domain of an
-	# account (the same program under two names, two files, two labels)
-	"vh-selabel       /usr/local/sbin/vh-selabel"
-	"vh-shell         /usr/local/bin/vh-usersh"
-	"vh-shell         /usr/local/bin/vh-adminsh"
-	"vh-acpid         /usr/local/sbin/vh-acpid"
-	"vh-limine-update /usr/local/sbin/vh-limine-update"
-	"vh-pkg           /usr/local/sbin/vh-pkg"
-	"vh-deep-clean    /usr/local/sbin/vh-deep-clean"
-	"vh-hashpw        /root/vh/tools/vh-hashpw"
-	"vh-deadman       /root/vh/optional/deadman/vh-deadman             /usr/local/sbin/vh-deadman"
-	"vh-uki-verify    /root/vh/optional/sb-offline-keys/vh-uki-verify  /usr/local/sbin/vh-uki-verify"
-	"vh-open          /root/vh/optional/viewers/vh-open                /usr/local/bin/vh-open"
-	"vh-usb-udev      /root/vh/optional/usb-auth/vh-usb-udev           /usr/local/libexec/vh/vh-usb-udev"
-	"pin-fetch        /root/vh/optional/dns-pin/pin-fetch              /usr/local/libexec/vh/pin-fetch"
-	# the gaming session (session/, track G): nothing of it runs before doas vh-game install
-	"vh-root          /usr/local/sbin/vh-root"
-	"vh-game          /usr/local/sbin/vh-game"
-	"vh-game-enter    /usr/local/bin/vh-game-enter"
-	# PID 1 and the services (init/, track I): runit stays PID 1 until doas vh-init --install
-	"vh-stage1        /usr/local/sbin/vh-stage1"
-	"vh-init          /usr/local/sbin/vh-init"
-	"vh-ctl           /usr/local/sbin/vh-ctl"
-	# the scheduler's loader (sched/, track S); its BPF object goes next to the libraries below.
-	# The service vh-sched.svc runs nothing until doas vh-ctl enable vh-sched on a kernel with sched_ext
-	"vh-sched         /usr/local/sbin/vh-sched"
-)
+# package, program, place in the system [, the copy installed by an enabled optional/ module]:
+# pkg/tools.map, which pkg/build.sh packages by (docs/uni/rolling.md)
+mapfile -t MAP < <(grep -v '^[[:space:]]*\(#\|$\)' "$VH_ROOT/pkg/tools.map")
 
 need_root
+OUT=
 if [ "${1:-}" = --prebuilt ]; then
 	BUILD=${2:?"directory with the programs"} ROOT=${3:?"system root"}
 else
-	ROOT=${1:?"system root, for example /mnt"}
+	if [ "${1:-}" = --out ]; then
+		OUT=${2:?"build directory"}
+	else
+		ROOT=${1:?"system root, for example /mnt"}
+	fi
 	BUILD=$(mktemp -d /tmp/vh-build.XXXXXX)
 	trap 'rm -rf "$BUILD"' EXIT
 	# headers for pin-fetch (OpenSSL) and vh-hashpw (libxcrypt): into the live environment's RAM
@@ -58,21 +37,32 @@ else
 	cp -R "$VH_ROOT/zig" "$BUILD/src"
 	( cd "$BUILD/src" && ZIG_GLOBAL_CACHE_DIR=$BUILD/gcache ZIG_LOCAL_CACHE_DIR=$BUILD/cache \
 		"$ZIG" build -Dtarget=native -Dcpu=baseline -Dlibc-tools=true --prefix "$BUILD/out" )
-	# session/, init/ and sched/ read ../zig/lib in place: the same layout; sched/ also builds
-	# the BPF programs (bpfel-freestanding) with the same Zig
-	mkdir -p "$BUILD/s" && cp -R "$VH_ROOT/zig" "$VH_ROOT/session" "$VH_ROOT/init" "$VH_ROOT/sched" "$BUILD/s/"
-	for c in session init sched; do
+	# session/, init/, sched/, kernel/ and adapt/ read ../zig/lib in place: the same layout; sched/
+	# also builds the BPF programs (bpfel-freestanding) with the same Zig
+	mkdir -p "$BUILD/s" && cp -R "$VH_ROOT/zig" "$VH_ROOT/session" "$VH_ROOT/init" "$VH_ROOT/sched" "$VH_ROOT/kernel" "$VH_ROOT/adapt" "$BUILD/s/"
+	for c in session init sched kernel adapt; do
 		( cd "$BUILD/s/$c" && ZIG_GLOBAL_CACHE_DIR=$BUILD/gcache ZIG_LOCAL_CACHE_DIR=$BUILD/cache \
 			"$ZIG" build -Dtarget=native -Dcpu=baseline --prefix "$BUILD/out" )
 	done
 	mv "$BUILD/out/bin"/* "$BUILD/out/bpf/vh_sched.o" "$BUILD/"
 	"$BUILD/vh-seccomp" --selftest >/dev/null || die "vh-seccomp --selftest failed"
+	if [ -n "$OUT" ]; then
+		mkdir -p "$OUT"
+		for line in "${MAP[@]}"; do
+			read -r _ name _ <<< "$line"
+			[ -f "$BUILD/$name" ] || die "no built program $name"
+			install -m 0755 "$BUILD/$name" "$OUT/$name"
+		done
+		install -m 0644 "$BUILD/vh_sched.o" "$OUT/vh_sched.o"
+		ok "the Zig tools built: $OUT"
+		exit 0
+	fi
 fi
 [ -d "$ROOT/usr/local" ] || die "$ROOT is not a system root"
 
 say "installing into $ROOT"
 for line in "${MAP[@]}"; do
-	read -r name dst copy <<< "$line"
+	read -r _ name dst copy <<< "$line"
 	# -f rather than -x: the build directory may be on a noexec mount (/tmp of the installed system)
 	[ -f "$BUILD/$name" ] || die "no built program $name"
 	install -D -m 0755 -o root -g root "$BUILD/$name" "$ROOT$dst"

@@ -47,6 +47,10 @@ VH_KEYMAP="us"
 VH_REGDOM="SI"
 # Void mirror (HTTPS only). List: https://xmirror.voidlinux.org
 VH_MIRROR="https://repo-default.voidlinux.org"
+# The channel of our own packages (docs/uni/rolling.md): stable is the repository of the newest
+# v* tag, signed by an offline key; rolling is the repository of main, published after the rig
+# passes, signed by CI's key. After the installation: doas vh-update --channel NAME
+VH_CHANNEL="stable"
 # Kernel package. The "linux" meta package pulls in AMD/NVIDIA firmware, so a series is named directly.
 VH_KERNEL="linux6.18"
 

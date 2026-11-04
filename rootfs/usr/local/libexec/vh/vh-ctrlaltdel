@@ -1,0 +1,29 @@
+#!/bin/sh
+# What /etc/runit/ctrlaltdel runs, in the package vh-base so that a fix reaches every installation
+# (docs/uni/rolling.md). runit runs that file on SIGINT: Ctrl+Alt+Del on a text console,
+# and the power button of a machine whose fixed ACPI button only tiny_power_button drives (hwdb
+# rule acpi.power-button.fixed, which also sets tiny_power_button.power_signal=2). While
+# tiny_power_button drives a button, SIGINT is the power button: vh-acpid takes SIGUSR1 as a press
+# and does POWER_KEY of /etc/vh/acpi.conf. Otherwise this is Void's ctrlaltdel: a reboot.
+# The device (LNXPWRBN:00) sits under the driver's directory: a platform driver since kernel
+# 6.18.60, an ACPI driver before it, which machine kernels of older pins still have.
+
+PATH=/usr/bin:/usr/sbin
+
+for dev in /sys/bus/platform/drivers/acpi-tiny-power-button/*:* /sys/bus/acpi/drivers/tiny-power-button/*:*; do
+	[ -e "$dev" ] || continue
+	sv 1 vh-acpid >/dev/null 2>&1 && exit 0
+	# vh-acpid is not running: POWER_KEY without it (lock needs vh-acpid; ignore is nothing)
+	key=$(sed -n 's/^POWER_KEY=//p' /etc/vh/acpi.conf 2>/dev/null | tr -d '"')
+	if [ "${key:-poweroff}" = poweroff ]; then
+		chmod 100 /run/runit/stopit
+		chmod 000 /run/runit/reboot
+		! command -v wall >/dev/null || echo "The power button: the system is going down..." | wall
+	fi
+	exit 0
+done
+
+# Void's ctrlaltdel: on to stage 3, which reboots
+chmod 100 /run/runit/stopit
+chmod 100 /run/runit/reboot
+! command -v wall >/dev/null || echo "System is going down..." | wall

@@ -5,7 +5,8 @@
 # The rationale for every package is in docs/02-bootstrap.md.
 # thor is xbps with the void-hardperf-light security policy (docs/18); it is built by
 # install/build-thor.sh and installed from the local repository /var/lib/thor/repo,
-# replacing xbps and libxbps.
+# replacing xbps and libxbps. Our own packages are in the same repository during the
+# installation (pkg/build.sh), and in the channel's signed repository after it.
 
 vh_packages() {
 	local p=(
@@ -32,6 +33,10 @@ vh_packages() {
 		pipewire wireplumber alsa-utils
 		firefox libavcodec6 dejavu-fonts-ttf
 	)
+	# UniVoidDistro's own packages (pkg/build.sh, docs/uni/rolling.md): univoid depends on the
+	# ones every installation has; the desktop's build is the plan's, the SELinux policy VH_MAC's
+	p+=(univoid "vh-desktop-$(vh_desktop_variant)")
+	[ "${VH_MAC:-}" != selinux ] || p+=(vh-selinux-policy)
 	# what this machine's hardware needs: microcode, firmware, VA-API and Vulkan drivers, iwd and
 	# the regulatory database for Wi-Fi, dhcpcd for Ethernet, bluez, tpm2-tools (VH_PLAN_PACKAGES,
 	# hwdb/; plan-report.txt says which rule asked for each)

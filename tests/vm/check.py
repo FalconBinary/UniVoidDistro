@@ -18,6 +18,9 @@
   check.py sched      -- vh-sched under vh-init on the machine kernel of build/kernel-custom (sched/README.md)
   check.py selinux    -- the SELinux policy, permissive, on that kernel under vh-init (docs/uni/selinux.md);
                          needs an installation with VH_MAC=selinux
+  check.py update     -- the rolling release's gate: on an installation of the previous image
+                         (vhvm.py install --own-installer), docs/uni/rolling.md's command against the
+                         signed repository of this build (VH_UPDATE_REPO), then vh-update
   check.py all        -- the installation path in order (vmlib.ALL)
   check.py A,B C      -- several steps in order (comma-separated or as separate arguments)
   check.py --list     -- every step the registry knows

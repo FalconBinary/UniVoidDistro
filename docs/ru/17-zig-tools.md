@@ -151,7 +151,7 @@ cryptsetup open /dev/nvme0n1p2 cryptroot
 mount /dev/mapper/cryptroot /mnt
 cd /путь/к/void-hardened && git pull
 install/build-tools.sh /mnt
-install/build-thor.sh /mnt       # если менялся thor/; затем в системе doas xbps-install -Su thor
+install/build-thor.sh /mnt       # если менялся thor/; затем в системе doas xbps-install -Su xbps
 umount /mnt && cryptsetup close cryptroot
 ```
 

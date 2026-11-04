@@ -4,7 +4,7 @@
 #   install/build-desktop.sh ROOT                      -- build for this CPU and install into ROOT
 #   install/build-desktop.sh --prebuilt DIR ROOT       -- install an existing build (DIR/bin, DIR/share)
 #   install/build-desktop.sh --out DIR CPU BLUETOOTH   -- build only, into DIR: for Zig's CPU model
-#                                                         CPU (x86_64, x86_64_v3) and VH_BLUETOOTH
+#                                                         CPU (x86_64, x86_64_v3; empty: this CPU) and VH_BLUETOOTH
 #                                                         BLUETOOTH (the live image, live/prebuilt.sh)
 #
 # Why: the installed system must not contain a compiler (docs/05). Zig 0.17 is downloaded
@@ -60,10 +60,11 @@ build() {
 
 case ${1:-} in
 --out)
-	dir=${2:?"build directory"} CPU=${3:?"Zig's CPU model, for example x86_64_v3"} BT=${4:?"VH_BLUETOOTH: off, optional or on"}
+	# CPU empty: this machine's own CPU (the installer's build in RAM)
+	dir=${2:?"build directory"} CPU=${3?"Zig's CPU model, for example x86_64_v3, or empty"} BT=${4:?"VH_BLUETOOTH: off, optional or on"}
 	case $BT in off|optional|on) ;; *) die "VH_BLUETOOTH: off, optional or on" ;; esac
 	build "$dir" "$CPU" "$BT"
-	ok "RefursWM and RefursLine for $CPU, VH_BLUETOOTH=$BT: $OUT"
+	ok "RefursWM and RefursLine for ${CPU:-this CPU}, VH_BLUETOOTH=$BT: $OUT"
 	exit 0
 	;;
 --prebuilt)

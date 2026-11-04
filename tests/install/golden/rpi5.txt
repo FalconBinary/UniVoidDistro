@@ -76,8 +76,10 @@ tar
 thor
 tzdata
 unbound
+univoid
 usbutils
 util-linux
+vh-desktop-aarch64-btmenu
 wayland
 which
 wireless-regdb

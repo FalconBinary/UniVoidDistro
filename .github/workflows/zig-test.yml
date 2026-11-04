@@ -61,5 +61,5 @@ jobs:
           set -e
           tar -czf vh-tools-x86_64.tar.gz vh-tools-x86_64
           sha256sum vh-tools-x86_64.tar.gz > vh-tools-x86_64.tar.gz.sha256
-          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 || gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes "Build artifacts of $GITHUB_REF_NAME."
+          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 || gh release create "$GITHUB_REF_NAME" --draft --title "$GITHUB_REF_NAME" --notes "Build artifacts of $GITHUB_REF_NAME."
           gh release upload "$GITHUB_REF_NAME" vh-tools-x86_64.tar.gz vh-tools-x86_64.tar.gz.sha256 --clobber

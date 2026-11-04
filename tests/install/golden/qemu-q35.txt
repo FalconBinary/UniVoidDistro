@@ -72,8 +72,10 @@ thor
 tpm2-tools
 tzdata
 unbound
+univoid
 usbutils
 util-linux
+vh-desktop-x86-64-v3-btmenu
 wayland
 which
 wireplumber

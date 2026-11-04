@@ -30,11 +30,13 @@ for tiny_dev in /sys/bus/platform/drivers/acpi-tiny-power-button/*:* /sys/bus/ac
 done
 if [ "$tiny_button" = yes ]; then
 	# the fixed button alone (hwdb rule acpi.power-button.fixed): tiny_power_button is its only
-	# driver on 6.18, set to signal SIGINT, and /etc/runit/ctrlaltdel hands that to vh-acpid
-	if ! grep -qwF 'tiny_power_button.power_signal=2' /proc/cmdline || ! grep -q 'sv 1 vh-acpid' /etc/runit/ctrlaltdel 2>/dev/null; then
-		bad "tiny_power_button took the power button (Ctrl+Alt+Del bypasses vh-acpid): module_blacklist needed"
-	elif ! grep -q 'acpi-tiny-power-button' /etc/runit/ctrlaltdel; then
-		bad "/etc/runit/ctrlaltdel does not know kernel 6.18.60's driver path: the power button reboots; install rootfs/etc/runit/ctrlaltdel of a current repository"
+	# driver on 6.18, set to signal SIGINT, and /etc/runit/ctrlaltdel, through vh-ctrlaltdel of the
+	# package vh-base, hands that to vh-acpid
+	if ! grep -qwF 'tiny_power_button.power_signal=2' /proc/cmdline || ! grep -q 'sv 1 vh-acpid' /usr/local/libexec/vh/vh-ctrlaltdel 2>/dev/null \
+		|| ! grep -q '/usr/local/libexec/vh/vh-ctrlaltdel' /etc/runit/ctrlaltdel 2>/dev/null; then
+		bad "tiny_power_button took the power button (Ctrl+Alt+Del bypasses vh-acpid): module_blacklist needed, or doas vh-update (the migration 0001-ctrlaltdel)"
+	elif ! grep -q 'acpi-tiny-power-button' /usr/local/libexec/vh/vh-ctrlaltdel; then
+		bad "vh-ctrlaltdel does not know kernel 6.18.60's driver path: the power button reboots; doas vh-update"
 	else
 		ok "the fixed power button: tiny_power_button signals init (SIGINT), /etc/runit/ctrlaltdel hands it to vh-acpid"
 	fi

@@ -1,0 +1,241 @@
+# packages: the rolling release (docs/uni/rolling.md). Our own packages, built natively for each
+# architecture (live/prebuilt.sh, pkg/build.sh), what changed merged into the published index
+# (pkg/merge.sh), signed (pkg/sign.sh), through the gates, then published as assets of a release:
+#   a merge to main, or the week's rebuild against the current Void (a library's new name reaches
+#   the desktop): the pre-release "rolling", signed by CI's key (the secret VH_REPO_KEY_ROLLING of
+#   the environment "rolling", which only main may use). Without the secret nothing is published.
+#   a v* tag: a draft of that tag's release; pkg/sign-stable.sh signs it with the offline key and
+#   publishes it.
+#   a pull request of these paths: everything but the publication, signed by a key made for the run.
+# The gates: x86_64, the rig (kvm-smoke: an installation of the newest release takes these packages
+# with vh-update, reboots, passes base); aarch64, tests/pkg/gate.sh, because GitHub's arm64 runners
+# have no /dev/kvm: booting after the update is [VERIFY] there.
+name: packages
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    paths: ["pkg/**", "live/prebuilt.sh", "tests/pkg/**", "tests/vm/steps/update.py", ".github/workflows/packages.yml", ".github/workflows/kvm-smoke.yml", "rootfs/usr/local/sbin/vh-update"]
+  schedule:
+    - cron: "37 3 * * 1"
+  workflow_dispatch:
+permissions:
+  contents: read
+# the newest commit wins: a publication of an older one that has not passed yet is not wanted; a
+# tag is never cancelled. A pull request publishes nothing: each of its commits keeps its own run,
+# so a push does not throw away the rig's result of the one before
+concurrency:
+  group: packages-${{ github.event_name == 'pull_request' && github.sha || github.ref }}
+  cancel-in-progress: ${{ github.ref_type != 'tag' }}
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: x86_64, runner: ubuntu-latest }
+          - { arch: aarch64, runner: ubuntu-24.04-arm }
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # the version of the packages is git describe's
+          fetch-depth: 0
+      - uses: ./.github/actions/setup-zig
+      - name: the programs and the packages (live/prebuilt.sh)
+        env:
+          VH_PKG_REVISION: ${{ github.run_number }}
+        run: |
+          set -eu
+          VH_PKG_STAMP=$(date -u +%Y%m%d%H%M) sh live/prebuilt.sh "$RUNNER_TEMP/prebuilt"
+          cat "$RUNNER_TEMP/prebuilt/thor/repo/${{ matrix.arch }}-contents"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: own-packages-${{ matrix.arch }}
+          path: ${{ runner.temp }}/prebuilt/thor/repo
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+  repo:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    # the environment holds the key, and only main may use it
+    environment: ${{ github.ref == 'refs/heads/main' && 'rolling' || '' }}
+    outputs:
+      publish: ${{ steps.key.outputs.publish }}
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: own-packages-*
+          path: new
+      - name: what is published now (the first publication has nothing)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p prev
+          gh release download rolling --repo "$GITHUB_REPOSITORY" -D prev -p '*-repodata' -p '*-contents' \
+            || echo "no release rolling yet: everything is new"
+          ls -l prev
+      - name: what changed, merged into the published index (pkg/merge.sh)
+        run: |
+          set -eu
+          mkdir -p stage
+          docker run --rm -v "$PWD:/w" -w /w ghcr.io/void-linux/void-glibc-full:latest sh -euc '
+            xbps-install -Syu xbps >/dev/null
+            for a in x86_64 aarch64; do
+              echo "== $a"
+              sh pkg/merge.sh "new/own-packages-$a" "$a" prev stage
+            done
+            chown -R '"$(id -u):$(id -g)"' stage'
+      - name: the key
+        id: key
+        env:
+          KEY: ${{ secrets.VH_REPO_KEY_ROLLING }}
+        run: |
+          set -eu
+          umask 077
+          mkdir -p "$RUNNER_TEMP/k"
+          publish=false
+          if [ "$GITHUB_REF" = refs/heads/main ] && [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > "$RUNNER_TEMP/k/key.pem"
+            publish=true
+            by="UniVoidDistro rolling"
+            plist=$(ls pkg/keys/rolling/*.plist)
+            # the secret and the committed public key must be one pair
+            pub=$(openssl rsa -in "$RUNNER_TEMP/k/key.pem" -pubout 2>/dev/null | base64 -w0)
+            grep -qF "$pub" "$plist" || { echo "VH_REPO_KEY_ROLLING is not the key of pkg/keys/rolling"; exit 1; }
+          else
+            # a tag's draft and a pull request: a key of this run; a tag's is replaced by the offline key
+            sh pkg/keygen.sh rolling "$RUNNER_TEMP/k"
+            mv "$RUNNER_TEMP/k/rolling.pem" "$RUNNER_TEMP/k/key.pem"
+            plist=$(ls "$RUNNER_TEMP"/k/*.plist)
+            by="UniVoidDistro rolling"
+            [ "$GITHUB_REF_TYPE" != tag ] || publish=draft
+          fi
+          # for the gates. An artifact's file name may not hold a colon, and xbps names a key by its
+          # fingerprint, which does: the name goes beside the file
+          mkdir -p stage/gate-key
+          cp "$plist" stage/gate-key/key.plist
+          basename "$plist" .plist > stage/gate-key/fingerprint
+          echo "publish=$publish" >> "$GITHUB_OUTPUT"
+          echo "BY=$by" >> "$GITHUB_ENV"
+      - name: signed (pkg/sign.sh)
+        run: |
+          set -eu
+          docker run --rm -v "$PWD:/w" -v "$RUNNER_TEMP/k:/k:ro" -w /w ghcr.io/void-linux/void-glibc-full:latest sh -euc "
+            xbps-install -Syu xbps >/dev/null
+            sh pkg/sign.sh stage /k/key.pem '$BY'
+            chown -R $(id -u):$(id -g) stage"
+      - name: the key is gone
+        if: always()
+        run: find "$RUNNER_TEMP/k" -type f -name '*.pem' -delete
+      - uses: actions/attest-build-provenance@v2
+        if: steps.key.outputs.publish != 'false'
+        with:
+          subject-path: stage/*.xbps
+      - name: the packages the index keeps, from the published set, for the gates
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          cd stage
+          # what is new is what the publication uploads
+          ls ./*.xbps ./*.sig2 2>/dev/null | sed 's|^\./||' > new-files
+          cat ./*-kept > kept-files || true
+          while read -r f; do
+            gh release download rolling --repo "$GITHUB_REPOSITORY" -p "$f" -p "$f.sig2"
+          done < kept-files
+          du -sh .; ls | wc -l
+      - uses: actions/upload-artifact@v4
+        with:
+          name: own-repo
+          path: stage
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+  gate-x86_64:
+    needs: repo
+    permissions:
+      contents: read
+      actions: read
+      attestations: read
+    uses: ./.github/workflows/kvm-smoke.yml
+    with:
+      step: update,base
+      from_release: latest
+      update_run: ${{ github.run_id }}
+  gate-aarch64:
+    needs: repo
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: own-repo
+          path: own-repo
+      - name: this repository through a real system's thor, in a container (tests/pkg/gate.sh)
+        run: sh tests/pkg/gate.sh own-repo aarch64 aarch64-btmenu
+  publish:
+    needs: [repo, gate-x86_64, gate-aarch64]
+    if: needs.repo.outputs.publish != 'false'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: own-repo
+          path: stage
+      - name: the assets of the release, the index last
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PUBLISH: ${{ needs.repo.outputs.publish }}
+        run: |
+          set -euo pipefail
+          cd stage
+          if [ "$PUBLISH" = draft ]; then
+            # stable: the whole set, unsigned until pkg/sign-stable.sh; drafts are not "latest"
+            rel=$GITHUB_REF_NAME
+            gh release view "$rel" >/dev/null 2>&1 || gh release create "$rel" --draft --verify-tag --title "UniVoidDistro $rel" --notes "Waits for pkg/sign-stable.sh."
+            # shellcheck disable=SC2046 # the file names have no spaces
+            gh release upload "$rel" $(cat new-files kept-files | sed 's/\.sig2$//' | sort -u) --clobber
+            gh release upload "$rel" ./*-contents ./*-repodata --clobber
+            exit 0
+          fi
+          rel=rolling
+          gh release view "$rel" >/dev/null 2>&1 || gh release create "$rel" --prerelease --latest=false --target "$GITHUB_SHA" --title "UniVoidDistro rolling" \
+            --notes "The repository of main, published after the rig passed (docs/uni/rolling.md), and the week's live images. Not a release to install by hand: doas vh-update --channel rolling."
+          gh api -X PATCH "repos/$GH_REPO/git/refs/tags/$rel" -f sha="$GITHUB_SHA" -F force=true >/dev/null
+          # the files an index names: a client that synced a moment ago still finds its packages, so
+          # what the previous index named goes only at the next publication
+          names() {
+            for f in "$@"; do
+              [ -e "$f" ] || continue
+              a=${f##*/} a=${a%-contents}
+              awk -v a="$a" '{ print $2 "." a ".xbps"; print $2 "." a ".xbps.sig2" }' "$f"
+            done
+          }
+          mkdir -p ../before
+          gh release download "$rel" -D ../before -p '*-contents' || true
+          keep=$(names ../before/*-contents ./*-contents)
+          assets=$(gh release view "$rel" --json assets --jq '.assets[].name')
+          if [ -s new-files ]; then
+            # shellcheck disable=SC2046 # the file names have no spaces
+            gh release upload "$rel" $(cat new-files) --clobber
+          fi
+          gh release upload "$rel" ./*-contents --clobber
+          gh release upload "$rel" ./*-repodata --clobber
+          printf '%s\n' "$assets" | grep -E '\.xbps(\.sig2)?$' | while read -r a; do
+            printf '%s\n' "$keep" | grep -qxF "$a" || gh release delete-asset "$rel" "$a" --yes
+          done

@@ -64,7 +64,8 @@ doas thor keep /usr/lib/dracut/modules.d/70tpm2-totp/   # модуль dracut �
 Исключения хранятся в `/etc/thor/allow.conf` и `/etc/thor/keep.conf` и действуют и при
 обновлениях. После `thor keep` файл, который уже был пропущен, появится только при
 переустановке пакета: `doas xbps-install -f ПАКЕТ`. Модуль `optional/tpm2-totp` делает
-`thor keep` для своего модуля dracut сам.
+`thor keep` для своего модуля dracut сам. Хуки ядра и скрипт входа нашего пакета `vh-etc`
+перечислены поимённо (`pkg/thor-keep`): их вносят установщик и `vh-update --adopt`.
 
 ### Что политика не закрывает
 
@@ -159,6 +160,11 @@ thor/
 `rpath $ORIGIN/../lib`: в live-среде они берут libxbps с политикой из своего каталога, а не
 штатную `/usr/lib/libxbps.so.6` флешки.
 
+**Канал и локальный репозиторий.** Новый thor приходит подписанным пакетом из канала
+([rolling.md](../uni/rolling.md)), `/etc/xbps.d/00-vh-channel.conf` стоит раньше локального
+репозитория. Пересборка с флешки кладёт пакет в локальный: поставить его поверх канала —
+`doas xbps-install -f --repository=/var/lib/thor/repo thor`.
+
 **Локальный репозиторий.** Пакет лежит в `/var/lib/thor/repo` (`/etc/xbps.d/01-thor.conf`).
 Подписывать его не нужно: xbps сверяет локальный пакет с sha256 из индекса, а писать в
 `/var/lib/thor` может только root. Обычный xbps из репозитория Void не поставится:
@@ -180,8 +186,10 @@ cd /путь/к/void-hardened && git pull          # новая версия в 
 install/build-thor.sh /mnt                     # пакет — в /mnt/var/lib/thor/repo
 umount /mnt && cryptsetup close cryptroot
 # после загрузки системы
-doas xbps-install -Su thor
+doas xbps-install -Su xbps
 ```
+
+Именно `xbps`: пока ждёт новый `thor`, libxbps не пропускает другие имена, `thor` тоже (код 16).
 
 При новой версии xbps upstream сначала обновите `thor/UPSTREAM`: версию и sha256 из
 шаблона Void (`void-packages/srcpkgs/xbps/template`). Затем проверьте, что патч

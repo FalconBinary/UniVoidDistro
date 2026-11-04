@@ -530,7 +530,7 @@ fn modules(src: *const Src) []const []const u8 {
     return set.slice();
 }
 
-fn devices(src: *const Src) []const hw.Device {
+pub fn devices(src: *const Src) []const hw.Device {
     var devs: std.ArrayList(hw.Device) = .empty;
     for (src.list("/sys/bus")) |bus| {
         const ddir = vh.fmt("/sys/bus/{s}/devices", .{bus});
@@ -539,9 +539,13 @@ fn devices(src: *const Src) []const hw.Device {
             const modalias = src.line(vh.fmt("{s}/modalias", .{base}));
             if (modalias.len == 0) continue;
             var d: hw.Device = .{ .bus = vh.dupe(bus), .name = vh.dupe(name), .modalias = modalias };
-            if (src.link(vh.fmt("{s}/driver", .{base}))) |t| {
+            var at = base;
+            // an ACPI device and the platform device made for it share a name, and the driver may
+            // be bound to the latter (tiny_power_button from kernel 6.18.60)
+            if (vh.eql(bus, "acpi") and src.link(vh.fmt("{s}/driver", .{base})) == null) at = vh.fmt("/sys/bus/platform/devices/{s}", .{name});
+            if (src.link(vh.fmt("{s}/driver", .{at}))) |t| {
                 d.driver = vh.dupe(basename(t));
-                if (src.link(vh.fmt("{s}/driver/module", .{base}))) |m| d.module = vh.dupe(basename(m));
+                if (src.link(vh.fmt("{s}/driver/module", .{at}))) |m| d.module = vh.dupe(basename(m));
             }
             devs.append(vh.gpa, d) catch vh.oom();
         }

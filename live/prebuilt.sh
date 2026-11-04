@@ -3,7 +3,8 @@
 #   OUT/bin                       vh-kconf, vh-plan, the Zig tools, the gaming session's programs,
 #                                 vh-stage1, vh-init, vh-ctl, vh-sched and its BPF object vh_sched.o
 #                                 (install/build-tools.sh's list)
-#   OUT/thor/{dest,repo}          thor and its package (install/build-thor.sh --out)
+#   OUT/thor/{dest,repo}          thor and its package (install/build-thor.sh --out); the repository
+#                                 also holds our packages of everything here (pkg/build.sh)
 #   OUT/desktop/x86-64-LEVEL-BT   RefursWM and RefursLine for x86-64-v1 and -v3, without and with
 #                                 the bar's Bluetooth menu (install/build-desktop.sh --out); on
 #                                 aarch64 OUT/desktop/aarch64-BT, one build for every ARMv8 core
@@ -40,7 +41,7 @@ case $arch in
 	x86_64) variants="x86-64-v1:x86_64 x86-64-v3:x86_64_v3" ;;
 	aarch64) variants="aarch64:baseline" ;;
 esac
-docker run --rm -v "$repo:/src:ro" -v "$out:/out" -e VARIANTS="$variants" "$img" bash -c '
+docker run --rm -v "$repo:/src:ro" -v "$out:/out" -e VARIANTS="$variants" -e VH_PKG_REVISION="${VH_PKG_REVISION:-1}" "$img" bash -c '
 	set -euo pipefail
 	cp -R /src/zig /tmp/zs
 	( cd /tmp/zs && zig build -Dtarget=native -Dcpu=baseline -Dlibc-tools=true --prefix /tmp/zl >/dev/null )
@@ -60,6 +61,15 @@ docker run --rm -v "$repo:/src:ro" -v "$out:/out" -e VARIANTS="$variants" "$img"
 
 echo "== the SELinux policy (selinux/build.sh)"
 sh "$repo/selinux/build.sh" "$out/selinux"
+
+# our packages (docs/uni/rolling.md) next to thor's in its repository, in the container: xbps-create
+# and readelf (the libraries each package needs) are the vh-dev image's
+echo "== our packages (pkg/build.sh)"
+docker run --rm -v "$repo:/src:ro" -v "$out:/out" -e VH_PKG_VERSION="$(sh "$repo/pkg/version.sh")" \
+	-e VH_PKG_REVISION="${VH_PKG_REVISION:-1}" -e VH_PKG_STAMP="${VH_PKG_STAMP:-}" -e SOURCE_DATE_EPOCH="$(git -C "$repo" log -1 --format=%ct)" -e XBPS_BIN=/usr/bin "$img" bash -c "
+	set -euo pipefail
+	sh /src/pkg/build.sh /out $arch /out/thor/repo
+	chown -R $(id -u):$(id -g) /out"
 
 {
 	echo "COMMIT=$(git -C "$repo" rev-parse HEAD)"

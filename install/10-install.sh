@@ -234,72 +234,11 @@ if [ "$VH_FIRMWARE_TRIM" = yes ]; then
 	fi
 fi
 
-if [ -n "$PREBUILT" ]; then
-	say "thor: the live image's build (docs/18)"
-	run bash "$VH_ROOT/install/build-thor.sh" --prebuilt "$PREBUILT/thor" "$MNT"
-else
-	say "thor: building in the live environment's RAM (docs/18)"
-	run bash "$VH_ROOT/install/build-thor.sh" "$MNT"
-fi
-THOR=/tmp/vh-thor/dest/usr/bin/thor
-# During installation the thor policy runs in learn mode: kernel hooks, dracut modules,
-# sysctl.d files and udev rules of the base system packages are recorded in
-# /etc/thor/baseline instead of being neutralised. SUID/SGID, capabilities and the
-# deny list already apply.
-if [ "$DRY_RUN" = 1 ]; then echo "   + /etc/thor/policy.conf: mode=learn"
-else printf '# thor (docs/18): enforce -- the policy applies; learn -- only while the system is being installed\nmode=learn\n' > "$MNT/etc/thor/policy.conf"; fi
-thor_install() {
-	# the programs take libxbps with the policy from their own tree (rpath $ORIGIN/../lib)
-	run env XBPS_ARCH="$VH_ARCH" "$THOR" install -y -r "$MNT" -R "$REPO" -R "$NONFREE" "$@"
-}
-
-say "installing packages ($(vh_packages | wc -l) + dependencies), without the kernel: thor, in parallel"
-# The kernel is installed last, after the configuration below: its hooks then build the
-# UKI with the right dracut-uefi, sign it with the keys that already exist and register
-# it with Limine.
-mapfile -t PKGS < <(vh_packages | grep -vx "$VH_KERNEL")
-thor_install "${PKGS[@]}"
-
-# ---------------------------------------------------------------- desktop
-if [ -n "$PREBUILT" ]; then
-	say "RefursWM and RefursLine: the live image's build $(vh_desktop_variant)"
-	run bash "$VH_ROOT/install/build-desktop.sh" --prebuilt "$PREBUILT/desktop/$(vh_desktop_variant)" "$MNT"
-else
-	say "RefursWM and RefursLine: building in the live environment's RAM"
-	run bash "$VH_ROOT/install/build-desktop.sh" "$MNT"
-fi
-
-# ---------------------------------------------------------------- configuration files
-say "configuration files (rootfs/)"
-install_tree "$VH_ROOT/rootfs" "$MNT"
-run install -d -m 0700 "$MNT/root/vh"
-# the C tools (src/) were removed when the tools moved to Zig; zig/ is copied instead
-run cp -a "$VH_ROOT/install" "$VH_ROOT/tools" "$VH_ROOT/rootfs" "$VH_ROOT/optional" \
-	"$VH_ROOT/zig" "$VH_ROOT/thor" "$VH_ROOT/hwdb" "$VH_ROOT/adapt" "$VH_ROOT/vh.conf.example" "$MNT/root/vh/"
-run install -d -m 0700 "$MNT/root/vh/kernel"
-run cp -a "$VH_ROOT/kernel/pins" "$VH_ROOT/kernel/profiles" "$VH_ROOT/kernel/src" "$VH_ROOT/kernel/build.zig" \
-	"$VH_ROOT/kernel/build.zig.zon" "$MNT/root/vh/kernel/"
-# the plan of this machine stays with it: the installer's scripts (chroot.sh, 30-lock.sh) read
-# plan.env, vh-kconf and vh-plan re-plan it after a hardware change (U2)
-run install -m 0600 "$PLAN_DIR/plan.env" "$MNT/root/vh/plan.env"
-run install -d -m 0755 "$MNT/etc/vh"
-for f in hw.zon plan.zon plan-report.txt; do
-	run install -m 0644 "$PLAN_DIR/$f" "$MNT/etc/vh/$f"
-done
-if [ -x "$PLAN_DIR/bin/vh-plan" ]; then
-	run install -m 0755 "$PLAN_DIR/bin/vh-kconf" "$PLAN_DIR/bin/vh-plan" "$MNT/usr/local/sbin/"
-fi
-# Zig tools: the compiler lives only in the live environment's RAM; the system gets binaries
-if [ -n "$PREBUILT" ]; then
-	run bash "$VH_ROOT/install/build-tools.sh" --prebuilt "$PREBUILT/bin" "$MNT"
-else
-	run bash "$VH_ROOT/install/build-tools.sh" "$MNT"
-fi
 # the SELinux policy (docs/uni/selinux.md): built by secilc, which Void lacks; our live image
-# brings it (live/prebuilt.sh), the installer only copies it. The machine kernel of the plan
+# brings it (live/prebuilt.sh) in its package vh-selinux-policy. The machine kernel of the plan
 # gets CONFIG_SECURITY_SELINUX from the feature the rule security.mac.selinux selects.
+SELINUX_SRC=
 if [ "$VH_MAC" = selinux ]; then
-	SELINUX_SRC=
 	if [ -n "$PREBUILT" ] && [ -s "$PREBUILT/selinux/file_contexts" ]; then
 		SELINUX_SRC=$PREBUILT/selinux
 	elif [ -n "$VH_SELINUX_DIR" ]; then
@@ -312,9 +251,78 @@ if [ "$VH_MAC" = selinux ]; then
 	fi
 	[ -n "$SELINUX_SRC" ] || die "VH_MAC=selinux needs the policy built: install from UniVoidDistro's live image (live/prebuilt.sh builds selinux/ with secilc), or build it with sh selinux/build.sh DIR and set VH_SELINUX_DIR=DIR"
 	say "SELinux policy from $SELINUX_SRC ($(sed -n 's/^COMMIT=//p' "$SELINUX_SRC/BUILD"))"
-	run install -d -m 0755 "$MNT/etc/vh/selinux"
-	run install -m 0644 "$SELINUX_SRC"/policy.* "$SELINUX_SRC/file_contexts" "$SELINUX_SRC/BUILD" "$SELINUX_SRC/SHA256SUMS" "$MNT/etc/vh/selinux/"
 fi
+
+# Our own programs and files come as packages (pkg/build.sh, docs/uni/rolling.md), from the local
+# repository /var/lib/thor/repo: the live image's, or the packages of a build in RAM here
+if [ -n "$PREBUILT" ] && { [ -z "$SELINUX_SRC" ] || [ "$SELINUX_SRC" = "$PREBUILT/selinux" ]; }; then
+	say "thor and our packages: the live image's build (docs/18, docs/uni/rolling.md)"
+	PKG_SRC=$PREBUILT
+else
+	PKG_SRC=/tmp/vh-prebuilt
+	if [ -n "$PREBUILT" ]; then
+		say "our packages: the live image's programs, the policy of VH_SELINUX_DIR"
+		run rm -rf "$PKG_SRC"
+		run cp -a "$PREBUILT" "$PKG_SRC"
+		run rm -f "$PKG_SRC"/thor/repo/vh-*.xbps "$PKG_SRC"/thor/repo/univoid-*.xbps "$PKG_SRC"/thor/repo/*-repodata
+	else
+		say "thor, the Zig tools and the desktop: building in the live environment's RAM (docs/18)"
+		run rm -rf "$PKG_SRC"
+		run bash "$VH_ROOT/install/build-thor.sh" --out "$PKG_SRC/thor"
+		run bash "$VH_ROOT/install/build-tools.sh" --out "$PKG_SRC/bin"
+		run bash "$VH_ROOT/install/build-desktop.sh" --out "$PKG_SRC/desktop/$(vh_desktop_variant)" "" "$VH_BLUETOOTH"
+	fi
+	if [ -n "$SELINUX_SRC" ]; then
+		run rm -rf "$PKG_SRC/selinux"
+		run cp -a "$SELINUX_SRC" "$PKG_SRC/selinux"
+	fi
+	say "our packages of this build (pkg/build.sh)"
+	run sh "$VH_ROOT/pkg/build.sh" "$PKG_SRC" "$VH_ARCH" "$PKG_SRC/thor/repo"
+fi
+run bash "$VH_ROOT/install/build-thor.sh" --prebuilt "$PKG_SRC/thor" "$MNT"
+THOR=/tmp/vh-thor/dest/usr/bin/thor
+# During installation the thor policy runs in learn mode: kernel hooks, dracut modules,
+# sysctl.d files and udev rules of the base system packages are recorded in
+# /etc/thor/baseline instead of being neutralised. SUID/SGID, capabilities and the
+# deny list already apply.
+if [ "$DRY_RUN" = 1 ]; then echo "   + /etc/thor/policy.conf: mode=learn"
+else printf '# thor (docs/18): enforce -- the policy applies; learn -- only while the system is being installed\nmode=learn\n' > "$MNT/etc/thor/policy.conf"; fi
+# the entry points vh-etc brings (the kernel's hooks, the login script): left alone by name, so that
+# its updates extract them too (pkg/thor-keep; thor policy lists them)
+if [ "$DRY_RUN" = 1 ]; then echo "   + /etc/thor/keep.conf: pkg/thor-keep"
+else
+	{
+		echo "# thor: paths the policy leaves alone: SUID, hooks, dracut modules, sysctl.d, udev (docs/18)"
+		grep -v '^[[:space:]]*\(#\|$\)' "$VH_ROOT/pkg/thor-keep"
+	} > "$MNT/etc/thor/keep.conf"
+fi
+thor_install() {
+	# the programs take libxbps with the policy from their own tree (rpath $ORIGIN/../lib)
+	run env XBPS_ARCH="$VH_ARCH" "$THOR" install -y -r "$MNT" -R "$REPO" -R "$NONFREE" "$@"
+}
+
+say "installing packages ($(vh_packages | wc -l) + dependencies), without the kernel: thor, in parallel"
+# The kernel is installed last, after the configuration below: its hooks then build the
+# UKI with the right dracut-uefi, sign it with the keys that already exist and register
+# it with Limine.
+# our own packages are among them (univoid, the desktop's build, the SELinux policy): the programs,
+# the configuration of vh-etc, /root/vh (the installer, hwdb/, the kernel's profiles and pins)
+mapfile -t PKGS < <(vh_packages | grep -vx "$VH_KERNEL")
+thor_install "${PKGS[@]}"
+# the xbps.d files went in before the bootstrap, so vh-etc left its identical copies next to them
+[ "$DRY_RUN" = 1 ] || new_identical "$MNT"
+
+# ---------------------------------------------------------------- configuration files
+say "configuration files: the installer's part of rootfs/ (the templates, pkg/installer-owned)"
+install_tree "$VH_ROOT/rootfs" "$MNT" installer
+run install -d -m 0700 "$MNT/root/vh"
+# the plan of this machine stays with it: the installer's scripts (chroot.sh, 30-lock.sh) read
+# plan.env, vh-kconf and vh-plan re-plan it after a hardware change (U2)
+run install -m 0600 "$PLAN_DIR/plan.env" "$MNT/root/vh/plan.env"
+run install -d -m 0755 "$MNT/etc/vh"
+for f in hw.zon plan.zon plan-report.txt; do
+	run install -m 0644 "$PLAN_DIR/$f" "$MNT/etc/vh/$f"
+done
 [ -f "$CFG" ] && run install -m 0600 "$CFG" "$MNT/root/vh/vh.conf"
 if [ "$DRY_RUN" != 1 ]; then
 	printf 'VH_LUKS_UUID=%s\nVH_ROOT_UUID=%s\nVH_ESP_UUID=%s\nVH_DISK=%s\n' \
@@ -369,7 +377,26 @@ if [ "$VH_MAC" = selinux ] && [ "$DRY_RUN" != 1 ]; then
 		|| { printf '%s\n' "$selabel_diff" | tail -25; die "vh-selabel: a label differs after the kernel's installation"; }
 fi
 
-say "thor policy: enforce (baseline: $(grep -vc '^#' "$MNT/etc/thor/baseline" 2>/dev/null || echo 0) entries)"
+# Only thor stays in the local repository: our other packages, every desktop build among them, were
+# for this installation; their updates come from the channel. The channel goes in last: nothing of
+# the installation depends on it
+say "the local repository: thor alone; the channel of our packages: $VH_CHANNEL"
+if [ "$DRY_RUN" = 1 ]; then echo "   + /etc/xbps.d/00-vh-channel.conf, its key in /var/db/xbps/keys"
+else
+	find "$MNT/var/lib/thor/repo" -maxdepth 1 -type f ! -name 'thor-*.xbps' -delete
+	( cd "$MNT/var/lib/thor/repo" && XBPS_TARGET_ARCH=$VH_ARCH "${THOR%/thor}/xbps-rindex" -a thor-*.xbps >/dev/null )
+	# no key yet in pkg/keys (before the first publication): the system has no channel, the rebuild
+	# from the USB stick remains (docs/ru/09-updates.md)
+	if ls "$VH_ROOT/pkg/keys/$VH_CHANNEL"/*.plist >/dev/null 2>&1; then
+		install -m 0644 "$VH_ROOT/pkg/keys/$VH_CHANNEL"/*.plist "$MNT/var/db/xbps/keys/"
+		printf '# the channel of our own packages (docs/uni/rolling.md): doas vh-update --channel NAME\nrepository=%s\n' \
+			"$(sed -n "s|^$VH_CHANNEL=||p" "$MNT/etc/vh/channels.conf")" > "$MNT/etc/xbps.d/00-vh-channel.conf"
+	else
+		warn "no key of the channel $VH_CHANNEL in pkg/keys: no channel yet, vh-update updates Void's packages only"
+	fi
+fi
+
+say "thor policy: enforce (baseline:$(grep -vc '^#' "$MNT/etc/thor/baseline" 2>/dev/null || echo 0) entries)"
 if [ "$DRY_RUN" = 1 ]; then echo "   + /etc/thor/policy.conf: mode=enforce"
 else printf '# thor (docs/18): enforce -- the policy applies; learn -- only while the system is being installed\nmode=enforce\n' > "$MNT/etc/thor/policy.conf"; fi
 

@@ -67,7 +67,9 @@ norm "$golden/gf63-upstream.txt" > "$out/gf63-upstream.norm"
 # the firmware below other directories (noextract=!/usr/lib/firmware/*/PATTERN) is ours alone: since
 # 2025 linux-firmware keeps iwlwifi-*.ucode as links into intel/iwlwifi/, and upstream's trim, as
 # captured, keeps the links without their targets (the GF63's Wi-Fi, linux-firmware 20260810)
-norm "$out/gf63.txt" | grep -v '^noextract=!/usr/lib/firmware/\*/' > "$out/gf63.norm"
+# univoid and vh-desktop-*, our own packages (docs/uni/rolling.md), are the programs upstream's
+# installer lays out as files: a difference of form, not of the machine's choices
+norm "$out/gf63.txt" | grep -v '^noextract=!/usr/lib/firmware/\*/' | grep -vE '^(univoid|vh-desktop-.*)$' > "$out/gf63.norm"
 if cmp -s "$out/gf63-upstream.norm" "$out/gf63.norm"; then
 	echo "the GF63's packages, blacklist, firmware and command line are void-hardperf-light's"
 else
@@ -86,7 +88,8 @@ tar -C "$repo" -cf - install tests/install/firmware_test.sh |
 # runit's state of each service in /run: the links, install_tree, vh-sv-runstate (services_test.sh)
 tar -C "$repo" -cf - install rootfs optional tests/install/services_test.sh |
 	docker run --rm -i "$img" bash -c 'mkdir -p /src && cd /src && tar -xf - 2>/dev/null && bash /src/tests/install/services_test.sh /src' || rc=1
-# the power button through /etc/runit/ctrlaltdel on both sysfs paths (ctrlaltdel_test.sh)
-tar -C "$repo" -cf - rootfs/etc/runit/ctrlaltdel rootfs/usr/local/libexec/vh/vh-audit.d/70-network.sh tests/vm/steps/core.py tests/install/ctrlaltdel_test.sh |
+# the power button through /etc/runit/ctrlaltdel and vh-ctrlaltdel on both sysfs paths, and the
+# migration of v0.2.0's file (ctrlaltdel_test.sh)
+tar -C "$repo" -cf - rootfs/etc/runit/ctrlaltdel rootfs/usr/local/libexec/vh/vh-ctrlaltdel rootfs/usr/local/libexec/vh/migrate.d/0001-ctrlaltdel rootfs/usr/local/libexec/vh/vh-audit.d/70-network.sh tests/vm/steps/core.py tests/install/ctrlaltdel_test.sh tests/install/ctrlaltdel-v0.2.0 |
 	docker run --rm -i "$img" bash -c 'mkdir -p /src && cd /src && tar -xf - 2>/dev/null && bash /src/tests/install/ctrlaltdel_test.sh /src' || rc=1
 exit "$rc"

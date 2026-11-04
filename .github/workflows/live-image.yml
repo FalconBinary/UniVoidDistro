@@ -8,7 +8,10 @@
 # provenance attestation:
 #   gh attestation verify ISO --repo FalconBinary/UniVoidDistro
 # On demand the ISOs are this run's artifacts, univoiddistro-live-ARCH (kvm-smoke takes one with
-# live_run=RUN); on a v* tag they are release assets as well.
+# live_run=RUN); on a v* tag they are assets of that tag's draft release as well (pkg/sign-stable.sh
+# publishes it), and each week's run of main, assets of the pre-release "rolling". Both only after
+# the x86_64 image has passed the rig (docs/uni/rolling.md). aarch64's: [VERIFY], no /dev/kvm on
+# GitHub's arm64 runners; by hand under hvf before a tag.
 name: live-image
 on:
   workflow_dispatch:
@@ -18,6 +21,8 @@ on:
         default: "x86_64 aarch64"
   push:
     tags: ["v*"]
+  schedule:
+    - cron: "37 5 * * 2"
 permissions:
   contents: read
 jobs:
@@ -68,6 +73,21 @@ jobs:
       - uses: ./.github/actions/setup-zig
       - name: the programs of the image (live/prebuilt.sh)
         run: sh live/prebuilt.sh "$RUNNER_TEMP/prebuilt"
+      - name: the published packages where they are the same, so a new installation has nothing to fetch again
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          a=${{ matrix.arch }}
+          pre=$RUNNER_TEMP/prebuilt
+          mkdir -p "$RUNNER_TEMP/published" "$RUNNER_TEMP/merged"
+          gh release download rolling --repo "$GITHUB_REPOSITORY" -D "$RUNNER_TEMP/published" -p "$a-repodata" -p "$a-contents" || { echo "nothing published yet"; exit 0; }
+          docker run --rm -v "$pre/thor/repo:/n" -v "$RUNNER_TEMP/published:/p:ro" -v "$RUNNER_TEMP/merged:/m" -v "$GITHUB_WORKSPACE/pkg:/pkg:ro" \
+            ghcr.io/void-linux/void-glibc-full:latest sh -euc "xbps-install -Syu xbps >/dev/null; sh /pkg/merge.sh /n $a /p /m; chown -R $(id -u):$(id -g) /m"
+          while read -r f; do gh release download rolling --repo "$GITHUB_REPOSITORY" -D "$RUNNER_TEMP/merged" -p "$f"; done < "$RUNNER_TEMP/merged/$a-kept"
+          find "$pre/thor/repo" -maxdepth 1 -type f -delete
+          cp "$RUNNER_TEMP"/merged/*.xbps "$RUNNER_TEMP/merged/$a-repodata" "$RUNNER_TEMP/merged/$a-contents" "$pre/thor/repo/"
+          ( cd "$pre" && find . -type f ! -name SHA256SUMS | sed 's|^\./||' | LC_ALL=C sort | xargs sha256sum > SHA256SUMS )
       - name: the image (void-mklive in a privileged Void container)
         run: |
           set -euo pipefail
@@ -100,9 +120,20 @@ jobs:
           path: ${{ runner.temp }}/out
           if-no-files-found: error
           compression-level: 0
-  release:
-    if: startsWith(github.ref, 'refs/tags/v')
+  # the image installs and passes base before anyone is offered it
+  gate:
+    if: github.event_name != 'workflow_dispatch'
     needs: build
+    permissions:
+      contents: read
+      actions: read
+      attestations: read
+    uses: ./.github/workflows/kvm-smoke.yml
+    with:
+      live_run: ${{ github.run_id }}
+  release:
+    if: github.event_name != 'workflow_dispatch'
+    needs: [build, gate]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -111,7 +142,28 @@ jobs:
         with:
           pattern: univoiddistro-live-*
           path: out
+      - name: the week's ISOs as assets of the pre-release rolling, in place of last week's
+        if: github.ref_type != 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          old=$(gh release view rolling --json assets --jq '.assets[].name' | grep -E '^(univoiddistro-live-|x86_64-(SHA256SUMS|BUILD|live-packages)|aarch64-(SHA256SUMS|BUILD|live-packages))' || true)
+          cd out
+          new=""
+          for d in univoiddistro-live-*/; do
+            a=${d#univoiddistro-live-} a=${a%/}
+            cp "$d/SHA256SUMS" "$a-SHA256SUMS"; cp "$d/BUILD" "$a-BUILD"; cp "$d/live-packages.txt" "$a-live-packages.txt"
+            new="$new $d$(cd "$d" && ls -- *.iso) $a-SHA256SUMS $a-BUILD $a-live-packages.txt"
+          done
+          for f in $old; do
+            case " $new " in *"/$f "*|*" $f "*) ;; *) gh release delete-asset rolling "$f" --yes ;; esac
+          done
+          # shellcheck disable=SC2086 # the asset paths have no spaces
+          gh release upload rolling $new --clobber
       - name: the ISOs as release assets of ${{ github.ref_name }}
+        if: github.ref_type == 'tag'
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
@@ -152,7 +204,7 @@ jobs:
           EOF
           )
           gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 \
-            || gh release create "$GITHUB_REF_NAME" --verify-tag --title "UniVoidDistro $GITHUB_REF_NAME" --notes "$notes"
+            || gh release create "$GITHUB_REF_NAME" --draft --verify-tag --title "UniVoidDistro $GITHUB_REF_NAME" --notes "$notes"
           # zig-test, ten minutes into the same tag, usually makes the release first with notes of
           # its own (v0.1.0): the image's notes say what the release is and how to check it
           gh release edit "$GITHUB_REF_NAME" --title "UniVoidDistro $GITHUB_REF_NAME" --notes "$notes"
