@@ -1,29 +1,35 @@
 #!/bin/sh
-# A new key for a channel (docs/uni/rolling.md), in a throwaway Void container: the private key
-# never touches a mount, only the tar stream to DIR. The public key's file is named by the
-# fingerprint xbps gives it: it goes into pkg/keys/CHANNEL/ and is committed.
+# A new key for a channel (docs/uni/rolling.md), in a throwaway Void container. The private key is
+# made in a tmpfs, so the VM's disk never holds it, and leaves only by the tar stream to DIR. The
+# passphrase comes on stdin, so neither ps nor docker inspect shows it. The public key's file is
+# named by the fingerprint xbps gives it: it goes into pkg/keys/CHANNEL/ and is committed.
 #   sh pkg/keygen.sh stable|rolling DIR
 # stable: keep DIR on the offline media, with a passphrase (asked here); rolling: the key goes into
 # GitHub's secret, then it is deleted:
 #   gh secret set VH_REPO_KEY_ROLLING --env rolling < DIR/rolling.pem
+# DIR outside ~/Documents and ~/Desktop: those may sync to iCloud.
 set -eu
 ch=${1:?"the channel: stable or rolling"} dir=${2:?"the directory for the key"}
 case $ch in stable|rolling) ;; *) echo "the channel: stable or rolling" >&2; exit 2 ;; esac
 mkdir -p "$dir"
-crypt=""
 pw=""
 if [ "$ch" = stable ]; then
-	stty -echo; printf 'A passphrase for the key: '; read -r pw; stty echo; echo
+	stty -echo; printf 'A passphrase for the key: '; IFS= read -r pw; stty echo; echo
 	[ -n "$pw" ] || { echo "stable's key needs a passphrase" >&2; exit 2; }
-	crypt="-aes256 -passout env:XBPS_PASSPHRASE"
 fi
-docker run --rm -i -e XBPS_PASSPHRASE="$pw" -e CH="$ch" -e CRYPT="$crypt" ghcr.io/void-linux/void-glibc-full:latest sh -euc '
+printf '%s\n' "$pw" | docker run --rm -i --tmpfs /o:size=1m,mode=0700 -e CH="$ch" ghcr.io/void-linux/void-glibc-full:latest sh -euc '
 	exec 3>&1 1>&2
-	xbps-install -Sy openssl python3 >/dev/null
-	mkdir -p /o /e /r /c/var/db/xbps/keys
+	IFS= read -r XBPS_PASSPHRASE
+	crypt=""
+	if [ -n "$XBPS_PASSPHRASE" ]; then
+		export XBPS_PASSPHRASE
+		crypt="-aes256 -passout env:XBPS_PASSPHRASE"
+	fi
+	for p in openssl python3; do xbps-query "$p" >/dev/null || xbps-install -Sy "$p" >/dev/null; done
+	mkdir -p /e /r /c/var/db/xbps/keys
 	cd /r
 	# shellcheck disable=SC2086
-	openssl genrsa $CRYPT -out /o/$CH.pem 4096
+	openssl genrsa $crypt -out /o/$CH.pem 4096
 	chmod 0600 /o/$CH.pem
 	a=$(xbps-uhelper arch)
 	xbps-create -q -A "$a" -n empty-1_1 -s empty /e
@@ -38,5 +44,7 @@ docker run --rm -i -e XBPS_PASSPHRASE="$pw" -e CH="$ch" -e CRYPT="$crypt" ghcr.i
 	cp /c/var/db/xbps/keys/*.plist /o/
 	cd /o && tar -cf - . >&3
 ' | tar -xf - -C "$dir"
+# a pipeline's status is its last command's: a failure in the container shows only here
+[ -s "$dir/$ch.pem" ] && ls "$dir"/*.plist >/dev/null 2>&1 || { echo "no key was made" >&2; exit 1; }
 echo "the private key: $dir/$ch.pem"
 echo "the public key:  $(ls "$dir"/*.plist); commit it in pkg/keys/$ch/"

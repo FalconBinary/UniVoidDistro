@@ -17,11 +17,11 @@ done
 [ "$found" = 1 ] || { echo "pkg/sign.sh: no index in $dir" >&2; exit 1; }
 for p in *.xbps; do
 	[ -e "$p" ] || continue
-	if [ "$all" = --all ]; then
-		# -f: xbps-rindex otherwise leaves a signature that is already there
-		"$X/xbps-rindex" -f --sign-pkg --privkey "$key" "$p" >/dev/null
-	elif [ ! -e "$p.sig2" ]; then
+	if [ ! -e "$p.sig2" ]; then
 		"$X/xbps-rindex" --sign-pkg --privkey "$key" "$p" >/dev/null
+	elif [ "$all" = --all ]; then
+		# -f: xbps-rindex otherwise leaves a signature that is already there; with none there, -f fails
+		"$X/xbps-rindex" -f --sign-pkg --privkey "$key" "$p" >/dev/null
 	fi
 done
 echo "signed: $(ls ./*-repodata | wc -l) indexes, $(ls ./*.sig2 2>/dev/null | wc -l) packages"

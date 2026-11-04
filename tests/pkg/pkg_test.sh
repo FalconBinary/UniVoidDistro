@@ -200,6 +200,10 @@ if xbps-install -r "$c2" -R "$U" -Sy vh-sched </dev/null > "$w/c2.log" 2>&1; the
 cp "$w/vt.good" "$vt"
 # stable: the same files, every signature the other key's; a system that trusts only that key
 sh "$src/pkg/sign.sh" "$pub" "$w/keys/b.pem" "stable" --all > "$w/s5.log" 2>&1 || bad "sign --all" "$(tail -3 "$w/s5.log")"
+# stable's first signature of a tag: packages that have none yet
+fr=$w/fresh; mkdir -p "$fr"; cp "$pub"/vh-sched-*.xbps "$fr/"
+( cd "$fr" && xbps-rindex -a ./*.xbps >/dev/null 2>&1 )
+sh "$src/pkg/sign.sh" "$fr" "$w/keys/b.pem" "stable" --all > "$w/s6.log" 2>&1 && [ -n "$(ls "$fr"/*.sig2 2>/dev/null)" ] && ok "sign --all: packages without a signature get one" || bad "sign --all on unsigned packages" "$(tail -3 "$w/s6.log")"
 c3=$w/client3; mkdir -p "$c3/var/db/xbps/keys"
 cp "$kr"/var/db/xbps/keys/*.plist "$c3/var/db/xbps/keys/"
 if xbps-install -r "$c3" -R "$U" -Sy vh-sched </dev/null > "$w/c3.log" 2>&1; then bad "the rolling key's system took the stable key's index"; else ok "a system of the other key refuses the index"; fi
