@@ -113,7 +113,9 @@ Kernel 6.18.60 moved this driver: a backport (upstream f4203ec64e11) made it a p
 its device is `/sys/bus/platform/drivers/acpi-tiny-power-button/LNXPWRBN:00` instead of
 `/sys/bus/acpi/drivers/tiny-power-button/LNXPWRBN:00`, and the same release gives the fixed button
 a platform device. `vh-ctrlaltdel`, `vh-audit` and `tests/vm` look in both places, since a machine
-kernel of older pins keeps the old one. `button` could bind the new device, and the rule keeps it
+kernel of older pins keeps the old one. So does the probe of `vh-kconf`: an ACPI device without a
+driver takes the driver of the platform device of its name, so an `hw.zon` or a `stock.zon` from
+before 6.18.60 raises no alarm. `button` could bind the new device, and the rule keeps it
 refused: `tiny_power_button` stays the one path, on either kernel. A `ctrlaltdel` from before this
 change sends the button to a reboot on 6.18.60, and `vh-audit` says so; the migration
 `0001-ctrlaltdel` replaces it at `vh-update` ([rolling.md](rolling.md#what-no-package-owns)).

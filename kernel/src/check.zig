@@ -537,6 +537,74 @@ test "check: devices without a driver" {
     try testing.expectEqual(@as(usize, 1), dl.lost);
 }
 
+/// A kernel's view of the fixed power button: the rest of the rig's machine from its fixture, the
+/// button as the probe reads a sysfs where kernel 6.18.60 put its driver on the platform bus
+fn buttonOnPlatform(dir: []const u8, bound: bool) []const hw.Device {
+    const acpi = vh.fmt("{s}/sys/bus/acpi/devices/LNXPWRBN:00", .{dir});
+    const plat = vh.fmt("{s}/sys/bus/platform/devices/LNXPWRBN:00", .{dir});
+    vh.mkdirs(acpi, 0o755);
+    vh.mkdirs(plat, 0o755);
+    vh.writeAtomic(vh.fmt("{s}/modalias", .{acpi}), "acpi:LNXPWRBN:\n", 0o644);
+    vh.writeAtomic(vh.fmt("{s}/modalias", .{plat}), "acpi:LNXPWRBN:\n", 0o644);
+    if (bound) {
+        const drv = vh.fmt("{s}/sys/bus/platform/drivers/acpi-tiny-power-button", .{dir});
+        vh.mkdirs(drv, 0o755);
+        _ = vh.runOpts(&.{ "ln", "-s", "/sys/module/tiny_power_button", vh.fmt("{s}/module", .{drv}) }, .{});
+        _ = vh.runOpts(&.{ "ln", "-s", drv, vh.fmt("{s}/driver", .{plat}) }, .{});
+    }
+    const src: probe.Src = .{ .root = dir };
+    return probe.devices(&src);
+}
+
+/// `q35` with the button's devices replaced by `button`
+fn withButton(q35: hw.Hw, button: []const hw.Device) hw.Hw {
+    var devs: std.ArrayList(hw.Device) = .empty;
+    for (q35.devices) |d| if (!vh.eql(d.name, "LNXPWRBN:00")) devs.append(vh.gpa, d) catch vh.oom();
+    devs.appendSlice(vh.gpa, button) catch vh.oom();
+    var now = q35;
+    now.devices = devs.items;
+    return now;
+}
+
+test "check: the probe follows a driver from an ACPI device to the platform device of its name" {
+    const q35 = fixtureHw("qemu-q35") orelse return error.SkipZigTest;
+    const dir = vh.fmt("/tmp/vh-check-button-{d}", .{linux.getpid()});
+    defer _ = vh.runOpts(&.{ "rm", "-rf", dir }, .{});
+    const button = buttonOnPlatform(dir, true);
+    try testing.expectEqual(@as(usize, 2), button.len);
+    try testing.expectEqualStrings("acpi", button[0].bus);
+    try testing.expectEqualStrings("acpi-tiny-power-button", button[0].driver);
+    try testing.expectEqualStrings("tiny_power_button", button[0].module);
+    // an hw.zon from before 6.18.60: the driver on the ACPI device, under its old name
+    var old: std.ArrayList(hw.Device) = .empty;
+    for (q35.devices) |d| {
+        var x = d;
+        if (vh.eql(x.name, "LNXPWRBN:00")) {
+            x.driver = "tiny-power-button";
+            x.module = "tiny_power_button";
+        }
+        old.append(vh.gpa, x) catch vh.oom();
+    }
+    var was = q35;
+    was.devices = old.items;
+    const a = compare(was, was, "at installation", withButton(q35, button), &.{}, null, "", null, "/nonexistent");
+    try testing.expectEqual(@as(usize, 0), a.lost);
+    try testing.expectEqual(@as(usize, 0), a.devices.len);
+    // a stock.zon left by the stock kernel of before 6.18.60, and a machine kernel of after it
+    var stale = was;
+    stale.probe.kernel = "6.18.57_1";
+    var machine = withButton(q35, button);
+    machine.probe.kernel = "6.18.60-vh";
+    const b = compare(was, stale, "on the stock kernel (6.18.57_1)", machine, &.{}, null, "", null, "/nonexistent");
+    try testing.expectEqual(@as(usize, 0), b.lost);
+    try testing.expectEqual(@as(usize, 0), b.devices.len);
+    // no driver on either device: the button is lost, for the assessment too
+    _ = vh.runOpts(&.{ "rm", "-rf", dir }, .{});
+    const c = compare(was, stale, "on the stock kernel (6.18.57_1)", withButton(q35, buttonOnPlatform(dir, false)), &.{}, null, "", null, "/nonexistent");
+    try testing.expectEqual(@as(usize, 1), c.lost);
+    try testing.expect(mem.indexOf(u8, c.devices[0], "LNXPWRBN:00") != null);
+}
+
 test "check: a machine kernel against the stock kernel's view" {
     const q35 = fixtureHw("qemu-q35") orelse return error.SkipZigTest;
     // the rig at installation: the live image's 6.12 drove the fixed power button with button;
